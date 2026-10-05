@@ -464,5 +464,19 @@ async def init_db() -> None:
                 now,
                 now
             ))
+        elif settings.DEFAULT_ADMIN_PASSWORD and settings.DEFAULT_ADMIN_PASSWORD != "admin123":
+            from app.auth import hash_password
+            now = utc_now_iso()
+            pwd_hash = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
+            await db.execute("""
+                UPDATE users
+                SET password_hash = ?, updated_at = ?
+                WHERE LOWER(email) = ? OR LOWER(username) = ?
+            """, (
+                pwd_hash,
+                now,
+                settings.DEFAULT_ADMIN_EMAIL.strip().lower(),
+                settings.DEFAULT_ADMIN_USERNAME.strip().lower()
+            ))
 
         await db.commit()
