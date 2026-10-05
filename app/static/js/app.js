@@ -5345,110 +5345,196 @@ function renderDnsDiagnosticResults(diag) {
     initLucide();
 }
 
-// Single Email Validator
-async function validateSingleEmail() {
+// Mailbox Availability & Safety Inspector
+async function inspectEmailSafety() {
     const input = document.getElementById('email-single-input');
     const btn = document.getElementById('btn-validate-single');
+    const probeCheck = document.getElementById('safety-probe-smtp');
+    const strictCheck = document.getElementById('safety-strict-mode');
 
     if (!input) return;
     const email = input.value.trim();
     if (!email) {
-        showToast('Please enter an email address to verify.', 'warning');
+        showToast('Please enter an email address to inspect.', 'warning');
         return;
     }
 
-    if (btn) btn.disabled = true;
+    const probeSmtp = probeCheck ? Boolean(probeCheck.checked) : false;
+    const strictMode = strictCheck ? Boolean(strictCheck.checked) : false;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Inspecting...</span>';
+        initLucide();
+    }
+
     try {
-        const res = await fetch('/api/deliverability/validate-email', {
+        const res = await fetch('/api/deliverability/safety-lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: email })
+            body: JSON.stringify({
+                email: email,
+                probe_smtp: probeSmtp,
+                strict_mode: strictMode
+            })
         });
         const data = await safeJson(res);
 
-        if (!res.ok || data.status !== 'success') {
-            showToast(data.detail || 'Email validation failed.', 'error');
+        if (!res.ok) {
+            showToast(data.detail || 'Safety inspection failed.', 'error');
             return;
         }
 
-        const v = data.result;
-        renderSingleEmailResult(v);
-        showToast(`Email evaluated: ${v.status.toUpperCase()}`, v.status === 'valid' ? 'success' : (v.status === 'risky' ? 'warning' : 'error'));
+        renderSafetyInspectionResult(data);
+        const toastType = data.verdict === 'recommended' ? 'success' : (data.verdict === 'not_recommended' ? 'warning' : 'error');
+        showToast(`Sendability Verdict: ${data.verdict.toUpperCase().replace(/_/g, ' ')} (${data.safety_score}/100)`, toastType);
     } catch (err) {
-        showToast('Validation request error: ' + err.message, 'error');
+        showToast('Safety lookup error: ' + err.message, 'error');
     } finally {
-        if (btn) btn.disabled = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i data-lucide="search" class="w-3.5 h-3.5"></i><span>Lookup Sendability</span>';
+            initLucide();
+        }
     }
 }
 
-function renderSingleEmailResult(v) {
+function renderSafetyInspectionResult(v) {
     const resultBox = document.getElementById('email-single-result');
     if (!resultBox) return;
     resultBox.classList.remove('hidden');
 
-    const emailTag = document.getElementById('single-res-email');
-    const badge = document.getElementById('single-res-badge');
-    const syntaxTag = document.getElementById('single-res-syntax');
-    const burnerTag = document.getElementById('single-res-burner');
-    const mxTag = document.getElementById('single-res-mx');
-    const mxList = document.getElementById('single-res-mx-list');
-    const reasonsTag = document.getElementById('single-res-reasons');
+    const banner = document.getElementById('safety-verdict-banner');
+    const title = document.getElementById('safety-verdict-title');
+    const desc = document.getElementById('safety-verdict-desc');
+    const score = document.getElementById('safety-verdict-score');
+    const icon = document.getElementById('safety-verdict-icon');
 
-    if (emailTag) emailTag.textContent = v.email;
-    if (badge) {
-        if (v.status === 'valid') {
-            badge.textContent = 'DELIVERABLE';
-            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/20 text-emerald-300';
-        } else if (v.status === 'risky') {
-            badge.textContent = 'RISKY BURNER';
-            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/20 text-amber-300';
-        } else {
-            badge.textContent = 'INVALID / UNREACHABLE';
-            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-500/20 text-rose-300';
+    const syntaxTag = document.getElementById('safety-res-syntax');
+    const mxTag = document.getElementById('safety-res-mx');
+    const burnerTag = document.getElementById('safety-res-burner');
+    const roleTag = document.getElementById('safety-res-role');
+    const suppTag = document.getElementById('safety-res-suppression');
+    const probeTag = document.getElementById('safety-res-probe');
+    const mxList = document.getElementById('safety-res-mx-list');
+    const recBox = document.getElementById('safety-res-recommendation');
+
+    // Verdict styling
+    if (v.verdict === 'recommended') {
+        if (banner) banner.className = 'p-3 rounded-xl border bg-emerald-950/40 border-emerald-500/30 text-emerald-400 flex items-center justify-between';
+        if (title) title.textContent = 'RECOMMENDED TO SEND';
+        if (desc) desc.textContent = v.primary_reason || 'Verified address with active MX servers';
+        if (score) { score.textContent = `${v.safety_score}/100`; score.className = 'text-base font-bold font-mono text-emerald-400'; }
+        if (icon) {
+            icon.className = 'p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400';
+            icon.innerHTML = '<i data-lucide="check-circle-2" class="w-5 h-5"></i>';
+        }
+    } else if (v.verdict === 'not_recommended') {
+        if (banner) banner.className = 'p-3 rounded-xl border bg-amber-950/40 border-amber-500/30 text-amber-400 flex items-center justify-between';
+        if (title) title.textContent = 'NOT RECOMMENDED (RISKY)';
+        if (desc) desc.textContent = v.primary_reason || 'Address carries reputation or bounce risk';
+        if (score) { score.textContent = `${v.safety_score}/100`; score.className = 'text-base font-bold font-mono text-amber-400'; }
+        if (icon) {
+            icon.className = 'p-1.5 rounded-lg bg-amber-500/20 text-amber-400';
+            icon.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5"></i>';
+        }
+    } else {
+        if (banner) banner.className = 'p-3 rounded-xl border bg-rose-950/40 border-rose-500/30 text-rose-400 flex items-center justify-between';
+        if (title) title.textContent = 'DO NOT SEND (UNAVAILABLE)';
+        if (desc) desc.textContent = v.primary_reason || 'Mailbox invalid or dead; sending will bounce';
+        if (score) { score.textContent = `${v.safety_score}/100`; score.className = 'text-base font-bold font-mono text-rose-400'; }
+        if (icon) {
+            icon.className = 'p-1.5 rounded-lg bg-rose-500/20 text-rose-400';
+            icon.innerHTML = '<i data-lucide="x-circle" class="w-5 h-5"></i>';
         }
     }
 
-    if (syntaxTag) {
-        syntaxTag.textContent = v.syntax_valid ? 'Valid RFC 5322' : 'Syntax Error';
-        syntaxTag.className = v.syntax_valid ? 'font-medium text-emerald-400' : 'font-medium text-rose-400';
-    }
+    const c = v.checks || {};
 
-    if (burnerTag) {
-        burnerTag.textContent = v.is_disposable ? 'Burner / Disposable Detected!' : 'Clean (Not Disposable)';
-        burnerTag.className = v.is_disposable ? 'font-bold text-amber-400' : 'font-medium text-emerald-400';
+    if (syntaxTag) {
+        const ok = c.syntax && c.syntax.passed;
+        syntaxTag.textContent = c.syntax ? c.syntax.details : '--';
+        syntaxTag.className = ok ? 'font-medium text-emerald-400' : 'font-bold text-rose-400';
     }
 
     if (mxTag) {
-        mxTag.textContent = v.has_mx ? 'Active MX Host Found' : 'No MX Records';
-        mxTag.className = v.has_mx ? 'font-medium text-emerald-400' : 'font-medium text-rose-400';
+        const ok = c.domain_mx && c.domain_mx.passed;
+        mxTag.textContent = c.domain_mx ? c.domain_mx.details : '--';
+        mxTag.className = ok ? 'font-medium text-emerald-400' : 'font-bold text-rose-400';
+    }
+
+    if (burnerTag) {
+        const burner = c.disposable && !c.disposable.passed;
+        burnerTag.textContent = c.disposable ? c.disposable.details : '--';
+        burnerTag.className = burner ? 'font-bold text-amber-400' : 'font-medium text-emerald-400';
+    }
+
+    if (roleTag) {
+        const isRole = c.role_account && !c.role_account.passed;
+        roleTag.textContent = c.role_account ? (isRole ? 'Role-Based Account Detected' : 'Personal Mailbox') : '--';
+        roleTag.className = isRole ? 'font-bold text-amber-400' : 'font-medium text-emerald-400';
+    }
+
+    if (suppTag) {
+        const supp = c.suppression && !c.suppression.passed;
+        suppTag.textContent = c.suppression ? c.suppression.details : '--';
+        suppTag.className = supp ? 'font-bold text-rose-400' : 'font-medium text-emerald-400';
+    }
+
+    if (probeTag) {
+        const p = c.smtp_probe;
+        if (!p || p.status === 'untested') {
+            probeTag.textContent = 'Untested (DNS-only)';
+            probeTag.className = 'font-medium text-slate-400';
+        } else if (p.passed && p.status === 'accepted') {
+            probeTag.textContent = '250 OK - Mailbox Verified Exists';
+            probeTag.className = 'font-bold text-emerald-400';
+        } else if (!p.passed && p.status === 'rejected') {
+            probeTag.textContent = '550 Rejected - Mailbox Unknown';
+            probeTag.className = 'font-bold text-rose-400';
+        } else {
+            probeTag.textContent = p.details || 'Inconclusive';
+            probeTag.className = 'font-medium text-amber-400';
+        }
     }
 
     if (mxList) {
-        if (v.mx_records && v.mx_records.length > 0) {
-            mxList.innerHTML = `<span class="text-slate-500 text-[10px]">Resolved Exchangers:</span>` +
-                v.mx_records.map(r => `<div>• ${escapeHtml(r.host)} (Pri ${r.priority})</div>`).join('');
+        const recs = (c.domain_mx && c.domain_mx.metadata && c.domain_mx.metadata.records) || [];
+        if (recs.length > 0) {
+            mxList.innerHTML = `<span class="text-slate-500 text-[10px]">Active Mail Exchangers:</span>` +
+                recs.map(r => `<div>• ${escapeHtml(r.host)} (Priority: ${r.priority})</div>`).join('');
             mxList.classList.remove('hidden');
         } else {
             mxList.classList.add('hidden');
         }
     }
 
-    if (reasonsTag) {
-        if (v.reasons && v.reasons.length > 0) {
-            reasonsTag.textContent = 'Note: ' + v.reasons.join(' | ');
-            reasonsTag.classList.remove('hidden');
-        } else {
-            reasonsTag.classList.add('hidden');
-        }
+    if (recBox) {
+        recBox.innerHTML = `<strong>Actionable Guidance:</strong> ${escapeHtml(v.recommendation)}`;
     }
+
+    initLucide();
 }
 
-function testBurnerSampleEmail() {
+function testSampleSafetyEmail(type) {
     const input = document.getElementById('email-single-input');
-    if (input) {
-        input.value = 'throwaway-lead@mailinator.com';
-        validateSingleEmail();
+    if (!input) return;
+
+    if (type === 'clean') {
+        input.value = 'support@bitnade.com';
+    } else if (type === 'role') {
+        input.value = 'admin@google.com';
+    } else if (type === 'burner') {
+        input.value = 'throwaway@mailinator.com';
+    } else if (type === 'dead') {
+        input.value = 'nobody@nonexistent-fake-domain-12345.com';
     }
+    inspectEmailSafety();
+}
+
+// Backward compatibility alias
+function validateSingleEmail() {
+    inspectEmailSafety();
 }
 
 // Batch Email List Cleaner
@@ -5701,35 +5787,34 @@ async function runBroadcastPreflightCheck() {
     }
 
     try {
-        const res = await fetch('/api/deliverability/validate-batch', {
+        const res = await fetch('/api/deliverability/safety-batch-lookup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ emails: emailList })
+            body: JSON.stringify({ emails: emailList, strict_mode: false })
         });
         const data = await safeJson(res);
 
-        if (!res.ok || data.status !== 'success') {
+        if (!res.ok) {
             showToast(data.detail || 'Pre-flight scan failed.', 'error');
             return;
         }
 
-        const b = data.result;
-        App.deliverability.lastBroadcastCleaned = (b.results || []).filter(r => r.status === 'valid').map(r => r.email);
+        const s = data.summary;
+        App.deliverability.lastBroadcastCleaned = data.clean_emails || [];
 
         if (banner && content) {
             banner.classList.remove('hidden');
-            if (b.deliverable_count === b.total) {
-                content.innerHTML = `<span class="text-emerald-400 font-bold">✓ 100% Deliverable!</span> All ${b.total} recipients verified with clean RFC 5322 syntax, no burner domains, and active MX hosts.`;
+            if (s.do_not_send_count === 0 && s.not_recommended_count === 0) {
+                content.innerHTML = `<span class="text-emerald-400 font-bold">✓ 100% Safe to Send!</span> All ${s.total} recipients verified with clean syntax, active MX routing, and no suppression or burner flags.`;
             } else {
-                const riskyCount = (b.disposable_count || 0) + (b.invalid_count || 0);
-                content.innerHTML = `<span class="text-amber-400 font-bold">⚠ ${riskyCount} risky / invalid recipients detected</span> out of ${b.total}: 
-                    <span class="text-emerald-400 font-medium">${b.deliverable_count} Deliverable</span>, 
-                    <span class="text-amber-400 font-medium">${b.disposable_count} Disposable Burners</span>, 
-                    <span class="text-rose-400 font-medium">${b.invalid_count} Invalid / No-MX</span>. 
-                    Click "Clean Recipient List" to purge bounce risks automatically.`;
+                content.innerHTML = `<span class="text-amber-400 font-bold">⚠ Safety Scan Breakdown</span> for ${s.total} recipients: 
+                    <span class="text-emerald-400 font-semibold">${s.recommended_count} Recommended</span>, 
+                    <span class="text-amber-400 font-semibold">${s.not_recommended_count} Risky (Burner / Role)</span>, 
+                    <span class="text-rose-400 font-semibold">${s.do_not_send_count} Blocked (Dead MX / Invalid / Suppressed)</span>. 
+                    Click "Clean Recipient List" to purge unsafe addresses automatically.`;
             }
         }
-        showToast(`Pre-flight scan complete: ${b.deliverable_count}/${b.total} clean.`, b.deliverable_count === b.total ? 'success' : 'warning');
+        showToast(`Safety scan complete: ${s.recommended_count}/${s.total} recommended (${s.safe_percent}%).`, s.do_not_send_count === 0 ? 'success' : 'warning');
     } catch (err) {
         showToast('Pre-flight scan error: ' + err.message, 'error');
     } finally {

@@ -13,6 +13,13 @@ from app.deliverability import (
     DISPOSABLE_DOMAINS,
     DnsAuthenticatorService,
     EmailValidatorService,
+    PreSendSafetyGuard,
+)
+from app.models import (
+    SafetyBatchLookupRequest,
+    SafetyBatchLookupResponse,
+    SafetyLookupRequest,
+    SafetyLookupResponse,
 )
 
 router = APIRouter(prefix="/api/deliverability", tags=["Deliverability & DNS Authentication"])
@@ -115,4 +122,52 @@ async def get_deliverability_info() -> Dict[str, Any]:
         "supported_checks": features_dict["supported_checks"],
         "compliance_standards": features_dict["compliance_standards"],
     }
+
+
+@router.post("/safety-lookup", response_model=SafetyLookupResponse)
+async def inspect_email_safety(payload: SafetyLookupRequest) -> Any:
+    """
+    Perform pre-send availability & safety lookup on an email address:
+    - RFC 5322 syntax validation
+    - Suppression & bounce blacklist verification
+    - Live DNS MX resolution & host reachability
+    - Disposable / temporary burner domain detection
+    - Role-based address / spam trap detection
+    - Optional active SMTP port 25 handshake probe (RCPT TO)
+    Returns: RECOMMENDED, NOT_RECOMMENDED, or DO_NOT_SEND.
+    """
+    email = payload.email.strip()
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Email address cannot be empty."
+        )
+    res = await PreSendSafetyGuard.evaluate_sendability(
+        email=email,
+        probe_smtp=payload.probe_smtp,
+        strict_mode=payload.strict_mode
+    )
+    return res
+
+
+@router.post("/safety-batch-lookup", response_model=SafetyBatchLookupResponse)
+async def inspect_batch_safety(payload: SafetyBatchLookupRequest) -> Any:
+    """
+    Batch evaluate a list of emails with categorized buckets:
+    - Recommended (safe)
+    - Not Recommended (risky role or burner)
+    - Do Not Send (invalid, no MX, or suppressed)
+    """
+    clean_emails = [e.strip() for e in payload.emails if e and e.strip()]
+    if not clean_emails:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No valid email addresses provided in batch list."
+        )
+    res = await PreSendSafetyGuard.evaluate_batch(
+        emails=clean_emails,
+        strict_mode=payload.strict_mode
+    )
+    return res
+
 

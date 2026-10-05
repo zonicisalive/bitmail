@@ -436,11 +436,14 @@ async def send_single_email(
     track_clicks: bool = True,
     email_id: Optional[str] = None,
     subscriber_id: Optional[str] = None,
-    smtp_config: Optional[Dict[str, Any]] = None
+    smtp_config: Optional[Dict[str, Any]] = None,
+    pre_send_safety: bool = True,
+    strict_safety: bool = False
 ) -> Dict[str, Any]:
     """
     Full pipeline: Interpolates template & merge vars, injects tracking,
     builds MIME message, stores raw .eml, dispatches via SMTP, records in SQLite.
+    Includes pre-send safety lookup gate to intercept dead/invalid mailboxes before SMTP.
     """
     now = utc_now_iso()
     email_id = email_id or f"msg_{uuid.uuid4().hex[:12]}"
@@ -448,6 +451,71 @@ async def send_single_email(
 
     sender_email = sender_email or settings.DEFAULT_SENDER_EMAIL
     sender_name = sender_name or settings.DEFAULT_SENDER_NAME
+
+    # ------------------------------------------------------------------
+    # Pre-Send Safety Gate: Intercept dead, non-existent, or suppressed mailboxes
+    # ------------------------------------------------------------------
+    if pre_send_safety:
+        try:
+            from app.deliverability import PreSendSafetyGuard
+            safety_eval = await PreSendSafetyGuard.evaluate_sendability(
+                email=recipient_email,
+                probe_smtp=False,
+                strict_mode=strict_safety
+            )
+            if not safety_eval.get("is_safe_to_send", True) or safety_eval.get("verdict") == "do_not_send":
+                primary_reason = safety_eval.get("primary_reason", "Safety check failed")
+                reason_detail = f"Pre-send Safety Guard blocked send: {primary_reason}"
+                async with get_db() as db:
+                    await db.execute("""
+                        INSERT OR REPLACE INTO sent_emails (
+                            id, campaign_id, subscriber_id, recipient_email, recipient_name,
+                            sender_email, sender_name, subject, body_html, body_text, rendered_html,
+                            status, is_sandbox, error_message, created_at, sent_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                    """, (
+                        email_id,
+                        campaign_id,
+                        subscriber_id or merge_vars.get("subscriber_id"),
+                        recipient_email,
+                        recipient_name,
+                        sender_email,
+                        sender_name,
+                        subject,
+                        body_html,
+                        body_text,
+                        body_html,
+                        EmailStatus.SKIPPED.value,
+                        reason_detail,
+                        now
+                    ))
+                    await db.execute("""
+                        INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
+                        VALUES (?, ?, ?, ?, '127.0.0.1', 'Pre-Send Safety Guard', ?, ?)
+                    """, (
+                        f"evt_{uuid.uuid4().hex[:12]}",
+                        email_id,
+                        campaign_id,
+                        EventType.SKIPPED.value,
+                        json.dumps({"reason": primary_reason, "verdict": safety_eval.get("verdict")}),
+                        now
+                    ))
+                    await db.commit()
+
+                return {
+                    "success": False,
+                    "sent_email_id": email_id,
+                    "message_id": None,
+                    "status": EmailStatus.SKIPPED.value,
+                    "sent_at": None,
+                    "error": reason_detail,
+                    "raw_eml_path": None,
+                    "safety_evaluation": safety_eval
+                }
+        except Exception as guard_err:
+            import logging
+            logging.getLogger("bitmail.sender").warning("Pre-send safety guard evaluation error: %s", guard_err)
+
     headers_dict = custom_headers.copy() if custom_headers else {}
     if reply_to:
         headers_dict["Reply-To"] = reply_to
@@ -657,6 +725,8 @@ class EmailSender:
         sender_name: Optional[str] = None,
         reply_to: Optional[str] = None,
         smtp_config: Optional[Any] = None,
+        pre_send_safety: bool = True,
+        strict_safety: bool = False,
     ) -> Any:
         """Send an email using rendered template content and persist to vault."""
         recipient_email = recipient.email if hasattr(recipient, "email") else str(recipient)
@@ -697,19 +767,31 @@ class EmailSender:
             track_opens=False,
             track_clicks=False,
             email_id=storage_id,
+            pre_send_safety=pre_send_safety,
+            strict_safety=strict_safety,
         )
 
         latency = (time.monotonic() - start_time) * 1000
+
+        stat_val = res.get("status")
+        if stat_val == EmailStatus.SKIPPED.value:
+            final_status_val = EmailStatus.SKIPPED.value
+        elif is_sandbox and res.get("success"):
+            final_status_val = EmailStatus.SIMULATED.value
+        elif res.get("success"):
+            final_status_val = EmailStatus.SENT.value
+        else:
+            final_status_val = EmailStatus.FAILED.value
 
         from app.models import SendResult
         return SendResult(
             success=res.get("success", False),
             storage_id=res.get("sent_email_id") or storage_id or f"eml_{uuid.uuid4().hex}",
             message_id=res.get("message_id"),
-            status=EmailStatus.SIMULATED.value if is_sandbox and res.get("success") else (EmailStatus.SENT.value if res.get("success") else EmailStatus.FAILED.value),
+            status=final_status_val,
             error=res.get("error"),
             latency_ms=latency,
-            smtp_response="250 OK - Message queued for delivery" if res.get("success") else res.get("error"),
+            smtp_response="250 OK - Message queued for delivery" if res.get("success") else (res.get("error") or "Unknown status"),
             eml_path=res.get("raw_eml_path"),
         )
 

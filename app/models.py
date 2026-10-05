@@ -43,6 +43,7 @@ class EmailStatus(str, Enum):
     FAILED = "failed"
     BOUNCED = "bounced"
     SIMULATED = "simulated"
+    SKIPPED = "skipped"
 
 
 
@@ -63,6 +64,7 @@ class EventType(str, Enum):
     BOUNCED = "bounced"
     COMPLAINT = "complaint"
     FAILED = "failed"
+    SKIPPED = "skipped"
 
 
 
@@ -861,4 +863,58 @@ class RelayPoolStatusResponse(BaseModel):
     is_cooling_down: bool
     cooldown_until: Optional[str] = None
     last_error: Optional[str] = None
+
+
+# ----------------------------------------------------------------------
+# Pre-Send Safety & Sendability Schemas
+# ----------------------------------------------------------------------
+
+class SendabilityVerdict(str, Enum):
+    RECOMMENDED = "recommended"
+    NOT_RECOMMENDED = "not_recommended"
+    DO_NOT_SEND = "do_not_send"
+
+
+class SafetyCheckDetail(BaseModel):
+    passed: bool
+    status: str  # "ok", "warning", "failed", "untested"
+    details: str
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class SafetyLookupRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=320, description="Target email to inspect")
+    probe_smtp: bool = Field(default=False, description="Attempt active SMTP port 25 handshake probe")
+    strict_mode: bool = Field(default=False, description="Whether risky addresses are marked do_not_send")
+
+
+class SafetyLookupResponse(BaseModel):
+    email: str
+    verdict: SendabilityVerdict
+    is_safe_to_send: bool
+    safety_score: int = Field(..., ge=0, le=100)
+    primary_reason: str
+    reasons: List[str] = Field(default_factory=list)
+    checks: Dict[str, SafetyCheckDetail]
+    recommendation: str
+
+
+class SafetyBatchLookupRequest(BaseModel):
+    emails: List[str] = Field(..., min_length=1, max_length=1000, description="List of emails to evaluate")
+    strict_mode: bool = Field(default=False, description="Treat risky addresses as do_not_send")
+
+
+class SafetyBatchSummary(BaseModel):
+    total: int
+    recommended_count: int
+    not_recommended_count: int
+    do_not_send_count: int
+    safe_percent: float
+
+
+class SafetyBatchLookupResponse(BaseModel):
+    summary: SafetyBatchSummary
+    results: List[SafetyLookupResponse]
+    clean_emails: List[str]
+
 

@@ -160,6 +160,9 @@ class CampaignWorker:
 
                     if res.success:
                         self._sent_count += 1
+                    elif getattr(res, "status", None) == "skipped" or (res.error and "Pre-send Safety Guard" in str(res.error)):
+                        self._skipped_count = getattr(self, "_skipped_count", 0) + 1
+                        logger.info("Recipient %s safely skipped by pre-send guard: %s", sub.email, res.error)
                     else:
                         self._failed_count += 1
                         logger.warning("Send to %s failed: %s", sub.email, res.error)

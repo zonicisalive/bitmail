@@ -808,3 +808,395 @@ class DnsAuthenticatorService:
             "recommended_records": recommended_records,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
+
+
+# ==============================================================================
+# 3. Pre-Send Mailbox Availability & Safety Guard
+# ==============================================================================
+
+ROLE_BASED_PREFIXES: Set[str] = {
+    "abuse", "admin", "administrator", "billing", "compliance", "contact",
+    "careers", "daemon", "devnull", "dns", "ftp", "help", "helpdesk",
+    "hostmaster", "hr", "info", "inoc", "ispfeedback", "ispsupport", "jobs",
+    "legal", "list", "list-request", "mail", "mailer-daemon", "marketing",
+    "media", "news", "noc", "no-reply", "noreply", "null", "office", "postmaster",
+    "press", "privacy", "root", "sales", "security", "spam", "spamtrap",
+    "support", "sysadmin", "tech", "undisclosed-recipients", "unsubscribe",
+    "usenet", "uucp", "webmaster", "www"
+}
+
+
+class PreSendSafetyGuard:
+    """
+    Evaluates whether an email address is available to send to, risky / not recommended,
+    or unsafe (do not send) before attempting SMTP delivery.
+    """
+
+    @classmethod
+    def is_role_account(cls, email: str) -> Tuple[bool, Optional[str]]:
+        """Detect generic departmental or role-based mailbox addresses."""
+        if not email or "@" not in email:
+            return False, None
+        local = email.split("@")[0].strip().lower()
+        if "+" in local:
+            local = local.split("+")[0]
+        if local in ROLE_BASED_PREFIXES:
+            return True, f"'{local}@' is a generic role-based address. Role mailboxes suffer higher complaint rates and are often monitored by ISP spam-traps."
+        return False, None
+
+    @classmethod
+    async def check_suppression(cls, email: str) -> Tuple[bool, Optional[str]]:
+        """Check if recipient is in the local suppression table or marked bounced/unsubscribed."""
+        clean = email.strip().lower()
+        try:
+            from app.db import get_db
+            async with get_db() as db:
+                async with db.execute(
+                    "SELECT reason FROM suppressions WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
+                ) as cur:
+                    row = await cur.fetchone()
+                    if row:
+                        return True, f"Address is blacklisted in global suppression table ({row['reason'] or 'suppressed'})."
+
+                async with db.execute(
+                    "SELECT reason FROM suppression_list WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
+                ) as cur_sl:
+                    row_sl = await cur_sl.fetchone()
+                    if row_sl:
+                        return True, f"Address is in suppression list ({row_sl['reason'] or 'suppressed'})."
+
+                async with db.execute(
+                    "SELECT status FROM subscribers WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
+                ) as cur2:
+                    row2 = await cur2.fetchone()
+                    if row2 and row2["status"] in ("bounced", "unsubscribed", "complained"):
+                        return True, f"Recipient is marked as '{row2['status']}' in subscriber database."
+        except Exception as e:
+            logger.debug("Suppression check exception: %s", e)
+        return False, None
+
+    @classmethod
+    async def probe_smtp_mailbox(cls, email: str, timeout: float = 3.0) -> Dict[str, Any]:
+        """
+        Lightweight async SMTP handshake test on MX port 25.
+        Issues EHLO, MAIL FROM, RCPT TO, QUIT to test mailbox existence without sending.
+        Gracefully handles ISP firewall port 25 blocks and timeouts.
+        """
+        clean = email.strip().lower()
+        domain = clean.split("@")[-1] if "@" in clean else ""
+        if not domain:
+            return {"tested": False, "passed": False, "status": "failed", "details": "No domain found"}
+
+        has_mx, mx_records, _ = await EmailValidatorService.resolve_mx(domain, timeout=timeout)
+        if not has_mx or not mx_records:
+            return {"tested": False, "passed": False, "status": "failed", "details": "No MX mail exchanger records found"}
+
+        primary_mx = mx_records[0]["host"]
+        if primary_mx in ("localhost", "127.0.0.1", "sandbox"):
+            return {
+                "tested": True,
+                "passed": True,
+                "status": "accepted",
+                "code": 250,
+                "details": f"Localhost/sandbox relay accepts recipient '{clean}'.",
+                "mx_host": primary_mx
+            }
+
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(primary_mx, 25),
+                timeout=timeout
+            )
+        except Exception as conn_err:
+            return {
+                "tested": True,
+                "passed": True,  # Inconclusive (firewall), do not block
+                "status": "inconclusive",
+                "code": None,
+                "details": f"Port 25 connection to MX {primary_mx} firewalled or unreachable: {conn_err}",
+                "mx_host": primary_mx
+            }
+
+        try:
+            # Banner
+            await asyncio.wait_for(reader.readline(), timeout=timeout)
+
+            # EHLO
+            writer.write(b"EHLO bitmail.security.probe\r\n")
+            await writer.drain()
+            while True:
+                line = await asyncio.wait_for(reader.readline(), timeout=timeout)
+                if not line or line[3:4] == b" ":
+                    break
+
+            # MAIL FROM
+            writer.write(b"MAIL FROM:<probe@bitmail.security>\r\n")
+            await writer.drain()
+            await asyncio.wait_for(reader.readline(), timeout=timeout)
+
+            # RCPT TO
+            writer.write(f"RCPT TO:<{clean}>\r\n".encode("latin-1"))
+            await writer.drain()
+            rcpt_line = await asyncio.wait_for(reader.readline(), timeout=timeout)
+            rcpt_str = rcpt_line.decode("latin-1", errors="ignore").strip()
+
+            try:
+                writer.write(b"QUIT\r\n")
+                await writer.drain()
+            except Exception:
+                pass
+            writer.close()
+            await writer.wait_closed()
+
+            code = None
+            try:
+                code = int(rcpt_str[:3])
+            except Exception:
+                pass
+
+            if code and 200 <= code < 300:
+                return {
+                    "tested": True,
+                    "passed": True,
+                    "status": "accepted",
+                    "code": code,
+                    "details": f"Mailbox verified by MX {primary_mx} ({rcpt_str}).",
+                    "mx_host": primary_mx
+                }
+            elif code and code in (550, 551, 552, 553, 554):
+                return {
+                    "tested": True,
+                    "passed": False,
+                    "status": "rejected",
+                    "code": code,
+                    "details": f"Mailbox rejected by MX {primary_mx}: user unknown ({rcpt_str}).",
+                    "mx_host": primary_mx
+                }
+            else:
+                return {
+                    "tested": True,
+                    "passed": True,
+                    "status": "deferred_or_greylisted",
+                    "code": code,
+                    "details": f"Server response from MX {primary_mx}: {rcpt_str}",
+                    "mx_host": primary_mx
+                }
+        except Exception as probe_err:
+            try:
+                writer.close()
+            except Exception:
+                pass
+            return {
+                "tested": True,
+                "passed": True,
+                "status": "inconclusive",
+                "code": None,
+                "details": f"SMTP probe interrupted: {probe_err}",
+                "mx_host": primary_mx
+            }
+
+    @classmethod
+    async def evaluate_sendability(
+        cls,
+        email: str,
+        probe_smtp: bool = False,
+        strict_mode: bool = False,
+        timeout: float = 3.0
+    ) -> Dict[str, Any]:
+        """
+        Orchestrates all safety & availability checks for an email address:
+        1. RFC 5322 syntax
+        2. Local suppression & bounce blacklist
+        3. Domain MX record & NXDOMAIN existence
+        4. Disposable / temporary burner domain check
+        5. Role-based / spam trap account check
+        6. Optional active SMTP port 25 mailbox probe
+        """
+        clean = email.strip()
+        if "<" in clean and clean.endswith(">"):
+            inner = clean.split("<")[-1].rstrip(">").strip()
+            if inner:
+                clean = inner
+
+        domain = clean.split("@")[-1].lower() if "@" in clean else ""
+        reasons: List[str] = []
+        checks: Dict[str, Any] = {}
+        score = 100
+        hard_block = False
+        warning_flags = False
+
+        # 1. Syntax Check
+        syntax_ok, syntax_err = EmailValidatorService.validate_syntax(clean)
+        checks["syntax"] = {
+            "passed": syntax_ok,
+            "status": "ok" if syntax_ok else "failed",
+            "details": "RFC 5322 compliant syntax" if syntax_ok else (syntax_err or "Invalid syntax"),
+            "metadata": {"length": len(clean)}
+        }
+        if not syntax_ok:
+            reasons.append(syntax_err or "Invalid email syntax")
+            hard_block = True
+            score = 0
+
+        # 2. Suppression Check
+        is_suppressed, supp_reason = await cls.check_suppression(clean)
+        checks["suppression"] = {
+            "passed": not is_suppressed,
+            "status": "ok" if not is_suppressed else "failed",
+            "details": "Not listed on any suppression blacklist" if not is_suppressed else supp_reason,
+            "metadata": {"is_suppressed": is_suppressed}
+        }
+        if is_suppressed:
+            reasons.append(supp_reason or "Email is suppressed")
+            hard_block = True
+            score = 0
+
+        # 3. Domain & MX Check
+        if not hard_block and domain:
+            has_mx, mx_recs, mx_reason = await EmailValidatorService.resolve_mx(domain, timeout=timeout)
+            checks["domain_mx"] = {
+                "passed": has_mx,
+                "status": "ok" if has_mx else "failed",
+                "details": mx_reason,
+                "metadata": {"records": mx_recs, "record_count": len(mx_recs)}
+            }
+            if not has_mx:
+                reasons.append(f"Domain '{domain}' has no valid MX records to receive emails.")
+                hard_block = True
+                score = 0
+        else:
+            checks["domain_mx"] = {
+                "passed": False,
+                "status": "failed",
+                "details": "Skipped due to syntax or suppression failure",
+                "metadata": {"records": [], "record_count": 0}
+            }
+
+        # 4. Disposable Domain Check
+        is_burner = EmailValidatorService.is_disposable(domain) if domain else False
+        checks["disposable"] = {
+            "passed": not is_burner,
+            "status": "ok" if not is_burner else "warning",
+            "details": "Clean corporate or public provider domain" if not is_burner else "Identified as temporary burner domain",
+            "metadata": {"is_disposable": is_burner}
+        }
+        if is_burner:
+            reasons.append("Temporary burner domain detected. High risk of immediate bounce and zero engagement.")
+            warning_flags = True
+            score = max(0, score - 35)
+
+        # 5. Role Account Check
+        is_role, role_reason = cls.is_role_account(clean)
+        checks["role_account"] = {
+            "passed": not is_role,
+            "status": "ok" if not is_role else "warning",
+            "details": "Individual personal mailbox" if not is_role else role_reason,
+            "metadata": {"is_role": is_role}
+        }
+        if is_role:
+            reasons.append(role_reason or "Role-based mailbox detected")
+            warning_flags = True
+            score = max(0, score - 20)
+
+        # 6. Active SMTP Mailbox Probe (Optional)
+        if probe_smtp and not hard_block and domain:
+            probe_res = await cls.probe_smtp_mailbox(clean, timeout=timeout)
+            checks["smtp_probe"] = {
+                "passed": probe_res["passed"],
+                "status": "ok" if probe_res["passed"] and probe_res["status"] == "accepted" else ("failed" if not probe_res["passed"] else "warning"),
+                "details": probe_res["details"],
+                "metadata": probe_res
+            }
+            if not probe_res["passed"]:
+                reasons.append(probe_res["details"])
+                hard_block = True
+                score = 0
+        else:
+            checks["smtp_probe"] = {
+                "passed": True,
+                "status": "untested",
+                "details": "Active SMTP port 25 probe skipped (DNS MX verification only)",
+                "metadata": {"tested": False}
+            }
+
+        # Verdict calculation
+        if hard_block:
+            verdict = "do_not_send"
+            is_safe = False
+            rec_text = "DO NOT SEND: Mailbox is unavailable or invalid. Attempting to send will result in a hard bounce or compliance violation."
+        elif warning_flags:
+            if strict_mode:
+                verdict = "do_not_send"
+                is_safe = False
+                rec_text = "BLOCKED (STRICT MODE): Address flagged as risky (role-based or disposable). Sending suppressed per safety policy."
+            else:
+                verdict = "not_recommended"
+                is_safe = True
+                rec_text = "NOT RECOMMENDED: Address carries deliverability risk (burner or role account). Sending is possible, but caution is advised."
+        else:
+            verdict = "recommended"
+            is_safe = True
+            rec_text = "RECOMMENDED: Verified address with active MX servers. Safe to send."
+
+        primary_reason = reasons[0] if reasons else "All deliverability and availability checks passed."
+
+        return {
+            "email": clean,
+            "verdict": verdict,
+            "is_safe_to_send": is_safe,
+            "safety_score": score,
+            "primary_reason": primary_reason,
+            "reasons": reasons,
+            "checks": checks,
+            "recommendation": rec_text
+        }
+
+    @classmethod
+    async def evaluate_batch(
+        cls,
+        emails: List[str],
+        strict_mode: bool = False,
+        concurrency: int = 25
+    ) -> Dict[str, Any]:
+        """Evaluate a batch of email addresses concurrently for broadcast pre-flight."""
+        sem = asyncio.Semaphore(concurrency)
+
+        async def worker(em: str) -> Dict[str, Any]:
+            async with sem:
+                return await cls.evaluate_sendability(em, probe_smtp=False, strict_mode=strict_mode)
+
+        tasks = [worker(e) for e in emails if e and e.strip()]
+        results = await asyncio.gather(*tasks)
+
+        recommended = []
+        not_recommended = []
+        do_not_send = []
+        clean_emails = []
+
+        for r in results:
+            v = r["verdict"]
+            if v == "recommended":
+                recommended.append(r)
+                clean_emails.append(r["email"])
+            elif v == "not_recommended":
+                not_recommended.append(r)
+                if not strict_mode:
+                    clean_emails.append(r["email"])
+            else:
+                do_not_send.append(r)
+
+        total = len(results)
+        safe_percent = round((len(clean_emails) / max(1, total)) * 100, 1)
+
+        return {
+            "summary": {
+                "total": total,
+                "recommended_count": len(recommended),
+                "not_recommended_count": len(not_recommended),
+                "do_not_send_count": len(do_not_send),
+                "safe_percent": safe_percent
+            },
+            "results": results,
+            "clean_emails": clean_emails
+        }
+
