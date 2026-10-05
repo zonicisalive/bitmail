@@ -128,6 +128,15 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
+@app.get("/logo.svg", include_in_schema=False)
+async def get_bimi_logo():
+    """Serve the public BIMI SVG brand logo for email inbox verification."""
+    logo_path = Path(__file__).resolve().parent / "static" / "logo.svg"
+    if logo_path.is_file():
+        return FileResponse(logo_path, media_type="image/svg+xml")
+    return JSONResponse(status_code=404, content={"detail": "Logo not found"})
+
+
 @app.get("/health", tags=["System Health"])
 async def health_check():
     """Health check probe for container and uptime monitoring."""
