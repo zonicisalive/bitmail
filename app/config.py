@@ -14,18 +14,52 @@ from pydantic import BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def load_env_file() -> None:
+    """Load key-value pairs from .env file into os.environ if present."""
+    env_file = BASE_DIR / ".env"
+    if env_file.is_file():
+        try:
+            with open(env_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, val = line.split("=", 1)
+                    key = key.strip()
+                    val = val.strip().strip("'\"")
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+        except Exception:
+            pass
+
+
+load_env_file()
+
+
 class Settings(BaseModel):
     """Application configuration schema."""
     
     # Application Info
-    APP_NAME: str = Field(default="Bitmail Enterprise Mass Email & Storage Platform")
-    APP_ENV: str = Field(default="development")
-    DEBUG: bool = Field(default=True)
-    LOG_LEVEL: str = Field(default="INFO")
+    APP_NAME: str = Field(
+        default=os.getenv("APP_NAME", "Bitmail Enterprise Mass Email & Storage Platform")
+    )
+    APP_ENV: str = Field(
+        default=os.getenv("APP_ENV", "development")
+    )
+    DEBUG: bool = Field(
+        default=os.getenv("DEBUG", "true").strip().lower() in ("true", "1", "yes")
+    )
+    LOG_LEVEL: str = Field(
+        default=os.getenv("LOG_LEVEL", "INFO")
+    )
     
     # Server & Tracking
-    HOST: str = Field(default="0.0.0.0")
-    PORT: int = Field(default=8000)
+    HOST: str = Field(
+        default=os.getenv("HOST", "0.0.0.0")
+    )
+    PORT: int = Field(
+        default=int(os.getenv("PORT", "8000"))
+    )
     TRACKING_BASE_URL: str = Field(
         default=os.getenv("TRACKING_BASE_URL", "http://localhost:8000")
     )
