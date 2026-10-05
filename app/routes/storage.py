@@ -340,7 +340,7 @@ async def render_stored_email_html(email_id: str):
             return HTMLResponse(
                 content=html_content,
                 headers={
-                    "Content-Security-Policy": "default-src 'self' 'unsafe-inline' https: data:;",
+                    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data: http:; font-src https: data:; frame-ancestors 'self'",
                     "X-Content-Type-Options": "nosniff"
                 }
             )

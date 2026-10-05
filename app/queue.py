@@ -430,7 +430,7 @@ class CampaignQueueManager:
             host=cfg.get("host") or "",
             port=cfg.get("port") or 587,
             username=cfg.get("username"),
-            password=cfg.get("password"),
+            password=(__import__("app.auth", fromlist=["decrypt_credential"]).decrypt_credential(cfg.get("password") or "") if cfg.get("password") else None),
             use_tls=bool(cfg.get("use_tls", 1)),
             use_ssl=bool(cfg.get("use_ssl", 0)),
             rate_limit_per_second=cfg.get("rate_limit_per_second") or 25,

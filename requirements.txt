@@ -19,3 +19,6 @@ qrcode>=7.4
 
 # Tests
 httpx>=0.27                  # required by fastapi.testclient
+
+# Security & Credential Encryption
+cryptography>=40.0

@@ -5,6 +5,7 @@ provides mobile 1-tap approval interface, and broadcasts instant WebSocket appro
 """
 
 import base64
+import hmac
 import io
 import json
 import logging
@@ -16,10 +17,11 @@ from typing import Any, Dict, Optional
 
 import qrcode
 import qrcode.image.svg
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from app.auth import get_current_user
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.websocket import emit_event
@@ -54,7 +56,7 @@ class CreateScanSessionRequest(BaseModel):
 
 class ApproveScanSessionRequest(BaseModel):
     token: str = Field(..., description="Scan session token")
-    email: str = Field(..., description="User / Sender email address to authenticate")
+    email: Optional[str] = Field(default=None, description="User / Sender email address to authenticate")
     name: Optional[str] = Field(default=None, description="User full name")
 
 
@@ -108,9 +110,11 @@ async def create_scan_session(request: Request, payload: Optional[CreateScanSess
 
 
 @router.get("/session/{session_id}/status")
-async def get_scan_session_status(session_id: str):
+async def get_scan_session_status(session_id: str, token: Optional[str] = Query(default=None)):
     """
     Check the current status of a scan session (pending, approved, rejected, expired).
+    Only returns auth_token and user info if session is approved and the caller provides
+    the matching secret scan session token.
     """
     now_str = utc_now_iso()
     async with get_db() as db:
@@ -127,28 +131,36 @@ async def get_scan_session_status(session_id: str):
             await db.commit()
         sess["status"] = "expired"
 
+    can_disclose_token = False
+    if sess["status"] == "approved" and token:
+        if hmac.compare_digest(token.strip(), sess["token"]):
+            can_disclose_token = True
+
     return {
         "session_id": sess["id"],
         "status": sess["status"],
-        "user_email": sess["user_email"],
-        "user_name": sess["user_name"],
-        "auth_token": sess["auth_token"] if sess["status"] == "approved" else None,
+        "user_email": sess["user_email"] if can_disclose_token else None,
+        "user_name": sess["user_name"] if can_disclose_token else None,
+        "auth_token": sess["auth_token"] if can_disclose_token else None,
         "is_approved": (sess["status"] == "approved"),
         "expires_at": sess["expires_at"]
     }
 
 
 @router.post("/approve")
-async def approve_scan_session(payload: ApproveScanSessionRequest):
+async def approve_scan_session(
+    payload: ApproveScanSessionRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     """
-    Mobile endpoint: Approve a scan session and bind user email / auth token.
-    Broadcasts live WebSocket notification to immediately unlock desktop browser.
+    Mobile endpoint: Approve a scan session and bind authenticated user email / auth token.
+    Requires caller to be an authenticated user.
+    Broadcasts live WebSocket notification (without sensitive token) to immediately unlock desktop browser.
     """
-    clean_email = payload.email.strip().lower()
-    if not clean_email or "@" not in clean_email:
-        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
+    user_email = current_user.get("email", "").strip().lower()
+    user_name = current_user.get("name") or user_email.split("@")[0].capitalize()
+    user_id = current_user.get("id")
 
-    user_name = payload.name or clean_email.split("@")[0].capitalize()
     auth_token = f"auth_tok_{secrets.token_hex(20)}"
     now = utc_now_iso()
 
@@ -166,22 +178,6 @@ async def approve_scan_session(payload: ApproveScanSessionRequest):
             await db.execute("UPDATE scan_sessions SET status = 'expired', updated_at = ? WHERE id = ?", (now, sess["id"]))
             await db.commit()
             raise HTTPException(status_code=400, detail="This scan QR code has expired. Please refresh the QR code.")
-
-        # Check if user exists in users table, or auto-provision
-        user_id = None
-        async with db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,)) as u_cur:
-            u_row = await u_cur.fetchone()
-            if u_row:
-                user_id = u_row["id"]
-
-        if not user_id:
-            from app.auth import hash_password
-            user_id = f"usr_{uuid.uuid4().hex[:12]}"
-            random_hash = hash_password(secrets.token_urlsafe(20))
-            await db.execute("""
-                INSERT INTO users (id, email, username, password_hash, name, role, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?)
-            """, (user_id, clean_email, clean_email.split("@")[0], random_hash, user_name, now, now))
 
         # Create persistent session for auth_token
         sess_expires_dt = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_EXPIRE_DAYS)
@@ -201,102 +197,23 @@ async def approve_scan_session(payload: ApproveScanSessionRequest):
                 auth_token = ?,
                 updated_at = ?
             WHERE id = ?
-        """, (clean_email, user_name, auth_token, now, sess["id"]))
-
-        # Also ensure this user exists in subscribers directory as an admin/sender
-        await db.execute("""
-            INSERT OR IGNORE INTO subscribers (
-                id, email, first_name, last_name, status, tags, custom_fields, created_at, updated_at
-            ) VALUES (?, ?, ?, '', 'active', '["authenticated-user", "admin"]', '{}', ?, ?)
-        """, (f"sub_{uuid.uuid4().hex[:10]}", clean_email, user_name, now, now))
+        """, (user_email, user_name, auth_token, now, sess["id"]))
 
         await db.commit()
 
-    # Broadcast instant WebSocket unlock to desktop dashboard
+    # Broadcast instant WebSocket unlock to desktop dashboard (omit auth_token to avoid broadcast sniffing)
     await emit_event("scan_auth_approved", {
         "session_id": sess["id"],
-        "email": clean_email,
+        "email": user_email,
         "name": user_name,
-        "auth_token": auth_token,
         "timestamp": now
     })
 
     return {
         "success": True,
         "session_id": sess["id"],
-        "message": f"Successfully authorized login for {clean_email}!",
-        "email": clean_email,
-        "name": user_name,
-        "auth_token": auth_token
+        "message": f"Successfully authorized login for {user_email}!",
+        "email": user_email,
+        "name": user_name
     }
 
-
-@router.post("/simulate-approval/{session_id}")
-async def simulate_scan_approval(session_id: str, email: Optional[str] = None):
-    """
-    1-Click test simulation: approves the scan session immediately on the server
-    without needing a physical mobile phone camera.
-    """
-    user_email = (email or "admin@bitmail.com").strip().lower()
-    user_name = "Bitmail Admin" if "@bitmail" in user_email or "@bitnade" in user_email else user_email.split("@")[0].capitalize()
-    auth_token = f"auth_tok_sim_{secrets.token_hex(16)}"
-    now = utc_now_iso()
-
-    async with get_db() as db:
-        async with db.execute("SELECT * FROM scan_sessions WHERE id = ?", (session_id,)) as cur:
-            row = await cur.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Scan session not found")
-            sess = dict(row)
-
-        user_id = None
-        async with db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (user_email,)) as u_cur:
-            u_row = await u_cur.fetchone()
-            if u_row:
-                user_id = u_row["id"]
-
-        if not user_id:
-            from app.auth import hash_password
-            user_id = f"usr_{uuid.uuid4().hex[:12]}"
-            random_hash = hash_password(secrets.token_urlsafe(20))
-            await db.execute("""
-                INSERT INTO users (id, email, username, password_hash, name, role, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?)
-            """, (user_id, user_email, user_email.split("@")[0], random_hash, user_name, now, now))
-
-        sess_expires_dt = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_EXPIRE_DAYS)
-        sess_expires_str = sess_expires_dt.strftime("%Y-%m-%d %H:%M:%S")
-        await db.execute("""
-            INSERT OR REPLACE INTO user_sessions (
-                token, user_id, expires_at, created_at, last_seen_at, user_agent, ip_address
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (auth_token, user_id, sess_expires_str, now, now, "Simulated QR Scan", "127.0.0.1"))
-
-        await db.execute("""
-            UPDATE scan_sessions
-            SET status = 'approved',
-                user_email = ?,
-                user_name = ?,
-                auth_token = ?,
-                updated_at = ?
-            WHERE id = ?
-        """, (user_email, user_name, auth_token, now, session_id))
-        await db.commit()
-
-    # Broadcast instant WebSocket unlock
-    await emit_event("scan_auth_approved", {
-        "session_id": session_id,
-        "email": user_email,
-        "name": user_name,
-        "auth_token": auth_token,
-        "timestamp": now
-    })
-
-    return {
-        "success": True,
-        "session_id": session_id,
-        "email": user_email,
-        "name": user_name,
-        "auth_token": auth_token,
-        "message": f"Simulated instant mobile scan approval for {user_email}"
-    }

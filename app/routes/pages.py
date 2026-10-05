@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.auth import get_current_user_optional, get_user_by_token
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.websocket import ws_manager
@@ -30,6 +31,9 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 async def get_initial_page_context(request: Request, active_tab: str = "dashboard") -> dict:
     """Fetch live data context from SQLite to pre-render dynamic Jinja2 view."""
+    current_user = await get_current_user_optional(request)
+    is_authenticated = bool(current_user)
+
     stats = {
         "total_sent": 0,
         "delivery_rate": 0.0,
@@ -43,6 +47,23 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
     smtp_configs = []
     subscriber_lists = []
     template_presets = []
+
+    # SEC-LEAK-002: Do not pre-render sensitive records for unauthenticated visitors
+    if not is_authenticated:
+        return {
+            "request": request,
+            "active_tab": active_tab,
+            "stats": stats,
+            "recent_vault_emails": recent_vault_emails,
+            "recent_campaigns": recent_campaigns,
+            "smtp_configs": smtp_configs,
+            "default_relay": None,
+            "subscriber_lists": subscriber_lists,
+            "template_presets": template_presets,
+            "app_env": settings.APP_ENV,
+            "current_user": None,
+            "is_authenticated": False,
+        }
 
     try:
         async with get_db() as db:
@@ -118,6 +139,8 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
         "subscriber_lists": subscriber_lists,
         "template_presets": template_presets,
         "app_env": settings.APP_ENV,
+        "current_user": current_user,
+        "is_authenticated": True,
     }
 
 
@@ -175,6 +198,13 @@ async def page_smtp(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/logs", response_class=HTMLResponse)
+async def page_logs(request: Request):
+    """Dynamic System & Dispatch Logs Page."""
+    ctx = await get_initial_page_context(request, active_tab="logs")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
 @router.get("/auth/scan-approve/{token}", response_class=HTMLResponse)
 async def page_scan_approve(request: Request, token: str):
     """Mobile 1-Tap QR Scan Approval Page."""
@@ -196,12 +226,15 @@ async def page_scan_approve(request: Request, token: str):
     if not session_data:
         is_expired = True
 
+    current_user = await get_current_user_optional(request)
+
     ctx = {
         "request": request,
         "token": token,
         "session": session_data,
         "is_expired": is_expired,
-        "is_already_approved": is_already_approved
+        "is_already_approved": is_already_approved,
+        "current_user": current_user,
     }
     return templates.TemplateResponse(request=request, name="scan_approve.html", context=ctx)
 
@@ -215,7 +248,18 @@ async def websocket_live_telemetry(websocket: WebSocket):
     """
     Persistent WebSocket endpoint for live broadcast streaming,
     open/click notifications, and storage vault updates.
+    SEC-LEAK-001: Requires valid authentication token via cookie or query param.
     """
+    token = (
+        websocket.cookies.get("bitmail_token") or
+        websocket.query_params.get("token") or
+        websocket.query_params.get("auth_token")
+    )
+    user = await get_user_by_token(token) if token else None
+    if not user:
+        await websocket.close(code=1008)  # WS_1008_POLICY_VIOLATION
+        return
+
     await ws_manager.connect(websocket)
     try:
         # Send initial live connection handshake

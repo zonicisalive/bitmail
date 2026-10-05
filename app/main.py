@@ -22,6 +22,7 @@ from app.routes import (
     bulk,
     campaigns,
     dashboard,
+    logs,
     pages,
     smtp,
     storage,
@@ -31,19 +32,25 @@ from app.routes import (
     transactional,
 )
 
+from app.logging_service import setup_logging_interceptor
+from app.scheduler import campaign_scheduler
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Application lifecycle management:
-    - Startup: Ensures storage directories exist and initializes SQLite DB schema.
-    - Shutdown: Performs graceful termination of background workers.
+    - Startup: Ensures storage directories exist, initializes DB, and starts campaign scheduler.
+    - Shutdown: Performs graceful termination of background scheduler and workers.
     """
     # Startup
+    setup_logging_interceptor()
     settings.ensure_directories()
     await init_db()
+    await campaign_scheduler.start()
     yield
     # Shutdown
+    await campaign_scheduler.stop()
 
 
 app = FastAPI(
@@ -80,6 +87,7 @@ app.include_router(templates.router, dependencies=[Depends(get_current_user)])
 app.include_router(campaigns.router, dependencies=[Depends(get_current_user)])
 app.include_router(storage.router, dependencies=[Depends(get_current_user)])
 app.include_router(smtp.router, dependencies=[Depends(get_current_user)])
+app.include_router(logs.router, dependencies=[Depends(get_current_user)])
 app.include_router(transactional.router, dependencies=[Depends(get_current_user)])
 app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 

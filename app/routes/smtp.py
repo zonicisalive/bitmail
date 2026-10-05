@@ -12,6 +12,7 @@ import aiosmtplib
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.auth import decrypt_credential, encrypt_credential
 from app.db import get_db, utc_now_iso
 from app.models import (
     SMTPConfigCreate,
@@ -77,7 +78,7 @@ async def create_smtp_config(payload: SMTPConfigCreate):
             payload.host.strip(),
             payload.port,
             payload.username,
-            payload.password or "",
+            encrypt_credential(payload.password) if payload.password else "",
             1 if payload.use_tls else 0,
             1 if payload.use_ssl else 0,
             payload.rate_limit_per_second,
@@ -129,7 +130,7 @@ async def test_smtp_connection(payload: SMTPTestRequest):
                     host = host or row["host"]
                     port = port or row["port"]
                     username = username or row["username"]
-                    password = password or row["password"]
+                    password = password or decrypt_credential(row["password"] or "")
                     if payload.use_tls is None:
                         use_tls = bool(row["use_tls"])
                     if payload.use_ssl is None:
@@ -347,7 +348,7 @@ async def connect_gmail_account(payload: GmailConnectPayload):
             smtp_id,
             profile_name,
             clean_email,
-            clean_pass,
+            encrypt_credential(clean_pass),
             1 if payload.is_default else 0,
             now,
             now
@@ -491,7 +492,7 @@ async def update_smtp_config(smtp_id: str, payload: SMTPConfigUpdate):
         new_host = payload.host.strip() if payload.host is not None else cfg["host"]
         new_port = payload.port if payload.port is not None else cfg["port"]
         new_user = payload.username if payload.username is not None else cfg["username"]
-        new_pass = payload.password if payload.password is not None else cfg["password"]
+        new_pass = encrypt_credential(payload.password) if (payload.password is not None and payload.password != "") else (payload.password if payload.password == "" else cfg["password"])
         new_tls = (1 if payload.use_tls else 0) if payload.use_tls is not None else cfg["use_tls"]
         new_ssl = (1 if payload.use_ssl else 0) if payload.use_ssl is not None else cfg["use_ssl"]
         new_rate = payload.rate_limit_per_second if payload.rate_limit_per_second is not None else cfg["rate_limit_per_second"]

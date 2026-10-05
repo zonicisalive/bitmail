@@ -85,7 +85,8 @@ def interpolate_template(template_str: str, variables: Dict[str, Any]) -> str:
         return ""
 
     try:
-        jinja_env = jinja2.Environment(
+        from jinja2.sandbox import SandboxedEnvironment
+        jinja_env = SandboxedEnvironment(
             autoescape=False,
             undefined=jinja2.Undefined
         )
@@ -251,23 +252,25 @@ def is_sandbox_config(smtp_config: Optional[Dict[str, Any]]) -> bool:
 
 
 async def get_smtp_config_by_id(smtp_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """Retrieve SMTP configuration dictionary from SQLite."""
+    """Retrieve SMTP configuration dictionary from SQLite with decrypted password."""
+    from app.auth import decrypt_credential
     async with get_db() as db:
+        row = None
         if smtp_id:
             async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (smtp_id,)) as cursor:
                 row = await cursor.fetchone()
-                if row:
-                    return dict(row)
+        if not row:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 LIMIT 1") as cursor:
+                row = await cursor.fetchone()
+        if not row:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 LIMIT 1") as cursor:
+                row = await cursor.fetchone()
 
-        async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 LIMIT 1") as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-
-        async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 LIMIT 1") as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
+        if row:
+            cfg = dict(row)
+            if cfg.get("password"):
+                cfg["password"] = decrypt_credential(cfg["password"])
+            return cfg
 
     return None
 

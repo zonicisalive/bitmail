@@ -25,6 +25,7 @@ class SubscriberStatus(str, Enum):
 class CampaignStatus(str, Enum):
     DRAFT = "draft"
     SCHEDULED = "scheduled"
+    QUEUED = "queued"
     SENDING = "sending"
     RUNNING = "running"
     PAUSED = "paused"

@@ -115,61 +115,89 @@ async def track_email_click(
     """
     Click Tracker: records CLICK event with target destination URL,
     increments click metrics, and redirects user via HTTP 307.
+    SEC-REDIR-001: Validates destination URL to prevent unvalidated open redirection.
     """
-    target_url = urllib.parse.unquote(url)
+    target_url = urllib.parse.unquote(url).strip()
+    if not (target_url.startswith("http://") or target_url.startswith("https://")):
+        target_url = "https://" + target_url.lstrip("/")
+
+    parsed_target = urllib.parse.urlparse(target_url)
+    if parsed_target.scheme not in ("http", "https") or not parsed_target.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid destination URL scheme. Only HTTP and HTTPS are permitted."
+        )
+
     client_ip = request.client.host if request.client else "127.0.0.1"
     now = utc_now_iso()
 
     async with get_db() as db:
-        async with db.execute("SELECT id, campaign_id, click_count FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute(
+            "SELECT id, campaign_id, click_count, rendered_html, body_html, body_text FROM sent_emails WHERE id = ?",
+            (email_id,)
+        ) as cursor:
             email_row = await cursor.fetchone()
 
-        if email_row:
-            campaign_id = email_row["campaign_id"]
-            current_click_cnt = email_row["click_count"] or 0
-            is_first_click = (current_click_cnt == 0)
+        if not email_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Email tracking record not found."
+            )
 
-            event_id = f"evt_{uuid.uuid4().hex[:12]}"
-            await db.execute("""
-                INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
-                VALUES (?, ?, ?, 'click', ?, ?, ?, ?)
-            """, (
-                event_id,
-                email_id,
-                campaign_id,
-                client_ip,
-                user_agent,
-                json.dumps({"target_url": target_url, "ip": client_ip, "user_agent": user_agent}),
-                now
-            ))
+        # Validate that the destination URL was part of the dispatched email or matches tracking host
+        tracking_host = urllib.parse.urlparse(settings.TRACKING_BASE_URL).hostname or "localhost"
+        is_same_host = (parsed_target.hostname == tracking_host or parsed_target.hostname in ("127.0.0.1", "localhost"))
+        email_content = (email_row["rendered_html"] or "") + (email_row["body_html"] or "") + (email_row["body_text"] or "")
+        url_in_email = (target_url in email_content or url in email_content or urllib.parse.quote(target_url, safe="") in email_content)
 
+        if not (is_same_host or url_in_email):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Untrusted or unverified destination redirect URL."
+            )
+
+        campaign_id = email_row["campaign_id"]
+        current_click_cnt = email_row["click_count"] or 0
+        is_first_click = (current_click_cnt == 0)
+
+        event_id = f"evt_{uuid.uuid4().hex[:12]}"
+        await db.execute("""
+            INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
+            VALUES (?, ?, ?, 'click', ?, ?, ?, ?)
+        """, (
+            event_id,
+            email_id,
+            campaign_id,
+            client_ip,
+            user_agent,
+            json.dumps({"target_url": target_url, "ip": client_ip, "user_agent": user_agent}),
+            now
+        ))
+
+        await db.execute("""
+            UPDATE sent_emails
+            SET click_count = click_count + 1
+            WHERE id = ?
+        """, (email_id,))
+
+        if campaign_id and is_first_click:
             await db.execute("""
-                UPDATE sent_emails
-                SET click_count = click_count + 1
+                UPDATE campaigns
+                SET click_count = click_count + 1,
+                    updated_at = ?
                 WHERE id = ?
-            """, (email_id,))
+            """, (now, campaign_id))
 
-            if campaign_id and is_first_click:
-                await db.execute("""
-                    UPDATE campaigns
-                    SET click_count = click_count + 1,
-                        updated_at = ?
-                    WHERE id = ?
-                """, (now, campaign_id))
+        await db.commit()
 
-            await db.commit()
-
-            # Broadcast live dynamic click notification
-            await emit_event("email_clicked", {
-                "email_id": email_id,
-                "campaign_id": campaign_id,
-                "target_url": target_url,
-                "ip": client_ip,
-                "timestamp": now
-            })
-
-    if not (target_url.startswith("http://") or target_url.startswith("https://")):
-        target_url = "https://" + target_url.lstrip("/")
+        # Broadcast live dynamic click notification
+        await emit_event("email_clicked", {
+            "email_id": email_id,
+            "campaign_id": campaign_id,
+            "target_url": target_url,
+            "ip": client_ip,
+            "timestamp": now
+        })
 
     return RedirectResponse(url=target_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 

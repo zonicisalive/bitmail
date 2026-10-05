@@ -67,7 +67,7 @@ class Settings(BaseModel):
     
     # Security & Tokens
     SECRET_KEY: str = Field(
-        default=os.getenv("SECRET_KEY", "bitmail-vault-secret-key-production-2026")
+        default=os.getenv("SECRET_KEY", "insecure-dev-only-secret-key-change-in-production")
     )
     TRACKING_TOKEN_SALT: str = Field(default="bitmail-tracking-salt")
     UNSUBSCRIBE_TOKEN_SALT: str = Field(default="bitmail-unsubscribe-salt")
@@ -94,8 +94,39 @@ class Settings(BaseModel):
         self.EML_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
         self.EML_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
 
+    def validate_security_config(self) -> None:
+        """Enforce strict secret hygiene in production and warn in development."""
+        import logging
+        log = logging.getLogger("nexusmail.security")
+        is_prod = (self.APP_ENV or "").strip().lower() == "production"
+
+        INSECURE_SECRETS = (
+            "insecure-dev-only-secret-key-change-in-production",
+            "bitmail-vault-secret-key-production-2026",
+        )
+
+        if is_prod:
+            if not os.getenv("SECRET_KEY") or self.SECRET_KEY in INSECURE_SECRETS:
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: SECRET_KEY must be explicitly set to a strong secret in production."
+                )
+            if self.DEFAULT_ADMIN_PASSWORD == "admin123":
+                raise RuntimeError(
+                    "CRITICAL SECURITY CONFIGURATION ERROR: DEFAULT_ADMIN_PASSWORD cannot be 'admin123' in production."
+                )
+        else:
+            if self.SECRET_KEY in INSECURE_SECRETS:
+                log.warning(
+                    "[SECURITY WARNING] Using static fallback SECRET_KEY. Set SECRET_KEY environment variable for non-development deployments."
+                )
+            if self.DEFAULT_ADMIN_PASSWORD == "admin123":
+                log.warning(
+                    "[SECURITY WARNING] Default admin password 'admin123' is active. Set DEFAULT_ADMIN_PASSWORD environment variable to secure the installation."
+                )
+
 
 # Global settings singleton
 settings = Settings()
 settings.ensure_directories()
+settings.validate_security_config()
 

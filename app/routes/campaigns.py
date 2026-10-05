@@ -20,6 +20,7 @@ from app.models import (
     CampaignUpdate,
 )
 from app.queue import campaign_queue
+from app.scheduler import parse_and_normalize_schedule_time
 from app.sender import send_single_email
 
 router = APIRouter(prefix="/api/campaigns", tags=["Campaigns"])
@@ -157,7 +158,14 @@ async def create_campaign(payload: CampaignCreatePayload):
                 c_row = await cursor.fetchone()
                 initial_recipients = c_row[0] if c_row else 0
 
-        initial_status = CampaignStatus.SCHEDULED.value if payload.scheduled_at else CampaignStatus.DRAFT.value
+        normalized_sched = None
+        if payload.scheduled_at:
+            try:
+                normalized_sched = parse_and_normalize_schedule_time(payload.scheduled_at)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+        initial_status = CampaignStatus.SCHEDULED.value if normalized_sched else CampaignStatus.DRAFT.value
 
         await db.execute("""
             INSERT INTO campaigns (
@@ -185,7 +193,7 @@ async def create_campaign(payload: CampaignCreatePayload):
             payload.custom_html,
             payload.custom_text,
             initial_status,
-            payload.scheduled_at,
+            normalized_sched,
             initial_recipients,
             now,
             now
@@ -208,7 +216,7 @@ async def create_campaign(payload: CampaignCreatePayload):
         custom_html=payload.custom_html,
         custom_text=payload.custom_text,
         status=CampaignStatus(initial_status),
-        scheduled_at=payload.scheduled_at,
+        scheduled_at=normalized_sched,
         started_at=None,
         completed_at=None,
         total_recipients=initial_recipients,
@@ -222,6 +230,60 @@ async def create_campaign(payload: CampaignCreatePayload):
         created_at=now,
         updated_at=now
     )
+
+
+@router.get("/scheduled", response_model=List[CampaignResponse])
+async def list_scheduled_campaigns():
+    """
+    List all upcoming scheduled campaigns ordered by scheduled_at ascending.
+    """
+    async with get_db() as db:
+        async with db.execute("""
+            SELECT * FROM campaigns
+            WHERE status = 'scheduled'
+            ORDER BY scheduled_at ASC
+        """) as cur:
+            rows = await cur.fetchall()
+
+    results = []
+    for r in rows:
+        headers = {}
+        try:
+            headers = json.loads(r["headers"] or "{}")
+        except Exception:
+            pass
+
+        results.append(CampaignResponse(
+            id=r["id"],
+            name=r["name"],
+            subject=r["subject"],
+            template_id=r["template_id"],
+            list_id=r["list_id"],
+            smtp_config_id=r["smtp_config_id"],
+            sender_name=r["sender_name"],
+            sender_email=r["sender_email"],
+            reply_to=r["reply_to"],
+            headers=headers,
+            track_opens=bool(r["track_opens"]),
+            track_clicks=bool(r["track_clicks"]),
+            custom_html=r["custom_html"],
+            custom_text=r["custom_text"],
+            status=CampaignStatus(r["status"]) if r["status"] in [s.value for s in CampaignStatus] else CampaignStatus.SCHEDULED,
+            scheduled_at=r["scheduled_at"],
+            started_at=r["started_at"],
+            completed_at=r["completed_at"],
+            total_recipients=r["total_recipients"],
+            sent_count=r["sent_count"],
+            delivered_count=r["delivered_count"],
+            failed_count=r["failed_count"],
+            open_count=r["open_count"],
+            click_count=r["click_count"],
+            unsubscribe_count=r["unsubscribe_count"],
+            bounce_count=r["bounce_count"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"]
+        ))
+    return results
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
@@ -505,6 +567,83 @@ async def cancel_campaign(campaign_id: str):
     return await campaign_queue.cancel_campaign(campaign_id)
 
 
+class ScheduleCampaignRequest(BaseModel):
+    scheduled_at: str = Field(..., description="Target ISO or formatted timestamp for scheduled dispatch")
+
+
+@router.post("/{campaign_id}/schedule")
+async def schedule_campaign(campaign_id: str, payload: ScheduleCampaignRequest):
+    """
+    Schedule or reschedule an existing campaign.
+    """
+    try:
+        normalized = parse_and_normalize_schedule_time(payload.scheduled_at)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    now = utc_now_iso()
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cur:
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Campaign not found.")
+            camp = dict(row)
+
+        if camp["status"] in ("sending", "completed"):
+            raise HTTPException(status_code=400, detail=f"Cannot schedule campaign with status '{camp['status']}'.")
+
+        await db.execute("""
+            UPDATE campaigns
+            SET status = 'scheduled',
+                scheduled_at = ?,
+                updated_at = ?
+            WHERE id = ?
+        """, (normalized, now, campaign_id))
+        await db.commit()
+
+    return {
+        "success": True,
+        "campaign_id": campaign_id,
+        "status": "scheduled",
+        "scheduled_at": normalized,
+        "message": f"Campaign successfully scheduled for {normalized} UTC."
+    }
+
+
+@router.post("/{campaign_id}/unschedule")
+async def unschedule_campaign(campaign_id: str):
+    """
+    Cancel scheduling and revert campaign status to draft.
+    """
+    now = utc_now_iso()
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cur:
+            row = await cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Campaign not found.")
+            camp = dict(row)
+
+        if camp["status"] != "scheduled":
+            raise HTTPException(status_code=400, detail=f"Campaign is not scheduled (current status: '{camp['status']}').")
+
+        await db.execute("""
+            UPDATE campaigns
+            SET status = 'draft',
+                scheduled_at = NULL,
+                updated_at = ?
+            WHERE id = ?
+        """, (now, campaign_id))
+        await db.commit()
+
+    return {
+        "success": True,
+        "campaign_id": campaign_id,
+        "status": "draft",
+        "scheduled_at": None,
+        "message": "Campaign schedule cancelled. Status reverted to draft."
+    }
+
+
 # ======================================================================
 # Quick Customer Mass Broadcast Endpoint
 # ======================================================================
@@ -570,6 +709,7 @@ class QuickBroadcastPayload(BaseModel):
     rate_limit_per_second: int = Field(default=25, description="Emails dispatched per second")
     track_opens: bool = Field(default=True, description="Inject open tracking beacon")
     track_clicks: bool = Field(default=True, description="Rewrite hyperlinks for click tracking")
+    scheduled_at: Optional[str] = Field(default=None, description="Target ISO timestamp for scheduled dispatch")
 
 
 @router.post("/quick-broadcast")
@@ -701,7 +841,7 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                 host=host,
                 port=smtp_dict.get("port", 587),
                 username=smtp_dict.get("username"),
-                password=smtp_dict.get("password"),
+                password=(__import__("app.auth", fromlist=["decrypt_credential"]).decrypt_credential(smtp_dict.get("password") or "") if smtp_dict.get("password") else None),
                 use_tls=bool(smtp_dict.get("use_tls", 1)),
                 use_ssl=bool(smtp_dict.get("use_ssl", 0)),
                 is_sandbox=is_sand,
@@ -711,6 +851,13 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
     campaign_name = payload.name or f"Broadcast - {payload.subject[:35]} ({len(target_subscribers)} customers)"
     sender_name = payload.sender_name or settings.DEFAULT_SENDER_NAME
     sender_email = payload.sender_email or settings.DEFAULT_SENDER_EMAIL
+
+    normalized_sched = None
+    if payload.scheduled_at:
+        try:
+            normalized_sched = parse_and_normalize_schedule_time(payload.scheduled_at)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # 4. Create and persist campaign
     campaign = await campaign_queue.create_campaign(
@@ -726,7 +873,31 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
         recipients=target_subscribers
     )
 
-    # 5. Launch background execution worker
+    if normalized_sched:
+        # Schedule for automated future dispatch
+        now_ts = utc_now_iso()
+        async with get_db() as db:
+            await db.execute("""
+                UPDATE campaigns
+                SET status = 'scheduled',
+                    scheduled_at = ?,
+                    updated_at = ?
+                WHERE id = ?
+            """, (normalized_sched, now_ts, campaign.id))
+            await db.commit()
+
+        return {
+            "success": True,
+            "campaign_id": campaign.id,
+            "name": campaign_name,
+            "total_recipients": len(target_subscribers),
+            "status": "scheduled",
+            "scheduled_at": normalized_sched,
+            "sender": f"{sender_name} <{sender_email}>",
+            "message": f"Broadcast successfully scheduled for {normalized_sched} UTC."
+        }
+
+    # 5. Launch background execution worker immediately
     worker = await campaign_queue.start_campaign(campaign.id, recipients=target_subscribers)
 
     return {

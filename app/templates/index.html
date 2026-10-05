@@ -101,6 +101,12 @@
                     <span>Mail Servers</span>
                 </a>
 
+                <a href="/logs" data-tab="logs" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="scroll-text" class="w-4 h-4 text-emerald-400"></i>
+                    <span>System Logs</span>
+                    <span id="nav-logs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">0</span>
+                </a>
+
                 <a href="/docs" target="_blank" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="terminal" class="w-4 h-4 text-purple-400"></i>
                     <span>Swagger API Docs ↗</span>
@@ -393,7 +399,26 @@
     <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
         Sent with Bitmail Enterprise.
     </p>
-</div></textarea>
+                                </div>
+
+                                <!-- Delivery Schedule Selector -->
+                                <div class="pt-4 border-t border-white/5 space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                                            <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> Dispatch Schedule:
+                                        </label>
+                                        <div class="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-white/5 text-[11px] font-medium">
+                                            <button type="button" id="btn-timing-now" onclick="setBroadcastTimingMode('now')" class="px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer">Send Now</button>
+                                            <button type="button" id="btn-timing-schedule" onclick="setBroadcastTimingMode('schedule')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer">Schedule for Later</button>
+                                        </div>
+                                    </div>
+                                    <div id="broadcast-schedule-wrap" class="hidden p-3 rounded-xl bg-slate-900/90 border border-indigo-500/20 space-y-2">
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                            <span class="text-slate-400">Select Date & Time (Local Time):</span>
+                                            <input type="datetime-local" id="broadcast-schedule-datetime" class="px-3 py-1.5 bg-slate-950 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                                        </div>
+                                        <p class="text-[11px] text-slate-500">The automated campaign scheduler will dispatch this broadcast when the scheduled time arrives.</p>
+                                    </div>
                                 </div>
 
                                 <!-- Sending Controls & Trigger -->
@@ -965,6 +990,149 @@
                 <!-- SMTP Profiles List -->
                 <div id="smtp-profiles-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 8. System & Dispatch Logs Panel                                            -->
+            <!-- ========================================================================== -->
+            <div id="panel-logs" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">System & Dispatch Logs</h1>
+                            <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                                <span id="logs-stream-status">LIVE STREAM</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Real-time unified audit and dispatch telemetry terminal across workers, scheduler, SMTP relays, and security.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button onclick="toggleLogsStreamPause()" id="btn-logs-pause-stream" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="pause" id="logs-pause-icon" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span id="logs-pause-text">Pause Stream</span>
+                        </button>
+                        <button onclick="exportLogsFile('text')" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer" title="Download raw .log file">
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-indigo-400"></i> Export .log
+                        </button>
+                        <button onclick="clearSystemLogsBuffer()" class="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/20 transition-colors flex items-center gap-1.5 cursor-pointer" title="Clear console buffer">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Logs
+                        </button>
+                        <button onclick="fetchLogs()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 transition-colors cursor-pointer" title="Reload logs">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- KPI Metric Summary Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                            <i data-lucide="scroll-text" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Total Recorded</div>
+                            <div class="text-xl font-bold text-white font-mono mt-0.5" id="logs-kpi-total">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                            <i data-lucide="alert-circle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Errors & Critical</div>
+                            <div class="text-xl font-bold text-rose-400 font-mono mt-0.5" id="logs-kpi-errors">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Warnings</div>
+                            <div class="text-xl font-bold text-amber-400 font-mono mt-0.5" id="logs-kpi-warnings">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                            <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Info & Dispatches</div>
+                            <div class="text-xl font-bold text-emerald-400 font-mono mt-0.5" id="logs-kpi-info">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Bar & Control Toolbar -->
+                <div class="glass-panel p-3.5 rounded-2xl border border-white/10 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5 flex-1 min-w-[240px]">
+                        <div class="relative flex-1">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            <input type="text" id="logs-search-input" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2.5 flex-wrap">
+                        <div class="flex items-center gap-1.5">
+                            <label class="text-xs text-slate-400">Level:</label>
+                            <select id="logs-level-filter" onchange="handleLogsFilterChange()" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="all">All Levels</option>
+                                <option value="error">Errors Only</option>
+                                <option value="warning">Warnings Only</option>
+                                <option value="info">Info Only</option>
+                                <option value="debug">Debug Only</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-1.5">
+                            <label class="text-xs text-slate-400">Source:</label>
+                            <select id="logs-source-filter" onchange="handleLogsFilterChange()" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="all">All Sources</option>
+                                <option value="queue">Queue & Worker</option>
+                                <option value="scheduler">Scheduler</option>
+                                <option value="smtp">SMTP Relay</option>
+                                <option value="auth">Auth & Security</option>
+                                <option value="storage">Storage Vault</option>
+                                <option value="tracking">Email Tracking</option>
+                                <option value="system">System Core</option>
+                            </select>
+                        </div>
+
+                        <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer pl-2 border-l border-white/10 select-none">
+                            <input type="checkbox" id="logs-auto-scroll" checked class="rounded bg-slate-900 border-white/20 text-indigo-600 focus:ring-0">
+                            <span>Auto-Scroll</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Logs Terminal Viewer -->
+                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl bg-slate-950/90 flex flex-col">
+                    <!-- Console Header Bar -->
+                    <div class="px-4 py-2.5 bg-slate-900/90 border-b border-white/5 flex items-center justify-between text-xs text-slate-400">
+                        <div class="flex items-center gap-2 font-mono">
+                            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                            <span class="ml-2 text-[11px] text-slate-400 font-mono">bitmail-telemetry.log</span>
+                        </div>
+                        <div class="flex items-center gap-3 text-[11px]">
+                            <span id="logs-visible-count">Showing 0 events</span>
+                            <button onclick="emitDiagnosticTestLog()" class="hover:text-white text-indigo-400 transition-colors flex items-center gap-1 font-semibold cursor-pointer" title="Emit diagnostic test entry">
+                                <i data-lucide="zap" class="w-3 h-3"></i> Test Event
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Terminal Scrollable Stream Area -->
+                    <div id="logs-container" class="p-4 font-mono text-xs overflow-y-auto space-y-1.5 min-h-[420px] max-h-[640px] select-text">
+                        <div class="text-center py-16 text-slate-500 text-xs font-mono">
+                            <i data-lucide="terminal" class="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60"></i>
+                            Initializing real-time telemetry stream...
+                        </div>
+                    </div>
                 </div>
             </div>
 

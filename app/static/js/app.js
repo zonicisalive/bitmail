@@ -72,6 +72,7 @@ const App = {
     activeBroadcast: null,
     broadcastPollInterval: null,
     audienceMode: 'paste',
+    broadcastTimingMode: 'now',
     chartInstance: null,
     ws: null,
     wsReconnectTimeout: null,
@@ -81,7 +82,10 @@ const App = {
     editing: { subscriber: null, smtp: null, template: null },
     customPlaceholders: [],
     lastFocusedInput: null,
-    previewSource: 'broadcast'
+    previewSource: 'broadcast',
+    logs: [],
+    logsStreamPaused: false,
+    logsFilterDebounce: null
 };
 
 // ==========================================================================
@@ -135,8 +139,9 @@ function setStreamState(state) {
 }
 
 function initWebSocket() {
+    const token = localStorage.getItem('bitmail_token');
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/live`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/live` + (token ? `?token=${encodeURIComponent(token)}` : '');
 
     const indicator = document.getElementById('ws-status-indicator');
     const label = document.getElementById('ws-status-label');
@@ -167,7 +172,12 @@ function initWebSocket() {
             }
         };
 
-        App.ws.onclose = () => {
+        App.ws.onclose = (evt) => {
+            if (evt && evt.code === 1008) {
+                console.warn('[WebSocket] Live stream closed: authentication required.');
+                setStreamState('connecting');
+                return;
+            }
             console.warn('[WebSocket] Live stream closed. Reconnecting in 3s...');
             if (indicator) {
                 indicator.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium shrink-0";
@@ -273,45 +283,82 @@ function handleWebSocketEvent(message) {
         fetchCampaigns();
         fetchVaultEmails();
 
+    } else if (type === 'campaign_scheduled_triggered') {
+        showToast(`⏰ Scheduled broadcast "${data.name || data.campaign_id}" is now dispatching!`, 'info');
+        fetchCampaigns();
+
+    } else if (type === 'system_log') {
+        handleIncomingSystemLog(data);
+
     } else if (type === 'scan_auth_approved') {
         // Direct QR Scan Approved in Real-Time!
-        if (data.auth_token) {
-            localStorage.setItem('bitmail_token', data.auth_token);
-            document.cookie = `bitmail_token=${data.auth_token}; path=/; max-age=2592000; SameSite=Lax`;
-        }
-        showToast(`✓ Authenticated via QR Scan as ${data.email}!`, 'success');
-        
-        App.currentUser = {
-            email: data.email,
-            name: data.name || data.email,
-            role: 'admin'
-        };
-        updateUserDisplay(App.currentUser);
+        (async () => {
+            let authToken = data.auth_token;
+            let email = data.email;
+            let name = data.name;
 
-        // Auto-update broadcast sender fields
-        const senderNameInput = document.getElementById('broadcast-sender-name');
-        const senderEmailInput = document.getElementById('broadcast-sender-email');
-        if (senderNameInput && data.name) senderNameInput.value = data.name;
-        if (senderEmailInput && data.email) senderEmailInput.value = data.email;
+            if (!authToken) {
+                const activeToken = (typeof currentScanSession !== 'undefined' ? currentScanSession?.token : null) || 
+                                    (typeof authScanSession !== 'undefined' ? authScanSession?.token : null);
+                const activeSessionId = data.session_id || 
+                                        (typeof currentScanSession !== 'undefined' ? currentScanSession?.session_id : null) || 
+                                        (typeof authScanSession !== 'undefined' ? authScanSession?.session_id : null);
+                if (activeToken && activeSessionId) {
+                    try {
+                        const statusRes = await fetch(`/api/auth/scan/session/${activeSessionId}/status?token=${encodeURIComponent(activeToken)}`);
+                        if (statusRes.ok) {
+                            const sData = await statusRes.json();
+                            if (sData.auth_token) {
+                                authToken = sData.auth_token;
+                                email = sData.user_email || email;
+                                name = sData.user_name || name;
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Failed to retrieve session token after approval:', err);
+                    }
+                }
+            }
 
-        // Update modal status
-        const statusText = document.getElementById('scan-status-text');
-        if (statusText) {
-            statusText.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(data.email)}!</span>`;
-        }
-        const statusTextAuth = document.getElementById('scan-status-text-auth');
-        if (statusTextAuth) {
-            statusTextAuth.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(data.email)}!</span>`;
-        }
+            if (authToken) {
+                localStorage.setItem('bitmail_token', authToken);
+                document.cookie = `bitmail_token=${authToken}; path=/; max-age=2592000; SameSite=Lax`;
+            }
+            showToast(`✓ Authenticated via QR Scan as ${email || 'User'}!`, 'success');
+            
+            App.currentUser = {
+                email: email,
+                name: name || email,
+                role: 'admin'
+            };
+            updateUserDisplay(App.currentUser);
 
-        // Close auth modals after brief confirmation
-        setTimeout(() => {
-            closeLoginModal();
-            closeModal('modal-scan-login');
-        }, 1000);
+            // Auto-update broadcast sender fields
+            const senderNameInput = document.getElementById('broadcast-sender-name');
+            const senderEmailInput = document.getElementById('broadcast-sender-email');
+            if (senderNameInput && name) senderNameInput.value = name;
+            if (senderEmailInput && email) senderEmailInput.value = email;
 
-        // Refresh all data now that we are authenticated
-        refreshAllData();
+            // Update modal status
+            const statusText = document.getElementById('scan-status-text');
+            if (statusText) {
+                statusText.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(email || '')}!</span>`;
+            }
+            const statusTextAuth = document.getElementById('scan-status-text-auth');
+            if (statusTextAuth) {
+                statusTextAuth.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(email || '')}!</span>`;
+            }
+
+            // Close auth modals after brief confirmation
+            setTimeout(() => {
+                closeLoginModal();
+                closeModal('modal-scan-login');
+            }, 1000);
+
+            // Refresh all data now that we are authenticated and connect WebSocket
+            initWebSocket();
+            refreshAllData();
+        })();
     }
 }
 
@@ -393,6 +440,7 @@ async function refreshAllData() {
         fetchSubscribers(),
         fetchTemplates(),
         fetchSmtpConfigs(),
+        fetchLogs(),
         fetchAvailablePlaceholders()
     ]);
     updateBroadcastEmailCount();
@@ -462,6 +510,8 @@ function switchTab(tabId, updateUrl = true) {
     } else if (tabId === 'broadcast') {
         populateBroadcastDropdowns();
         updateBroadcastEmailCount();
+    } else if (tabId === 'logs') {
+        fetchLogs();
     }
 
     initLucide();
@@ -763,6 +813,52 @@ function setBroadcastAudienceMode(mode) {
         modePaste.classList.add('hidden');
     }
     updateBroadcastEmailCount();
+}
+
+function setBroadcastTimingMode(mode) {
+    App.broadcastTimingMode = mode;
+    const btnNow = document.getElementById('btn-timing-now');
+    const btnSchedule = document.getElementById('btn-timing-schedule');
+    const wrap = document.getElementById('broadcast-schedule-wrap');
+    const input = document.getElementById('broadcast-schedule-datetime');
+    const launchBtn = document.getElementById('btn-launch-broadcast');
+
+    if (mode === 'now') {
+        if (btnNow) {
+            btnNow.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
+        }
+        if (btnSchedule) {
+            btnSchedule.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
+        }
+        if (wrap) {
+            wrap.classList.add('hidden');
+        }
+        if (launchBtn) {
+            launchBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i><span>Send to All Now</span>';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl btn-dark-green text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            initLucide();
+        }
+    } else {
+        if (btnSchedule) {
+            btnSchedule.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
+        }
+        if (btnNow) {
+            btnNow.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
+        }
+        if (wrap) {
+            wrap.classList.remove('hidden');
+        }
+        if (input && (!input.value || new Date(input.value).getTime() <= Date.now())) {
+            const nextHour = new Date(Date.now() + 3600000);
+            const tzOffset = nextHour.getTimezoneOffset() * 60000;
+            input.value = (new Date(nextHour.getTime() - tzOffset)).toISOString().slice(0, 16);
+        }
+        if (launchBtn) {
+            launchBtn.innerHTML = '<i data-lucide="clock" class="w-4 h-4"></i><span>Schedule Broadcast</span>';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            initLucide();
+        }
+    }
 }
 
 function parseEmailsFromString(text) {
@@ -1311,6 +1407,23 @@ async function launchQuickBroadcast() {
         track_clicks: trackClicks
     };
 
+    let scheduledIso = null;
+    const isScheduled = App.broadcastTimingMode === 'schedule';
+    if (isScheduled) {
+        const dtVal = document.getElementById('broadcast-schedule-datetime')?.value;
+        if (!dtVal) {
+            showToast('Please select a scheduled date and time.', 'warning');
+            return;
+        }
+        const parsedDate = new Date(dtVal);
+        if (isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+            showToast('Scheduled time must be in the future.', 'warning');
+            return;
+        }
+        scheduledIso = parsedDate.toISOString();
+        payload.scheduled_at = scheduledIso;
+    }
+
     if (App.audienceMode === 'paste') {
         const rawText = document.getElementById('broadcast-raw-emails')?.value || '';
         const parsed = parseEmailsFromString(rawText);
@@ -1325,14 +1438,18 @@ async function launchQuickBroadcast() {
     }
 
     // Confirmation prompt
-    const confirmed = await confirmDialog(
-        `Launch broadcast "${subject}" to your target customer recipients?`,
-        {
-            title: 'Confirm broadcast launch',
-            detail: 'Every message is delivered with rate limiting and archived in the Storage Vault.',
-            confirmText: 'Launch broadcast'
-        }
-    );
+    const confirmMsg = isScheduled
+        ? `Schedule broadcast "${subject}" for ${new Date(scheduledIso).toLocaleString()}?`
+        : `Launch broadcast "${subject}" to your target customer recipients?`;
+    const confirmDetail = isScheduled
+        ? 'The automated campaign scheduler will dispatch this broadcast when the scheduled time arrives.'
+        : 'Every message is delivered with rate limiting and archived in the Storage Vault.';
+
+    const confirmed = await confirmDialog(confirmMsg, {
+        title: isScheduled ? 'Confirm scheduled broadcast' : 'Confirm broadcast launch',
+        detail: confirmDetail,
+        confirmText: isScheduled ? 'Schedule broadcast' : 'Launch broadcast'
+    });
     if (!confirmed) return;
 
     const btn = document.getElementById('btn-launch-broadcast');
@@ -1348,7 +1465,12 @@ async function launchQuickBroadcast() {
         const data = await safeJson(res);
         if (!res.ok || !data.success) {
             showToast(`Broadcast failed: ${data.detail || data.message || 'Unknown error'}`, 'error');
-            if (btn) btn.disabled = false;
+            return;
+        }
+
+        if (data.status === 'scheduled') {
+            showToast(`📅 Broadcast scheduled for ${new Date(data.scheduled_at || scheduledIso).toLocaleString()}!`, 'success');
+            await fetchCampaigns();
             return;
         }
 
@@ -1358,6 +1480,7 @@ async function launchQuickBroadcast() {
         startLiveBroadcastMonitoring(data.campaign_id, data.total_recipients);
     } catch (err) {
         showToast(`Broadcast exception: ${err.message}`, 'error');
+    } finally {
         if (btn) btn.disabled = false;
     }
 }
@@ -2209,6 +2332,7 @@ function renderCampaignsTable(rows = App.campaigns) {
 
         const statusClass = camp.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
             camp.status === 'sending' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+            camp.status === 'scheduled' ? 'bg-purple-500/20 text-purple-300 border-purple-500/30' :
             'bg-slate-500/20 text-slate-300 border-white/10';
 
         return `
@@ -2223,12 +2347,20 @@ function renderCampaignsTable(rows = App.campaigns) {
                 </td>
                 <td class="py-3 px-4">
                     <div class="flex items-center gap-2">
-                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">${camp.status}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">
+                            ${camp.status === 'scheduled' ? '<i data-lucide="clock" class="w-3 h-3 inline mr-1"></i>' : ''}${camp.status}
+                        </span>
                         <span class="text-[11px] text-slate-400 font-mono">${pct}%</span>
                     </div>
-                    <div class="w-24 bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
-                        <div class="bg-indigo-500 h-full" style="width: ${pct}%"></div>
-                    </div>
+                    ${camp.status === 'scheduled' && camp.scheduled_at ? `
+                        <div class="text-[11px] text-purple-300/90 font-mono mt-1 flex items-center gap-1" title="Scheduled UTC: ${escapeHtml(camp.scheduled_at)}">
+                            <i data-lucide="calendar" class="w-3 h-3 text-purple-400"></i> ${formatScheduleDate(camp.scheduled_at)}
+                        </div>
+                    ` : `
+                        <div class="w-24 bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                            <div class="bg-indigo-500 h-full" style="width: ${pct}%"></div>
+                        </div>
+                    `}
                 </td>
                 <td class="py-3 px-4 text-[11px] text-slate-300">
                     ${camp.delivered_count || camp.sent_count || 0} / ${camp.total_recipients}
@@ -2241,6 +2373,15 @@ function renderCampaignsTable(rows = App.campaigns) {
                     <div class="flex items-center justify-end gap-2">
                         ${camp.status === 'draft' ? `
                             <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px]">Launch</button>
+                        ` : ''}
+                        ${camp.status === 'scheduled' ? `
+                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px]" title="Launch immediately">Launch Now</button>
+                            <button onclick="rescheduleCampaign('${camp.id}')" class="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20" title="Reschedule delivery time">
+                                <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
+                            </button>
+                            <button onclick="unscheduleCampaign('${camp.id}')" class="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20" title="Cancel schedule (revert to draft)">
+                                <i data-lucide="calendar-x" class="w-3.5 h-3.5"></i>
+                            </button>
                         ` : ''}
                         <button onclick="switchTab('vault')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/5 text-[11px]">Vault</button>
                         <button onclick="openEditCampaignModal('${camp.id}')" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20" title="Rename / edit campaign">
@@ -2257,6 +2398,104 @@ function renderCampaignsTable(rows = App.campaigns) {
 
     renderBulkBar('campaigns');
     initLucide();
+}
+
+function formatScheduleDate(dtStr) {
+    if (!dtStr) return '--';
+    try {
+        let str = String(dtStr).trim();
+        if (!str.endsWith('Z') && !str.includes('+')) {
+            str = str.replace(' ', 'T') + 'Z';
+        }
+        const d = new Date(str);
+        if (isNaN(d.getTime())) return dtStr;
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (_) {
+        return dtStr;
+    }
+}
+
+async function rescheduleCampaign(campId) {
+    const camp = App.campaigns.find(c => c.id === campId);
+    if (!camp) return;
+
+    let defaultVal = '';
+    if (camp.scheduled_at) {
+        try {
+            let str = String(camp.scheduled_at).trim();
+            if (!str.endsWith('Z') && !str.includes('+')) str = str.replace(' ', 'T') + 'Z';
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) {
+                const tzOffset = d.getTimezoneOffset() * 60000;
+                defaultVal = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+            }
+        } catch (_) {}
+    }
+    if (!defaultVal) {
+        const nextHour = new Date(Date.now() + 3600000);
+        const tzOffset = nextHour.getTimezoneOffset() * 60000;
+        defaultVal = (new Date(nextHour.getTime() - tzOffset)).toISOString().slice(0, 16);
+    }
+
+    const newTime = await promptDialog('Select the new delivery date and time (local time):', defaultVal, {
+        title: 'Reschedule Campaign',
+        detail: `Campaign: ${camp.name || camp.subject}`,
+        confirmText: 'Save Schedule',
+        input: { type: 'datetime-local', value: defaultVal }
+    });
+
+    if (!newTime) return;
+
+    const parsedDate = new Date(newTime);
+    if (isNaN(parsedDate.getTime()) || parsedDate.getTime() <= Date.now()) {
+        showToast('Scheduled time must be in the future.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/campaigns/${campId}/schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scheduled_at: parsedDate.toISOString() })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || data.message || 'Failed to reschedule campaign', 'error');
+            return;
+        }
+        showToast(`Campaign rescheduled for ${parsedDate.toLocaleString()}!`, 'success');
+        await fetchCampaigns();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
+}
+
+async function unscheduleCampaign(campId) {
+    const camp = App.campaigns.find(c => c.id === campId);
+    const confirmed = await confirmDialog(
+        `Cancel scheduled dispatch for "${camp ? (camp.name || camp.subject) : campId}"? It will be reverted to draft status.`,
+        {
+            title: 'Cancel Scheduled Broadcast',
+            confirmText: 'Unschedule',
+            danger: true
+        }
+    );
+    if (!confirmed) return;
+
+    try {
+        const res = await fetch(`/api/campaigns/${campId}/unschedule`, {
+            method: 'POST'
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || data.message || 'Failed to unschedule campaign', 'error');
+            return;
+        }
+        showToast('Campaign unscheduled and moved to draft.', 'success');
+        await fetchCampaigns();
+    } catch (err) {
+        showToast(`Error: ${err.message}`, 'error');
+    }
 }
 
 async function deleteCampaign(campId) {
@@ -3347,7 +3586,7 @@ async function openScanLoginModal() {
                     return;
                 }
                 try {
-                    const statusRes = await fetch(`/api/auth/scan/session/${data.session_id}/status`);
+                    const statusRes = await fetch(`/api/auth/scan/session/${data.session_id}/status?token=${encodeURIComponent(data.token)}`);
                     if (statusRes.ok) {
                         const sData = await statusRes.json();
                         if (sData.is_approved) {
@@ -3744,7 +3983,7 @@ async function initAuthScanQR() {
                     return;
                 }
                 try {
-                    const sRes = await fetch(`/api/auth/scan/session/${data.session_id}/status`);
+                    const sRes = await fetch(`/api/auth/scan/session/${data.session_id}/status?token=${encodeURIComponent(data.token)}`);
                     if (sRes.ok) {
                         const sData = await sRes.json();
                         if (sData.is_approved && sData.auth_token) {
@@ -3787,5 +4026,313 @@ async function simulateAuthScanApproval() {
         }
     } catch (err) {
         showToast('Simulation failed: ' + err.message, 'error');
+    }
+}
+
+// ==========================================================================
+// 8. System & Dispatch Logs Console
+// ==========================================================================
+async function fetchLogs() {
+    const levelSelect = document.getElementById('logs-level-filter');
+    const sourceSelect = document.getElementById('logs-source-filter');
+    const searchInput = document.getElementById('logs-search-input');
+
+    const level = levelSelect ? levelSelect.value : 'all';
+    const source = sourceSelect ? sourceSelect.value : 'all';
+    const search = searchInput ? searchInput.value.trim() : '';
+
+    const params = new URLSearchParams();
+    if (level && level !== 'all') params.append('level', level);
+    if (source && source !== 'all') params.append('source', source);
+    if (search) params.append('search', search);
+    params.append('limit', '250');
+
+    try {
+        const res = await fetch(`/api/logs?${params.toString()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        App.logs = data.logs || [];
+
+        // Update KPIs
+        const totalEl = document.getElementById('logs-kpi-total');
+        const errorsEl = document.getElementById('logs-kpi-errors');
+        const warningsEl = document.getElementById('logs-kpi-warnings');
+        const infoEl = document.getElementById('logs-kpi-info');
+        const badgeEl = document.getElementById('nav-logs-badge');
+
+        if (totalEl) totalEl.innerText = data.stats?.total ?? App.logs.length;
+        if (errorsEl) errorsEl.innerText = data.stats?.errors ?? 0;
+        if (warningsEl) warningsEl.innerText = data.stats?.warnings ?? 0;
+        if (infoEl) infoEl.innerText = data.stats?.info ?? 0;
+        if (badgeEl) badgeEl.innerText = data.stats?.total ?? App.logs.length;
+
+        renderLogsTerminal();
+    } catch (err) {
+        console.warn('Failed to fetch system logs:', err);
+    }
+}
+
+function renderLogsTerminal() {
+    const container = document.getElementById('logs-container');
+    const visibleCountEl = document.getElementById('logs-visible-count');
+    if (!container) return;
+
+    if (visibleCountEl) {
+        visibleCountEl.innerText = `Showing ${App.logs.length} events`;
+    }
+
+    if (!App.logs || App.logs.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-16 text-slate-500 text-xs font-mono">
+                <i data-lucide="terminal" class="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60"></i>
+                No log entries match the selected filters.
+            </div>
+        `;
+        initLucide();
+        return;
+    }
+
+    container.innerHTML = App.logs.map(log => formatLogLine(log)).join('');
+
+    const autoScroll = document.getElementById('logs-auto-scroll');
+    if (autoScroll && autoScroll.checked) {
+        container.scrollTop = container.scrollHeight;
+    }
+
+    initLucide();
+}
+
+function formatLogLine(log) {
+    const lvl = (log.level || 'INFO').toUpperCase();
+    const src = (log.source || 'system').toLowerCase();
+
+    let levelClass = 'bg-slate-700/50 text-slate-300 border-white/10';
+    let textClass = 'text-slate-200';
+
+    if (lvl === 'ERROR' || lvl === 'CRITICAL') {
+        levelClass = 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+        textClass = 'text-rose-200 font-semibold';
+    } else if (lvl === 'WARNING' || lvl === 'WARN') {
+        levelClass = 'bg-amber-500/20 text-amber-300 border-amber-500/30';
+        textClass = 'text-amber-200';
+    } else if (lvl === 'INFO') {
+        levelClass = 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30';
+        textClass = 'text-slate-200';
+    } else if (lvl === 'DEBUG') {
+        levelClass = 'bg-slate-800 text-slate-400 border-white/5';
+        textClass = 'text-slate-400';
+    }
+
+    let sourceClass = 'text-slate-300 bg-slate-800 border-white/10';
+    if (src === 'queue') sourceClass = 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20';
+    else if (src === 'scheduler') sourceClass = 'text-purple-300 bg-purple-500/10 border-purple-500/20';
+    else if (src === 'smtp') sourceClass = 'text-amber-300 bg-amber-500/10 border-amber-500/20';
+    else if (src === 'auth' || src === 'security') sourceClass = 'text-cyan-300 bg-cyan-500/10 border-cyan-500/20';
+    else if (src === 'storage') sourceClass = 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20';
+    else if (src === 'tracking') sourceClass = 'text-blue-300 bg-blue-500/10 border-blue-500/20';
+
+    const hasDetails = log.details && Object.keys(log.details).length > 0;
+    const detailsHtml = hasDetails ? `
+        <details class="mt-1 text-[11px] text-slate-400">
+            <summary class="cursor-pointer hover:text-indigo-300 transition-colors inline-flex items-center gap-1 select-none">
+                <span>View payload details</span>
+            </summary>
+            <pre class="mt-1 p-2 rounded-lg bg-slate-900 border border-white/5 overflow-x-auto text-[10px] text-slate-300 leading-tight">${escapeHtml(JSON.stringify(log.details, null, 2))}</pre>
+        </details>
+    ` : '';
+
+    return `
+        <div class="p-2 rounded-lg hover:bg-slate-900/60 border border-white/5 transition-all text-xs font-mono flex flex-col gap-1">
+            <div class="flex items-center flex-wrap gap-2 text-[11px]">
+                <span class="text-slate-500 select-none">[${escapeHtml(log.timestamp || '')}]</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border ${levelClass}">${escapeHtml(lvl)}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase border ${sourceClass}">${escapeHtml(src)}</span>
+                <span class="text-slate-400 text-[10px] truncate max-w-xs" title="${escapeHtml(log.logger || '')}">(${escapeHtml(log.logger || '')})</span>
+            </div>
+            <div class="${textClass} break-words pl-1 leading-relaxed">
+                ${escapeHtml(log.message || '')}
+            </div>
+            ${detailsHtml}
+        </div>
+    `;
+}
+
+function handleIncomingSystemLog(logEntry) {
+    if (!logEntry || App.logsStreamPaused) return;
+
+    // Check filter criteria
+    const levelSelect = document.getElementById('logs-level-filter');
+    const sourceSelect = document.getElementById('logs-source-filter');
+    const searchInput = document.getElementById('logs-search-input');
+
+    const curLevel = levelSelect ? levelSelect.value : 'all';
+    const curSource = sourceSelect ? sourceSelect.value : 'all';
+    const curSearch = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+    const entryLevel = (logEntry.level || 'INFO').toLowerCase();
+    const entrySource = (logEntry.source || 'system').toLowerCase();
+
+    if (curLevel !== 'all' && entryLevel !== curLevel.toLowerCase()) return;
+    if (curSource !== 'all' && entrySource !== curSource.toLowerCase()) return;
+    if (curSearch) {
+        const text = `${logEntry.message} ${logEntry.logger} ${logEntry.source}`.toLowerCase();
+        if (!text.includes(curSearch)) return;
+    }
+
+    // Add to current in-memory view
+    App.logs.unshift(logEntry);
+    if (App.logs.length > 500) App.logs.pop();
+
+    // Increment KPIs
+    const totalEl = document.getElementById('logs-kpi-total');
+    const badgeEl = document.getElementById('nav-logs-badge');
+    if (totalEl) totalEl.innerText = parseInt(totalEl.innerText || '0', 10) + 1;
+    if (badgeEl) badgeEl.innerText = parseInt(badgeEl.innerText || '0', 10) + 1;
+
+    if (entryLevel === 'error' || entryLevel === 'critical') {
+        const errorsEl = document.getElementById('logs-kpi-errors');
+        if (errorsEl) errorsEl.innerText = parseInt(errorsEl.innerText || '0', 10) + 1;
+    } else if (entryLevel === 'warning' || entryLevel === 'warn') {
+        const warnEl = document.getElementById('logs-kpi-warnings');
+        if (warnEl) warnEl.innerText = parseInt(warnEl.innerText || '0', 10) + 1;
+    } else if (entryLevel === 'info') {
+        const infoEl = document.getElementById('logs-kpi-info');
+        if (infoEl) infoEl.innerText = parseInt(infoEl.innerText || '0', 10) + 1;
+    }
+
+    // Prepend into container if visible
+    const container = document.getElementById('logs-container');
+    if (container) {
+        const placeholder = container.querySelector('.text-center');
+        if (placeholder) placeholder.remove();
+
+        const div = document.createElement('div');
+        div.innerHTML = formatLogLine(logEntry);
+        if (div.firstElementChild) {
+            container.insertBefore(div.firstElementChild, container.firstChild);
+        }
+
+        const visibleCountEl = document.getElementById('logs-visible-count');
+        if (visibleCountEl) {
+            visibleCountEl.innerText = `Showing ${App.logs.length} events`;
+        }
+
+        const autoScroll = document.getElementById('logs-auto-scroll');
+        if (autoScroll && autoScroll.checked) {
+            container.scrollTop = 0;
+        }
+    }
+}
+
+function handleLogsFilterChange() {
+    clearTimeout(App.logsFilterDebounce);
+    App.logsFilterDebounce = setTimeout(() => {
+        fetchLogs();
+    }, 250);
+}
+
+function toggleLogsStreamPause() {
+    App.logsStreamPaused = !App.logsStreamPaused;
+    const icon = document.getElementById('logs-pause-icon');
+    const text = document.getElementById('logs-pause-text');
+    const status = document.getElementById('logs-stream-status');
+
+    if (App.logsStreamPaused) {
+        if (text) text.innerText = 'Resume Stream';
+        if (icon) icon.setAttribute('data-lucide', 'play');
+        if (status) {
+            status.innerText = 'PAUSED';
+            status.parentElement.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-semibold';
+        }
+        showToast('Telemetry stream paused.', 'info');
+    } else {
+        if (text) text.innerText = 'Pause Stream';
+        if (icon) icon.setAttribute('data-lucide', 'pause');
+        if (status) {
+            status.innerText = 'LIVE STREAM';
+            status.parentElement.className = 'flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold';
+        }
+        showToast('Telemetry stream resumed.', 'success');
+        fetchLogs();
+    }
+    initLucide();
+}
+
+async function clearSystemLogsBuffer() {
+    const confirmed = await confirmDialog(
+        'Clear all recorded system logs from the telemetry buffer?',
+        {
+            title: 'Clear System Logs',
+            detail: 'This will purge all cached dispatch events and application logs in memory.',
+            confirmText: 'Clear Buffer',
+            danger: true
+        }
+    );
+    if (!confirmed) return;
+
+    try {
+        const res = await fetch('/api/logs', { method: 'DELETE' });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast(`✓ ${data.message || 'Log buffer cleared.'}`, 'success');
+            App.logs = [];
+            renderLogsTerminal();
+            const totalEl = document.getElementById('logs-kpi-total');
+            const errorsEl = document.getElementById('logs-kpi-errors');
+            const warningsEl = document.getElementById('logs-kpi-warnings');
+            const infoEl = document.getElementById('logs-kpi-info');
+            const badgeEl = document.getElementById('nav-logs-badge');
+            if (totalEl) totalEl.innerText = '0';
+            if (errorsEl) errorsEl.innerText = '0';
+            if (warningsEl) warningsEl.innerText = '0';
+            if (infoEl) infoEl.innerText = '0';
+            if (badgeEl) badgeEl.innerText = '0';
+        } else {
+            showToast(data.detail || 'Failed to clear logs', 'error');
+        }
+    } catch (err) {
+        showToast('Error clearing logs: ' + err.message, 'error');
+    }
+}
+
+function exportLogsFile(format = 'text') {
+    const url = `/api/logs/export?format=${encodeURIComponent(format)}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = format === 'json' ? 'bitmail-system-logs.json' : 'bitmail-system.log';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast(`Downloading system logs (${format.toUpperCase()})...`, 'info');
+}
+
+async function emitDiagnosticTestLog() {
+    const msg = await promptDialog(
+        'Enter diagnostic message to log:',
+        `Manual diagnostic test trace at ${new Date().toLocaleTimeString()}`,
+        { title: 'Emit Diagnostic Log Event' }
+    );
+    if (!msg || !msg.trim()) return;
+
+    try {
+        const res = await fetch('/api/logs/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                level: 'info',
+                message: msg.trim(),
+                source: 'system'
+            })
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast('✓ Diagnostic log event emitted.', 'success');
+            await fetchLogs();
+        } else {
+            showToast(data.detail || 'Failed to emit test log', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
     }
 }

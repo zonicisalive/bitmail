@@ -4,6 +4,7 @@ Handles secure PBKDF2-HMAC password hashing, session lifecycle,
 and FastAPI route protection dependencies.
 """
 
+import base64
 import hashlib
 import hmac
 import logging
@@ -11,12 +12,45 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from cryptography.fernet import Fernet
 from fastapi import Depends, HTTPException, Request, status
 
 from app.config import settings
 from app.db import get_db, utc_now_iso
 
 logger = logging.getLogger("bitmail.auth")
+
+
+def get_cipher() -> Fernet:
+    """Derive 32-byte urlsafe base64 key from settings.SECRET_KEY for authenticated Fernet encryption."""
+    raw_key = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+    b64_key = base64.urlsafe_b64encode(raw_key)
+    return Fernet(b64_key)
+
+
+def encrypt_credential(plaintext: str) -> str:
+    """Encrypt a secret string using authenticated Fernet symmetric encryption."""
+    if not plaintext:
+        return ""
+    try:
+        cipher = get_cipher()
+        return cipher.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+    except Exception as exc:
+        logger.error(f"Credential encryption error: {exc}")
+        return plaintext
+
+
+def decrypt_credential(ciphertext: str) -> str:
+    """Decrypt an encrypted credential, or return plaintext if not encrypted or unpadded."""
+    if not ciphertext:
+        return ""
+    if not ciphertext.startswith("gAAAAA"):
+        return ciphertext
+    try:
+        cipher = get_cipher()
+        return cipher.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return ciphertext
 
 
 def hash_password(password: str) -> str:

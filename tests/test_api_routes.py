@@ -30,6 +30,11 @@ class TestApiRoutes(unittest.TestCase):
         cls.data_dir.mkdir(parents=True, exist_ok=True)
         cls.archive_dir.mkdir(parents=True, exist_ok=True)
 
+        cls.orig_db = settings.DATABASE_PATH
+        cls.orig_archive = settings.EML_ARCHIVE_DIR
+        cls.orig_storage = settings.EML_STORAGE_DIR
+        cls.orig_tracking = settings.TRACKING_BASE_URL
+
         settings.DATABASE_PATH = cls.db_path
         settings.EML_ARCHIVE_DIR = cls.archive_dir
         settings.EML_STORAGE_DIR = cls.archive_dir
@@ -49,6 +54,10 @@ class TestApiRoutes(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        settings.DATABASE_PATH = cls.orig_db
+        settings.EML_ARCHIVE_DIR = cls.orig_archive
+        settings.EML_STORAGE_DIR = cls.orig_storage
+        settings.TRACKING_BASE_URL = cls.orig_tracking
         cls.test_dir.cleanup()
 
     def test_00_auth_lock_and_session_lifecycle(self):
@@ -88,18 +97,42 @@ class TestApiRoutes(unittest.TestCase):
         self.assertEqual(me_res.status_code, 200)
         self.assertEqual(me_res.json()["email"], "admin@bitmail.com")
 
-        # 5. Direct QR Scan simulate approval creates valid session
+        # 5. Direct QR Scan session and secure approval lifecycle
         scan_sess_res = raw_client.post("/api/auth/scan/session")
         self.assertEqual(scan_sess_res.status_code, 200)
         session_id = scan_sess_res.json()["session_id"]
+        scan_token = scan_sess_res.json()["token"]
 
-        sim_res = raw_client.post(f"/api/auth/scan/simulate-approval/{session_id}?email=mobile.user@bitmail.com")
-        self.assertEqual(sim_res.status_code, 200)
-        sim_data = sim_res.json()
-        sim_token = sim_data["auth_token"]
+        # Backdoor simulate-approval endpoint must not exist (404)
+        sim_res = raw_client.post(f"/api/auth/scan/simulate-approval/{session_id}")
+        self.assertEqual(sim_res.status_code, 404)
 
-        # This simulated token can now access protected APIs
-        sub_check = raw_client.get("/api/subscribers", headers={"Authorization": f"Bearer {sim_token}"})
+        # Unauthenticated approval attempt must be rejected (401)
+        unauth_client = TestClient(app)
+        unauth_appr = unauth_client.post("/api/auth/scan/approve", json={"token": scan_token})
+        self.assertEqual(unauth_appr.status_code, 401)
+
+        # Authenticated approval succeeds
+        auth_appr = raw_client.post(
+            "/api/auth/scan/approve",
+            json={"token": scan_token},
+            headers={"Authorization": f"Bearer {auth_data['token']}"}
+        )
+        self.assertEqual(auth_appr.status_code, 200)
+
+        # Status without secret scan token does not disclose auth_token
+        status_unauth = raw_client.get(f"/api/auth/scan/session/{session_id}/status")
+        self.assertEqual(status_unauth.status_code, 200)
+        self.assertIsNone(status_unauth.json()["auth_token"])
+
+        # Status with secret scan token discloses auth_token
+        status_auth = raw_client.get(f"/api/auth/scan/session/{session_id}/status?token={scan_token}")
+        self.assertEqual(status_auth.status_code, 200)
+        disclosed_token = status_auth.json()["auth_token"]
+        self.assertIsNotNone(disclosed_token)
+
+        # Disclosed auth_token can now access protected APIs
+        sub_check = raw_client.get("/api/subscribers", headers={"Authorization": f"Bearer {disclosed_token}"})
         self.assertEqual(sub_check.status_code, 200)
 
     def test_01_health_and_static(self):
@@ -378,6 +411,10 @@ class TestApiRoutes(unittest.TestCase):
         self.assertTrue(b_data["success"])
         self.assertEqual(b_data["total_recipients"], 3)
         self.assertEqual(b_data["status"], "sending")
+
+        # Allow background dispatch tasks to settle before teardown
+        import time
+        time.sleep(0.3)
 
     def test_09_bulk_delete(self):
         """Mass delete removes every valid id, reports the bad ones, and rejects unknown resources."""
