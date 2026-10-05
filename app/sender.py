@@ -14,7 +14,9 @@ import ssl
 import time
 import urllib.parse
 import uuid
+import asyncio
 from datetime import datetime, timezone
+
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -378,10 +380,38 @@ async def dispatch_smtp_message(
             pass
 
         resp_text = str(response) if response else "250 2.0.0 OK Delivered via SMTP Relay"
+        if smtp_config and smtp_config.get("id"):
+            try:
+                from app.warmup import RelayPoolManager
+                asyncio.create_task(RelayPoolManager.mark_success(smtp_config["id"]))
+            except Exception:
+                pass
         return True, resp_text, msg["Message-ID"]
 
     except Exception as e:
-        return False, str(e), msg.get("Message-ID")
+        err_str = str(e)
+        if smtp_config and smtp_config.get("id"):
+            try:
+                from app.warmup import RelayPoolManager
+                asyncio.create_task(RelayPoolManager.mark_failure(smtp_config["id"], err_str))
+            except Exception:
+                pass
+
+        # Automatic failover: if temporary rate-limiting, timeout, or greylist error occurs
+        is_temp = any(c in err_str.lower() for c in ["421", "451", "timeout", "timed out", "too many connections", "rate limit", "service unavailable"])
+        if is_temp and smtp_config and smtp_config.get("allow_failover", True):
+            try:
+                from app.warmup import RelayPoolManager
+                backup_relay = await RelayPoolManager.select_relay(rotation_mode="failover")
+                if backup_relay and backup_relay.get("id") != smtp_config.get("id"):
+                    backup_config = dict(backup_relay)
+                    backup_config["allow_failover"] = False  # Avoid infinite recursion
+                    return await send_message_smtp(msg, sender_email, recipient_email, backup_config)
+            except Exception:
+                pass
+
+        return False, err_str, msg.get("Message-ID")
+
 
 
 # ----------------------------------------------------------------------

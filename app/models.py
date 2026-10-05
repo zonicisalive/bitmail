@@ -768,3 +768,97 @@ class SuppressionResponse(SuppressionBase):
 
     id: str
     created_at: str
+
+
+# ----------------------------------------------------------------------
+# Automated Email Warmup & Relay Rotation Models
+# ----------------------------------------------------------------------
+
+class WarmupCurveStrategy(str, Enum):
+    CONSERVATIVE_30 = "conservative_30"
+    STANDARD_14 = "standard_14"
+    AGGRESSIVE_7 = "aggressive_7"
+    CUSTOM = "custom"
+
+
+class WarmupPreviewRequest(BaseModel):
+    total_recipients: int = Field(default=1000, ge=1, le=1000000, description="Total list size to simulate")
+    strategy: str = Field(default="conservative_30", description="conservative_30, standard_14, aggressive_7, custom")
+    custom_start_cap: Optional[int] = Field(default=50, ge=1, description="Day 1 starting cap for custom curve")
+    custom_days: Optional[int] = Field(default=14, ge=2, le=90, description="Duration in days for custom curve")
+
+
+class WarmupPreviewSlice(BaseModel):
+    day: int
+    date: str
+    daily_cap: int
+    cumulative_volume: int
+    recommended_providers: Dict[str, int] = Field(default_factory=dict)
+
+
+class WarmupPreviewResponse(BaseModel):
+    strategy: str
+    total_days: int
+    total_recipients: int
+    slices: List[WarmupPreviewSlice]
+
+
+class WarmupScheduleCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Warmup schedule name")
+    strategy: str = Field(default="conservative_30", description="Warmup curve profile")
+    total_recipients: Optional[int] = Field(default=None, description="Total count if provided directly")
+    recipient_emails: Optional[List[str]] = Field(default=None, description="Direct recipient emails to partition")
+    list_id: Optional[str] = Field(default=None, description="Subscriber list ID to pull audience from")
+    campaign_id: Optional[str] = Field(default=None, description="Associated base campaign template")
+    relay_ids: Optional[List[str]] = Field(default=None, description="SMTP relay profile IDs in rotation pool")
+    rotation_mode: str = Field(default="round_robin", description="round_robin, failover, weighted")
+    start_date: Optional[str] = Field(default=None, description="Target launch timestamp (defaults to now)")
+
+
+class WarmupSliceResponse(BaseModel):
+    id: str
+    schedule_id: str
+    day_number: int
+    scheduled_for: str
+    target_count: int
+    dispatched_count: int = 0
+    bounce_count: int = 0
+    failure_count: int = 0
+    campaign_id: Optional[str] = None
+    status: str = "pending"
+    created_at: str
+
+
+class WarmupScheduleResponse(BaseModel):
+    id: str
+    name: str
+    campaign_id: Optional[str] = None
+    strategy: str
+    total_recipients: int
+    current_day: int
+    total_days: int
+    daily_cap: int
+    sent_today: int
+    status: str
+    relay_pool: List[str] = Field(default_factory=list)
+    rotation_mode: str
+    max_bounce_rate: float = 0.02
+    slices: List[WarmupSliceResponse] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class RelayPoolStatusResponse(BaseModel):
+    id: str
+    smtp_config_id: str
+    name: str
+    host: str
+    port: int
+    in_pool: bool
+    current_day: int
+    daily_sends: int
+    daily_failures: int
+    is_cooling_down: bool
+    cooldown_until: Optional[str] = None
+    last_error: Optional[str] = None
+

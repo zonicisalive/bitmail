@@ -710,6 +710,9 @@ class QuickBroadcastPayload(BaseModel):
     track_opens: bool = Field(default=True, description="Inject open tracking beacon")
     track_clicks: bool = Field(default=True, description="Rewrite hyperlinks for click tracking")
     scheduled_at: Optional[str] = Field(default=None, description="Target ISO timestamp for scheduled dispatch")
+    warmup_enabled: bool = Field(default=False, description="Enable automated 14-30 day warmup ramp-up")
+    warmup_strategy: str = Field(default="conservative_30", description="Warmup curve profile: conservative_30, standard_14, aggressive_7")
+
 
 
 @router.post("/quick-broadcast")
@@ -859,7 +862,148 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    # 4. Create and persist campaign
+    # 4. Handle Warmup Ramp-Up Mode
+    if payload.warmup_enabled:
+        from app.warmup import WarmupScheduleCurves, WarmupSlicer
+        daily_caps = WarmupScheduleCurves.get_curve_caps(
+            strategy=payload.warmup_strategy,
+            total_recipients=len(target_subscribers)
+        )
+        total_days = len(daily_caps)
+        now_ts = utc_now_iso()
+        schedule_id = f"wup_{uuid.uuid4().hex[:10]}"
+
+        # Base master campaign
+        base_camp = await campaign_queue.create_campaign(
+            name=f"[Warmup Master] {campaign_name}",
+            subject=payload.subject,
+            template_html=payload.body_html,
+            template_text=payload.body_text,
+            sender_name=sender_name,
+            sender_email=sender_email,
+            smtp_config=smtp_cfg_obj,
+            rate_limit_per_sec=payload.rate_limit_per_second,
+            concurrency_limit=10,
+            recipients=target_subscribers
+        )
+
+        slices_data = WarmupSlicer.balance_and_slice(
+            recipients=target_subscribers,
+            daily_caps=daily_caps,
+            start_datetime=datetime.now(timezone.utc)
+        )
+
+        async with get_db() as db:
+            await db.execute("""
+                UPDATE campaigns SET is_warmup = 1, warmup_schedule_id = ?, status = 'draft' WHERE id = ?
+            """, (schedule_id, base_camp.id))
+
+            await db.execute("""
+                INSERT INTO warmup_schedules (
+                    id, name, campaign_id, strategy, total_recipients, current_day,
+                    total_days, daily_cap, sent_today, status, relay_pool_json,
+                    rotation_mode, max_bounce_rate, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, 'active', '[]', 'round_robin', 0.02, ?, ?)
+            """, (
+                schedule_id,
+                f"Warmup: {campaign_name}",
+                base_camp.id,
+                payload.warmup_strategy,
+                len(target_subscribers),
+                total_days,
+                daily_caps[0] if daily_caps else 50,
+                now_ts,
+                now_ts
+            ))
+
+            day1_child_camp = None
+            day1_recipients = []
+
+            for s in slices_data:
+                slice_id = f"wslice_{uuid.uuid4().hex[:10]}"
+                child_id = f"camp_{uuid.uuid4().hex[:10]}"
+                is_day1 = s["day_number"] == 1
+                child_status = "sending" if (is_day1 and not normalized_sched) else "scheduled"
+
+                await db.execute("""
+                    INSERT INTO campaigns (
+                        id, name, subject, template_id, list_id, smtp_config_id,
+                        smtp_config_json, template_html, template_text, sender_name,
+                        sender_email, reply_to, headers, track_opens, track_clicks,
+                        custom_html, custom_text, status, scheduled_at, total_recipients,
+                        rate_limit_per_sec, concurrency_limit, is_warmup, warmup_schedule_id,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                """, (
+                    child_id,
+                    f"{campaign_name} (Day {s['day_number']}/{total_days})",
+                    payload.subject,
+                    None,
+                    payload.list_id if payload.list_id != "all" else None,
+                    payload.smtp_config_id,
+                    json.dumps(smtp_cfg_obj.model_dump()) if smtp_cfg_obj else None,
+                    payload.body_html,
+                    payload.body_text,
+                    sender_name,
+                    sender_email,
+                    payload.reply_to,
+                    "{}",
+                    1 if payload.track_opens else 0,
+                    1 if payload.track_clicks else 0,
+                    payload.body_html,
+                    payload.body_text,
+                    child_status,
+                    s["scheduled_for"],
+                    s["target_count"],
+                    payload.rate_limit_per_second,
+                    10,
+                    schedule_id,
+                    now_ts,
+                    now_ts
+                ))
+
+                await db.execute("""
+                    INSERT INTO warmup_slices (
+                        id, schedule_id, day_number, scheduled_for, target_count,
+                        dispatched_count, bounce_count, failure_count, campaign_id,
+                        status, recipients_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?)
+                """, (
+                    slice_id,
+                    schedule_id,
+                    s["day_number"],
+                    s["scheduled_for"],
+                    s["target_count"],
+                    child_id,
+                    "processing" if (is_day1 and not normalized_sched) else "pending",
+                    json.dumps([r.model_dump() if hasattr(r, 'model_dump') else (r if isinstance(r, dict) else {'email': str(r)}) for r in s["recipients"]]),
+                    now_ts,
+                    now_ts
+                ))
+
+                if is_day1:
+                    day1_child_camp = child_id
+                    day1_recipients = s["recipients"]
+
+            await db.commit()
+
+        if day1_child_camp and not normalized_sched:
+            await campaign_queue.start_campaign(day1_child_camp, recipients=day1_recipients)
+
+        return {
+            "success": True,
+            "warmup_enabled": True,
+            "schedule_id": schedule_id,
+            "campaign_id": base_camp.id,
+            "name": campaign_name,
+            "total_recipients": len(target_subscribers),
+            "total_days": total_days,
+            "day_1_cap": daily_caps[0] if daily_caps else 50,
+            "status": "warmup_active",
+            "message": f"Warmup ramp-up activated! Partitioned {len(target_subscribers)} contacts across {total_days} days ({daily_caps[0]} sending today)."
+        }
+
+    # 5. Create and persist standard campaign
     campaign = await campaign_queue.create_campaign(
         name=campaign_name,
         subject=payload.subject,
@@ -872,6 +1016,7 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
         concurrency_limit=10,
         recipients=target_subscribers
     )
+
 
     if normalized_sched:
         # Schedule for automated future dispatch

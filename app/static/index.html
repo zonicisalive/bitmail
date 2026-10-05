@@ -106,6 +106,13 @@
                     <span>Deliverability & DNS</span>
                 </a>
 
+                <a href="#" data-tab="warmup" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
+                    <span>Warmup & Relays</span>
+                    <span id="nav-warmup-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">AUTO</span>
+                </a>
+
+
                 <a href="#" data-tab="api" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="terminal" class="w-4 h-4 text-purple-400"></i>
                     <span>REST API & Integration</span>
@@ -417,11 +424,49 @@
         Best regards,<br>
         <strong>The Team</strong>
     </p>
-</div></textarea>
+                                </div>
+
+                                <!-- Delivery Schedule Selector -->
+                                <div class="pt-4 border-t border-white/5 space-y-3">
+                                    <div class="flex items-center justify-between">
+                                        <label class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                                            <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> Dispatch Schedule:
+                                        </label>
+                                        <div class="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-white/5 text-[11px] font-medium">
+                                            <button type="button" id="btn-timing-now" onclick="setBroadcastTimingMode('now')" class="px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer">Send Now</button>
+                                            <button type="button" id="btn-timing-schedule" onclick="setBroadcastTimingMode('schedule')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer">Schedule for Later</button>
+                                            <button type="button" id="btn-timing-warmup" onclick="setBroadcastTimingMode('warmup')" class="px-2.5 py-1 rounded-md text-orange-400 hover:text-white transition-all cursor-pointer flex items-center gap-1">
+                                                <i data-lucide="flame" class="w-3 h-3 text-orange-400"></i> Warmup Ramp-Up
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="broadcast-schedule-wrap" class="hidden p-3 rounded-xl bg-slate-900/90 border border-indigo-500/20 space-y-2">
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                            <span class="text-slate-400">Select Date & Time (Local Time):</span>
+                                            <input type="datetime-local" id="broadcast-schedule-datetime" class="px-3 py-1.5 bg-slate-950 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                                        </div>
+                                        <p class="text-[11px] text-slate-500">The automated campaign scheduler will dispatch this broadcast when the scheduled time arrives.</p>
+                                    </div>
+                                    <div id="broadcast-warmup-wrap" class="hidden p-3 rounded-xl bg-orange-950/20 border border-orange-500/30 space-y-2.5">
+                                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                                            <span class="text-orange-300 font-semibold flex items-center gap-1.5">
+                                                <i data-lucide="flame" class="w-3.5 h-3.5 text-orange-400"></i> Warmup Ramp-Up Curve:
+                                            </span>
+                                            <select id="broadcast-warmup-strategy" onchange="updateBroadcastWarmupHint()" class="px-2.5 py-1 bg-slate-900 border border-orange-500/30 rounded-lg text-xs text-white focus:outline-none focus:border-orange-400">
+                                                <option value="conservative_30" selected>Conservative (30 Days - 50 Day 1, gradual)</option>
+                                                <option value="standard_14">Standard (14 Days - 100 Day 1, balanced)</option>
+                                                <option value="aggressive_7">Aggressive (7 Days - 250 Day 1, fast ramp)</option>
+                                            </select>
+                                        </div>
+                                        <div id="broadcast-warmup-hint" class="text-[11px] text-orange-200/80 bg-slate-950/60 p-2 rounded-lg border border-orange-500/20 leading-relaxed">
+                                            Recipients will be partitioned into daily drops with multi-relay rotation and provider balancing.
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Sending Controls & Trigger -->
                                 <div class="pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+
                                     <div class="flex items-center gap-2 flex-shrink-0">
                                         <label class="text-xs text-slate-400 whitespace-nowrap">Speed Limit:</label>
                                         <select id="broadcast-rate-limit" onchange="handleRateLimitChange(this)" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500">
@@ -1363,15 +1408,250 @@ curl -X POST http://localhost:8000/api/v1/send \
                 </div>
             </div>
 
+            <!-- ========================================================================== -->
+            <!-- 10. Warmup & Relay Rotation Panel                                          -->
+            <!-- ========================================================================== -->
+            <div id="panel-warmup" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">Warmup & Relay Rotation</h1>
+                            <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-400 text-xs font-semibold">
+                                <i data-lucide="flame" class="w-3.5 h-3.5"></i>
+                                <span>Reputation Ramp-Up Engine</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Automated 14–30 day ramp-up schedules with provider balancing (Gmail / Outlook / Yahoo) and multi-relay round-robin with automatic failover.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button type="button" onclick="openNewWarmupModal()" class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-lg shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                            <span>New Warmup Schedule</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4 KPI Summary Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
+                        <div class="flex items-center justify-between text-xs text-slate-400">
+                            <span class="font-medium">Active Schedules</span>
+                            <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
+                        </div>
+                        <div class="text-2xl font-black text-white" id="warmup-kpi-active-count">0</div>
+                        <div class="text-[11px] text-slate-500" id="warmup-kpi-total-recipients">0 total recipients warming</div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
+                        <div class="flex items-center justify-between text-xs text-slate-400">
+                            <span class="font-medium">Today's Warmup Cap</span>
+                            <i data-lucide="gauge" class="w-4 h-4 text-amber-400"></i>
+                        </div>
+                        <div class="text-2xl font-black text-white" id="warmup-kpi-today-cap">0</div>
+                        <div class="text-[11px] text-slate-500" id="warmup-kpi-today-sent">0 sent today</div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
+                        <div class="flex items-center justify-between text-xs text-slate-400">
+                            <span class="font-medium">Active Relay Pool</span>
+                            <i data-lucide="server" class="w-4 h-4 text-indigo-400"></i>
+                        </div>
+                        <div class="text-2xl font-black text-white" id="warmup-kpi-pool-count">0 Nodes</div>
+                        <div class="text-[11px] text-emerald-400 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            <span>Auto-Failover Active</span>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
+                        <div class="flex items-center justify-between text-xs text-slate-400">
+                            <span class="font-medium">Safety Circuit Breaker</span>
+                            <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-400"></i>
+                        </div>
+                        <div class="text-2xl font-black text-emerald-400">Protected</div>
+                        <div class="text-[11px] text-slate-500">Auto-halt if bounce > 2%</div>
+                    </div>
+                </div>
+
+                <!-- Section 1: Active Warmup Schedules -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <i data-lucide="calendar" class="w-4 h-4 text-orange-400"></i>
+                            <span>Active Warmup Progression & Schedules</span>
+                        </h2>
+                        <button type="button" onclick="fetchWarmupSchedules()" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer">
+                            <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Refresh
+                        </button>
+                    </div>
+                    <div id="warmup-schedules-list" class="space-y-3">
+                        <div class="text-center py-8 text-xs text-slate-500">No active warmup schedules. Click "+ New Warmup Schedule" or enable Warmup Ramp-Up in Quick Broadcast.</div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Multi-Relay Rotation Pool & Automatic Failover -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+                        <div>
+                            <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                <i data-lucide="server" class="w-4 h-4 text-indigo-400"></i>
+                                <span>SMTP Relay Rotation Pool & Automatic Failover</span>
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-0.5">Toggle relays into the rotation pool. In round-robin mode, traffic is distributed across healthy nodes. If a relay encounters 421 rate-limiting or greylisting, traffic auto-switches to the next relay and places the node in cooldown.</p>
+                        </div>
+                        <button type="button" onclick="switchTab('smtp')" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold border border-indigo-500/30 flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="settings" class="w-3.5 h-3.5"></i> Configure Mail Servers
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto rounded-xl border border-white/5 bg-slate-900/60">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-950/80 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-white/5">
+                                <tr>
+                                    <th class="px-4 py-3">Mail Server / Relay</th>
+                                    <th class="px-4 py-3">In Warmup Pool</th>
+                                    <th class="px-4 py-3">Warmup Stage</th>
+                                    <th class="px-4 py-3">Today's Sends</th>
+                                    <th class="px-4 py-3">Failures</th>
+                                    <th class="px-4 py-3">Health Status</th>
+                                    <th class="px-4 py-3 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="warmup-relays-tbody" class="divide-y divide-white/5 text-[11px]">
+                                <!-- Rows injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Section 3: Interactive Ramp-Up Calculator & Schedule Simulator -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <div class="border-b border-white/5 pb-3">
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <i data-lucide="calculator" class="w-4 h-4 text-emerald-400"></i>
+                            <span>Interactive Ramp-Up Calculator & Simulator</span>
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Model how your audience will be throttled and balanced across Gmail, Outlook, Yahoo, and corporate MX providers over time.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/80 p-4 rounded-xl border border-white/5">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Total Recipients:</label>
+                            <input type="number" id="sim-audience-size" value="5000" min="10" max="500000" oninput="runWarmupSimulation()" class="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500 font-mono">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Warmup Strategy:</label>
+                            <select id="sim-strategy" onchange="runWarmupSimulation()" class="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="conservative_30" selected>Conservative 30-Day (Gmail / Outlook strict)</option>
+                                <option value="standard_14">Standard 14-Day (Balanced corporate / newsletter)</option>
+                                <option value="aggressive_7">Aggressive 7-Day (Fast ramp-up)</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end">
+                            <button type="button" onclick="runWarmupSimulation()" class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                <i data-lucide="play" class="w-3.5 h-3.5"></i> Recompute Curve
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Simulator Preview Table -->
+                    <div class="overflow-x-auto rounded-xl border border-white/5 bg-slate-950/60 max-h-80 overflow-y-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="sticky top-0 bg-slate-900 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-white/5 z-10">
+                                <tr>
+                                    <th class="px-4 py-2.5">Day</th>
+                                    <th class="px-4 py-2.5">Target Date</th>
+                                    <th class="px-4 py-2.5">Daily Cap</th>
+                                    <th class="px-4 py-2.5">Cumulative Volume</th>
+                                    <th class="px-4 py-2.5">Gmail (45%)</th>
+                                    <th class="px-4 py-2.5">Outlook (30%)</th>
+                                    <th class="px-4 py-2.5">Yahoo (15%)</th>
+                                    <th class="px-4 py-2.5">Corporate (10%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sim-table-tbody" class="divide-y divide-white/5 font-mono text-[11px]">
+                                <!-- Rows injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
+
 
     <!-- ========================================================================== -->
     <!-- MODALS                                                                     -->
     <!-- ========================================================================== -->
 
+    <!-- Modal: New Warmup Schedule -->
+    <div id="modal-new-warmup" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-lg rounded-2xl border border-orange-500/30 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl bg-orange-500/20 text-orange-400">
+                        <i data-lucide="flame" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-white">Create Automated Warmup Schedule</h3>
+                </div>
+                <button type="button" onclick="closeModal('modal-new-warmup')" class="text-slate-400 hover:text-white cursor-pointer"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400">Ramps up dispatch volume over 14–30 days with provider-balanced daily drops and multi-relay rotation to protect your domain reputation.</p>
+
+            <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="submitNewWarmupSchedule(event);" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Schedule Name:</label>
+                    <input type="text" id="modal-warmup-name" placeholder="e.g. Q4 Cold Domain Warmup (30 Days)" required class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Curve Strategy:</label>
+                        <select id="modal-warmup-strategy" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                            <option value="conservative_30" selected>Conservative (30 Days)</option>
+                            <option value="standard_14">Standard (14 Days)</option>
+                            <option value="aggressive_7">Aggressive (7 Days)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Rotation Mode:</label>
+                        <select id="modal-warmup-rotation" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                            <option value="round_robin" selected>Round-Robin & Failover</option>
+                            <option value="failover">Primary with Failover</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Recipient Audience Source:</label>
+                    <select id="modal-warmup-audience-source" onchange="toggleWarmupAudienceMode(this.value)" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                        <option value="list">Saved Customer Audience List</option>
+                        <option value="paste">Paste Recipient Emails</option>
+                    </select>
+                </div>
+
+                <div id="modal-warmup-list-wrap">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Select Customer List:</label>
+                    <select id="modal-warmup-list-id" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                        <option value="all">⭐ All Active Customers</option>
+                    </select>
+                </div>
+
+                <div id="modal-warmup-paste-wrap" class="hidden">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Paste Recipient Emails:</label>
+                    <textarea id="modal-warmup-paste-emails" rows="4" placeholder="user1@gmail.com, user2@outlook.com..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-orange-500"></textarea>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
+                    <button type="button" onclick="closeModal('modal-new-warmup')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer">Cancel</button>
+                    <button type="submit" id="btn-submit-warmup" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-lg shadow-orange-500/25 transition-all cursor-pointer">Initialize Warmup Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal 1: Add Multiple Customer Emails (Bulk Paste) -->
     <div id="modal-bulk-paste" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+
         <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">

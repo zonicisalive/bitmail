@@ -212,6 +212,14 @@ async def page_deliverability(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/warmup", response_class=HTMLResponse)
+async def page_warmup(request: Request):
+    """Dynamic Email Warmup & Multi-Relay Rotation Page."""
+    ctx = await get_initial_page_context(request, active_tab="warmup")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
+
 @router.get("/auth/scan-approve/{token}", response_class=HTMLResponse)
 async def page_scan_approve(request: Request, token: str):
     """Mobile 1-Tap QR Scan Approval Page."""

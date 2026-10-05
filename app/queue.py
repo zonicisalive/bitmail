@@ -299,12 +299,39 @@ class CampaignWorker:
             )
             await db.commit()
 
+        # Update warmup slice telemetry if campaign was a warmup slice
+        try:
+            async with get_db() as db:
+                async with db.execute(
+                    "SELECT id, schedule_id FROM warmup_slices WHERE campaign_id = ?",
+                    (self.campaign_id,)
+                ) as sc_cur:
+                    s_row = await sc_cur.fetchone()
+                if s_row:
+                    slice_id = s_row["id"]
+                    schedule_id = s_row["schedule_id"]
+                    await db.execute(
+                        "UPDATE warmup_slices SET dispatched_count = ?, failure_count = ?, status = ?, updated_at = ? WHERE id = ?",
+                        (sent, self._failed_count, "completed" if status == "completed" else "failed", now, slice_id)
+                    )
+                    await db.execute(
+                        "UPDATE warmup_schedules SET sent_today = sent_today + ?, updated_at = ? WHERE id = ?",
+                        (sent, now, schedule_id)
+                    )
+                    await db.commit()
+
+                    from app.warmup import WarmupCircuitBreaker
+                    await WarmupCircuitBreaker.check_and_apply(schedule_id, slice_id)
+        except Exception as warmup_ex:
+            logger.warning("Warmup slice finish update exception: %s", warmup_ex)
+
         await emit_event("campaign_completed", {
             "campaign_id": self.campaign_id,
             "status": status,
             "sent_count": sent,
             "total": total,
         })
+
 
 
 class CampaignQueueManager:

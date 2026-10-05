@@ -582,7 +582,10 @@ function switchTab(tabId, updateUrl = true) {
         fetchLogs();
     } else if (tabId === 'deliverability') {
         initDeliverabilityPanel();
+    } else if (tabId === 'warmup') {
+        initWarmupPanel();
     }
+
 
     initLucide();
 }
@@ -889,35 +892,30 @@ function setBroadcastTimingMode(mode) {
     App.broadcastTimingMode = mode;
     const btnNow = document.getElementById('btn-timing-now');
     const btnSchedule = document.getElementById('btn-timing-schedule');
-    const wrap = document.getElementById('broadcast-schedule-wrap');
+    const btnWarmup = document.getElementById('btn-timing-warmup');
+    const scheduleWrap = document.getElementById('broadcast-schedule-wrap');
+    const warmupWrap = document.getElementById('broadcast-warmup-wrap');
     const input = document.getElementById('broadcast-schedule-datetime');
     const launchBtn = document.getElementById('btn-launch-broadcast');
 
+    // Reset button states
+    if (btnNow) btnNow.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
+    if (btnSchedule) btnSchedule.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
+    if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-orange-400 hover:text-white transition-all cursor-pointer flex items-center gap-1';
+
+    if (scheduleWrap) scheduleWrap.classList.add('hidden');
+    if (warmupWrap) warmupWrap.classList.add('hidden');
+
     if (mode === 'now') {
-        if (btnNow) {
-            btnNow.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
-        }
-        if (btnSchedule) {
-            btnSchedule.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
-        }
-        if (wrap) {
-            wrap.classList.add('hidden');
-        }
+        if (btnNow) btnNow.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
         if (launchBtn) {
             launchBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i><span>Send to All Now</span>';
             launchBtn.className = 'px-5 py-2.5 rounded-xl btn-dark-green text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
             initLucide();
         }
-    } else {
-        if (btnSchedule) {
-            btnSchedule.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
-        }
-        if (btnNow) {
-            btnNow.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
-        }
-        if (wrap) {
-            wrap.classList.remove('hidden');
-        }
+    } else if (mode === 'schedule') {
+        if (btnSchedule) btnSchedule.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
+        if (scheduleWrap) scheduleWrap.classList.remove('hidden');
         if (input && (!input.value || new Date(input.value).getTime() <= Date.now())) {
             const nextHour = new Date(Date.now() + 3600000);
             const tzOffset = nextHour.getTimezoneOffset() * 60000;
@@ -928,8 +926,18 @@ function setBroadcastTimingMode(mode) {
             launchBtn.className = 'px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
             initLucide();
         }
+    } else if (mode === 'warmup') {
+        if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-white bg-orange-600 font-semibold transition-all cursor-pointer flex items-center gap-1 shadow-sm';
+        if (warmupWrap) warmupWrap.classList.remove('hidden');
+        updateBroadcastWarmupHint();
+        if (launchBtn) {
+            launchBtn.innerHTML = '<i data-lucide="flame" class="w-4 h-4"></i><span>Start Warmup Ramp-Up</span>';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            initLucide();
+        }
     }
 }
+
 
 function parseEmailsFromString(text) {
     if (!text) return [];
@@ -1737,6 +1745,7 @@ async function launchQuickBroadcast() {
 
     let scheduledIso = null;
     const isScheduled = App.broadcastTimingMode === 'schedule';
+    const isWarmup = App.broadcastTimingMode === 'warmup';
     if (isScheduled) {
         const dtVal = document.getElementById('broadcast-schedule-datetime')?.value;
         if (!dtVal) {
@@ -1750,6 +1759,9 @@ async function launchQuickBroadcast() {
         }
         scheduledIso = parsedDate.toISOString();
         payload.scheduled_at = scheduledIso;
+    } else if (isWarmup) {
+        payload.warmup_enabled = true;
+        payload.warmup_strategy = document.getElementById('broadcast-warmup-strategy')?.value || 'conservative_30';
     }
 
     if (App.audienceMode === 'paste') {
@@ -1766,17 +1778,21 @@ async function launchQuickBroadcast() {
     }
 
     // Confirmation prompt
-    const confirmMsg = isScheduled
-        ? `Schedule broadcast "${subject}" for ${new Date(scheduledIso).toLocaleString()}?`
-        : `Launch broadcast "${subject}" to your target customer recipients?`;
-    const confirmDetail = isScheduled
-        ? 'The automated campaign scheduler will dispatch this broadcast when the scheduled time arrives.'
-        : 'Every message is delivered with rate limiting and archived in the Storage Vault.';
+    const confirmMsg = isWarmup
+        ? `Start automated Warmup Ramp-Up for "${subject}"?`
+        : (isScheduled
+            ? `Schedule broadcast "${subject}" for ${new Date(scheduledIso).toLocaleString()}?`
+            : `Launch broadcast "${subject}" to your target customer recipients?`);
+    const confirmDetail = isWarmup
+        ? `Emails will be sliced into daily drops following the ${payload.warmup_strategy} curve with automatic relay rotation and provider balancing.`
+        : (isScheduled
+            ? 'The automated campaign scheduler will dispatch this broadcast when the scheduled time arrives.'
+            : 'Every message is delivered with rate limiting and archived in the Storage Vault.');
 
     const confirmed = await confirmDialog(confirmMsg, {
-        title: isScheduled ? 'Confirm scheduled broadcast' : 'Confirm broadcast launch',
+        title: isWarmup ? 'Confirm Warmup Ramp-Up' : (isScheduled ? 'Confirm scheduled broadcast' : 'Confirm broadcast launch'),
         detail: confirmDetail,
-        confirmText: isScheduled ? 'Schedule broadcast' : 'Launch broadcast'
+        confirmText: isWarmup ? 'Start Warmup Ramp-Up' : (isScheduled ? 'Schedule broadcast' : 'Launch broadcast')
     });
     if (!confirmed) return;
 
@@ -1796,6 +1812,13 @@ async function launchQuickBroadcast() {
             return;
         }
 
+        if (data.warmup_enabled) {
+            showToast(`🔥 Warmup Ramp-Up started: ${data.day_1_cap} emails today across ${data.total_days} days!`, 'success');
+            await fetchCampaigns();
+            switchTab('warmup');
+            return;
+        }
+
         if (data.status === 'scheduled') {
             showToast(`📅 Broadcast scheduled for ${new Date(data.scheduled_at || scheduledIso).toLocaleString()}!`, 'success');
             await fetchCampaigns();
@@ -1806,6 +1829,7 @@ async function launchQuickBroadcast() {
         
         // Open live monitoring console
         startLiveBroadcastMonitoring(data.campaign_id, data.total_recipients);
+
     } catch (err) {
         showToast(`Broadcast exception: ${err.message}`, 'error');
     } finally {
@@ -5733,4 +5757,364 @@ function applyBroadcastCleanedRecipients() {
     if (banner) banner.classList.add('hidden');
     showToast(`✓ Applied clean recipient list (${cleaned.length} verified addresses).`, 'success');
 }
+
+
+// ==============================================================================
+// 12. Automated Email Warmup & Relay Rotation Controller
+// ==============================================================================
+
+App.warmup = {
+    schedules: [],
+    relays: [],
+    simulation: null
+};
+
+async function initWarmupPanel() {
+    await fetchWarmupSchedules();
+    await fetchRelayPool();
+    await runWarmupSimulation();
+}
+
+async function fetchWarmupSchedules() {
+    try {
+        const res = await fetch('/api/warmup/schedules');
+        if (!res.ok) return;
+        const data = await res.json();
+        App.warmup.schedules = data;
+
+        const activeCount = data.filter(s => s.status === 'active').length;
+        const totalRecipients = data.reduce((acc, s) => acc + (s.total_recipients || 0), 0);
+        const todayCap = data.filter(s => s.status === 'active').reduce((acc, s) => acc + (s.daily_cap || 0), 0);
+        const todaySent = data.reduce((acc, s) => acc + (s.sent_today || 0), 0);
+
+        setText('warmup-kpi-active-count', activeCount);
+        setText('warmup-kpi-total-recipients', `${totalRecipients.toLocaleString()} total recipients warming`);
+        setText('warmup-kpi-today-cap', todayCap.toLocaleString());
+        setText('warmup-kpi-today-sent', `${todaySent.toLocaleString()} sent today`);
+
+        renderWarmupSchedules(data);
+    } catch (err) {
+        console.warn('Error fetching warmup schedules:', err);
+    }
+}
+
+function renderWarmupSchedules(schedules) {
+    const listEl = document.getElementById('warmup-schedules-list');
+    if (!listEl) return;
+
+    if (!schedules || schedules.length === 0) {
+        listEl.innerHTML = `<div class="text-center py-8 text-xs text-slate-500">No active warmup schedules. Click "+ New Warmup Schedule" or enable Warmup Ramp-Up in Quick Broadcast.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = schedules.map(s => {
+        const progressPct = Math.min(100, Math.round((s.current_day / s.total_days) * 100));
+        const statusBadge = s.status === 'active'
+            ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>'
+            : (s.status === 'paused'
+                ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PAUSED</span>'
+                : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400">COMPLETED</span>');
+
+        return `
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-white/5 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-white text-xs">${escapeHtml(s.name)}</span>
+                            ${statusBadge}
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">${s.strategy}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">
+                            Day ${s.current_day} of ${s.total_days} • Today's Cap: <strong class="text-white">${s.daily_cap.toLocaleString()}</strong> • Total Audience: ${s.total_recipients.toLocaleString()}
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        ${s.status === 'active' ? `
+                            <button type="button" onclick="pauseWarmupSchedule('${s.id}')" class="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30 transition-all cursor-pointer flex items-center gap-1">
+                                <i data-lucide="pause" class="w-3 h-3"></i> Pause
+                            </button>
+                        ` : (s.status === 'paused' ? `
+                            <button type="button" onclick="resumeWarmupSchedule('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-semibold border border-emerald-500/30 transition-all cursor-pointer flex items-center gap-1">
+                                <i data-lucide="play" class="w-3 h-3"></i> Resume
+                            </button>
+                        ` : '')}
+                        <button type="button" onclick="deleteWarmupSchedule('${s.id}')" class="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all cursor-pointer" title="Delete Schedule">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[11px] text-slate-400 font-mono">
+                        <span>Progress: Day ${s.current_day}/${s.total_days}</span>
+                        <span>${progressPct}% Complete</span>
+                    </div>
+                    <div class="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-white/5">
+                        <div class="bg-gradient-to-r from-orange-500 to-amber-400 h-full transition-all duration-300" style="width: ${progressPct}%"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    initLucide();
+}
+
+async function fetchRelayPool() {
+    try {
+        const res = await fetch('/api/warmup/relays');
+        if (!res.ok) return;
+        const data = await res.json();
+        App.warmup.relays = data;
+
+        const inPoolCount = data.filter(r => r.in_pool).length;
+        setText('warmup-kpi-pool-count', `${inPoolCount} Nodes`);
+        renderRelayPool(data);
+    } catch (err) {
+        console.warn('Error fetching relay pool:', err);
+    }
+}
+
+function renderRelayPool(relays) {
+    const tbody = document.getElementById('warmup-relays-tbody');
+    if (!tbody) return;
+
+    if (!relays || relays.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-slate-500 text-xs">No mail servers configured. Add an SMTP profile under Mail Servers.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = relays.map(r => {
+        const isCooling = r.is_cooling_down;
+        const statusBadge = isCooling
+            ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 w-fit"><i data-lucide="alert-triangle" class="w-3 h-3"></i> Cooldown (until ${r.cooldown_until ? r.cooldown_until.slice(11, 16) : 'soon'})</span>`
+            : `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 w-fit"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Healthy</span>`;
+
+        return `
+            <tr class="hover:bg-white/[0.02] transition-colors">
+                <td class="px-4 py-3 font-semibold text-white">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="server" class="w-3.5 h-3.5 text-indigo-400"></i>
+                        <span>${escapeHtml(r.name)}</span>
+                    </div>
+                    <div class="text-[10px] text-slate-500 font-mono">${escapeHtml(r.host)}:${r.port}</div>
+                </td>
+                <td class="px-4 py-3">
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" ${r.in_pool ? 'checked' : ''} onchange="toggleRelayPoolMembership('${r.smtp_config_id}', this.checked)" class="sr-only peer">
+                        <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600"></div>
+                    </label>
+                </td>
+                <td class="px-4 py-3 font-mono text-slate-300">Day ${r.current_day}</td>
+                <td class="px-4 py-3 font-mono text-emerald-400 font-semibold">${r.daily_sends.toLocaleString()}</td>
+                <td class="px-4 py-3 font-mono ${r.daily_failures > 0 ? 'text-rose-400 font-bold' : 'text-slate-500'}">${r.daily_failures}</td>
+                <td class="px-4 py-3">${statusBadge}</td>
+                <td class="px-4 py-3 text-right">
+                    <button type="button" onclick="testConfiguredSmtp('${r.smtp_config_id}')" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300 transition-colors cursor-pointer">
+                        Test
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    initLucide();
+}
+
+async function toggleRelayPoolMembership(smtpConfigId, inPool) {
+    try {
+        const res = await fetch(`/api/warmup/relays/${smtpConfigId}/toggle-pool`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ in_pool: inPool })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to update relay pool', 'error');
+            return;
+        }
+        showToast(data.message, 'success');
+        await fetchRelayPool();
+    } catch (err) {
+        showToast('Error updating relay pool: ' + err.message, 'error');
+    }
+}
+
+async function pauseWarmupSchedule(scheduleId) {
+    try {
+        const res = await fetch(`/api/warmup/schedules/${scheduleId}/pause`, { method: 'POST' });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to pause schedule', 'error');
+            return;
+        }
+        showToast('Warmup schedule paused.', 'warning');
+        await fetchWarmupSchedules();
+    } catch (err) {
+        showToast('Error pausing schedule: ' + err.message, 'error');
+    }
+}
+
+async function resumeWarmupSchedule(scheduleId) {
+    try {
+        const res = await fetch(`/api/warmup/schedules/${scheduleId}/resume`, { method: 'POST' });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to resume schedule', 'error');
+            return;
+        }
+        showToast('Warmup schedule resumed.', 'success');
+        await fetchWarmupSchedules();
+    } catch (err) {
+        showToast('Error resuming schedule: ' + err.message, 'error');
+    }
+}
+
+async function deleteWarmupSchedule(scheduleId) {
+    const ok = await confirmDialog('Are you sure you want to delete this warmup schedule? All pending slices will be removed.', {
+        title: 'Delete Warmup Schedule',
+        confirmText: 'Delete Schedule'
+    });
+    if (!ok) return;
+
+    try {
+        const res = await fetch(`/api/warmup/schedules/${scheduleId}`, { method: 'DELETE' });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to delete schedule', 'error');
+            return;
+        }
+        showToast('Warmup schedule deleted.', 'success');
+        await fetchWarmupSchedules();
+    } catch (err) {
+        showToast('Error deleting schedule: ' + err.message, 'error');
+    }
+}
+
+async function runWarmupSimulation() {
+    const size = parseInt(document.getElementById('sim-audience-size')?.value || '5000', 10);
+    const strat = document.getElementById('sim-strategy')?.value || 'conservative_30';
+    const tbody = document.getElementById('sim-table-tbody');
+    if (!tbody) return;
+
+    try {
+        const res = await fetch('/api/warmup/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                total_recipients: size,
+                strategy: strat
+            })
+        });
+        const data = await safeJson(res);
+        if (!res.ok || !data.slices) return;
+
+        tbody.innerHTML = data.slices.map(s => `
+            <tr class="hover:bg-white/[0.02] transition-colors">
+                <td class="px-4 py-2 font-bold text-orange-400">Day ${s.day}</td>
+                <td class="px-4 py-2 text-slate-400">${s.date}</td>
+                <td class="px-4 py-2 text-white font-semibold">${s.daily_cap.toLocaleString()}</td>
+                <td class="px-4 py-2 text-indigo-300 font-semibold">${s.cumulative_volume.toLocaleString()}</td>
+                <td class="px-4 py-2 text-slate-300">${(s.recommended_providers?.gmail || 0).toLocaleString()}</td>
+                <td class="px-4 py-2 text-slate-300">${(s.recommended_providers?.microsoft || 0).toLocaleString()}</td>
+                <td class="px-4 py-2 text-slate-300">${(s.recommended_providers?.yahoo || 0).toLocaleString()}</td>
+                <td class="px-4 py-2 text-slate-300">${(s.recommended_providers?.corporate || 0).toLocaleString()}</td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        console.warn('Simulation error:', err);
+    }
+}
+
+function updateBroadcastWarmupHint() {
+    const strat = document.getElementById('broadcast-warmup-strategy')?.value || 'conservative_30';
+    const hint = document.getElementById('broadcast-warmup-hint');
+    if (!hint) return;
+
+    if (strat === 'conservative_30') {
+        hint.innerHTML = '<strong>Conservative (30 Days):</strong> Starts at 50 emails on Day 1, ramping gradually to 50k+. Highly recommended for brand-new domains or recovering from spam flags.';
+    } else if (strat === 'standard_14') {
+        hint.innerHTML = '<strong>Standard (14 Days):</strong> Starts at 100 emails on Day 1, ramping to 20k+. Balanced progression for established domains warming a new SMTP IP.';
+    } else if (strat === 'aggressive_7') {
+        hint.innerHTML = '<strong>Aggressive (7 Days):</strong> Starts at 250 emails on Day 1, ramping rapidly to 20k+. Best for trusted transactional lists.';
+    }
+}
+
+function openNewWarmupModal() {
+    const listSelect = document.getElementById('modal-warmup-list-id');
+    if (listSelect && App.lists) {
+        listSelect.innerHTML = `<option value="all">⭐ All Active Customers</option>` +
+            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.subscriber_count || 0})</option>`).join('');
+    }
+    openModal('modal-new-warmup');
+}
+
+function toggleWarmupAudienceMode(mode) {
+    const listWrap = document.getElementById('modal-warmup-list-wrap');
+    const pasteWrap = document.getElementById('modal-warmup-paste-wrap');
+    if (mode === 'paste') {
+        if (listWrap) listWrap.classList.add('hidden');
+        if (pasteWrap) pasteWrap.classList.remove('hidden');
+    } else {
+        if (listWrap) listWrap.classList.remove('hidden');
+        if (pasteWrap) pasteWrap.classList.add('hidden');
+    }
+}
+
+async function submitNewWarmupSchedule(event) {
+    if (event) event.preventDefault();
+    const name = document.getElementById('modal-warmup-name')?.value?.trim();
+    const strat = document.getElementById('modal-warmup-strategy')?.value || 'conservative_30';
+    const rotation = document.getElementById('modal-warmup-rotation')?.value || 'round_robin';
+    const mode = document.getElementById('modal-warmup-audience-source')?.value || 'list';
+
+    if (!name) {
+        showToast('Please enter a schedule name.', 'warning');
+        return;
+    }
+
+    const payload = {
+        name: name,
+        strategy: strat,
+        rotation_mode: rotation
+    };
+
+    if (mode === 'paste') {
+        const raw = document.getElementById('modal-warmup-paste-emails')?.value || '';
+        const parsed = parseEmailsFromString(raw);
+        if (parsed.length === 0) {
+            showToast('Please paste at least one valid recipient email.', 'warning');
+            return;
+        }
+        payload.recipient_emails = parsed.map(p => p.email);
+    } else {
+        const lid = document.getElementById('modal-warmup-list-id')?.value;
+        payload.list_id = lid === 'all' ? null : lid;
+    }
+
+    const btn = document.getElementById('btn-submit-warmup');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/warmup/schedules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to initialize warmup schedule', 'error');
+            return;
+        }
+        closeModal('modal-new-warmup');
+        showToast(`🔥 Warmup schedule created (${data.total_days} days, Day 1 cap: ${data.daily_cap})!`, 'success');
+        await fetchWarmupSchedules();
+    } catch (err) {
+        showToast('Error creating warmup schedule: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 

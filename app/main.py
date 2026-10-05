@@ -31,7 +31,9 @@ from app.routes import (
     templates,
     tracking,
     transactional,
+    warmup,
 )
+
 
 from app.logging_service import setup_logging_interceptor
 from app.scheduler import campaign_scheduler
@@ -92,6 +94,8 @@ app.include_router(logs.router, dependencies=[Depends(get_current_user)])
 app.include_router(transactional.router, dependencies=[Depends(get_current_user)])
 app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 app.include_router(deliverability.router, dependencies=[Depends(get_current_user)])
+app.include_router(warmup.router, dependencies=[Depends(get_current_user)])
+
 
 
 # Alias route for API explorer in frontend: /api/v1/vault/emails -> storage.list_stored_emails

@@ -394,6 +394,63 @@ async def init_db() -> None:
             );
         """)
 
+        # 13. Warmup Schedules Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS warmup_schedules (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                campaign_id TEXT,
+                strategy TEXT NOT NULL DEFAULT 'conservative_30',
+                total_recipients INTEGER NOT NULL DEFAULT 0,
+                current_day INTEGER NOT NULL DEFAULT 1,
+                total_days INTEGER NOT NULL DEFAULT 14,
+                daily_cap INTEGER NOT NULL DEFAULT 50,
+                sent_today INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                relay_pool_json TEXT DEFAULT '[]',
+                rotation_mode TEXT NOT NULL DEFAULT 'round_robin',
+                max_bounce_rate REAL NOT NULL DEFAULT 0.02,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 14. Warmup Slices Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS warmup_slices (
+                id TEXT PRIMARY KEY,
+                schedule_id TEXT NOT NULL REFERENCES warmup_schedules(id) ON DELETE CASCADE,
+                day_number INTEGER NOT NULL,
+                scheduled_for TEXT NOT NULL,
+                target_count INTEGER NOT NULL,
+                dispatched_count INTEGER NOT NULL DEFAULT 0,
+                bounce_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                campaign_id TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                recipients_json TEXT DEFAULT '[]',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 15. Relay Pool Stats Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS relay_pool_stats (
+                id TEXT PRIMARY KEY,
+                smtp_config_id TEXT NOT NULL UNIQUE,
+                in_pool INTEGER NOT NULL DEFAULT 0,
+                current_day INTEGER NOT NULL DEFAULT 1,
+                daily_sends INTEGER NOT NULL DEFAULT 0,
+                daily_failures INTEGER NOT NULL DEFAULT 0,
+                cooldown_until TEXT,
+                last_error TEXT,
+                last_used_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
         # Migration helper to ensure columns exist in existing SQLite databases
         async def add_column_if_missing(table_name: str, col_name: str, col_type: str):
             try:
@@ -419,13 +476,18 @@ async def init_db() -> None:
         await add_column_if_missing("sent_emails", "eml_size_bytes", "INTEGER DEFAULT 0")
         await add_column_if_missing("sent_emails", "metadata_json", "TEXT DEFAULT '{}'")
 
-
         await add_column_if_missing("campaigns", "template_html", "TEXT")
         await add_column_if_missing("campaigns", "template_text", "TEXT")
         await add_column_if_missing("campaigns", "smtp_config_json", "TEXT")
         await add_column_if_missing("campaigns", "unsubscribed_count", "INTEGER DEFAULT 0")
         await add_column_if_missing("campaigns", "rate_limit_per_sec", "INTEGER DEFAULT 25")
         await add_column_if_missing("campaigns", "concurrency_limit", "INTEGER DEFAULT 10")
+        await add_column_if_missing("campaigns", "is_warmup", "INTEGER DEFAULT 0")
+        await add_column_if_missing("campaigns", "warmup_schedule_id", "TEXT")
+
+        await add_column_if_missing("smtp_configs", "in_relay_pool", "INTEGER DEFAULT 0")
+        await add_column_if_missing("smtp_configs", "warmup_day", "INTEGER DEFAULT 1")
+
 
         # Indexes
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);")
