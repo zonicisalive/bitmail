@@ -3257,13 +3257,68 @@ async function fetchTemplates() {
         if (!res.ok) return;
         App.templates = await res.json();
         renderTemplatePresets();
+        populateBroadcastTemplateDropdown();
     } catch (err) {
         console.warn('Templates fetch error:', err);
     }
 }
 
+function populateBroadcastTemplateDropdown() {
+    const sel = document.getElementById('broadcast-saved-template-select');
+    if (!sel) return;
+    const currentVal = sel.value;
+    if (!App.templates || App.templates.length === 0) {
+        sel.innerHTML = '<option value="">📁 No Saved Templates</option>';
+        return;
+    }
+    sel.innerHTML = '<option value="">📁 Choose Saved Template (' + App.templates.length + ')...</option>' + 
+        App.templates.map(tpl => `
+            <option value="${tpl.id}">${escapeHtml(tpl.name)}${tpl.subject ? ' – ' + escapeHtml(tpl.subject) : ''}</option>
+        `).join('');
+    if (currentVal && App.templates.some(t => t.id === currentVal)) {
+        sel.value = currentVal;
+    }
+}
+
+function onSelectBroadcastSavedTemplate(tplId) {
+    if (!tplId) return;
+    const tpl = (App.templates || []).find(t => t.id === tplId);
+    if (!tpl) return;
+
+    const subInput = document.getElementById('broadcast-subject');
+    const bodyTextarea = document.getElementById('broadcast-html');
+
+    if (subInput && tpl.subject) {
+        subInput.value = tpl.subject;
+    }
+    if (bodyTextarea) {
+        bodyTextarea.value = tpl.body_html || tpl.body_template || '';
+    }
+
+    showToast(`✓ Loaded saved template: "${tpl.name}"`, 'success');
+}
+
+function useTemplateInBroadcast(tplId) {
+    if (!tplId) return;
+    const tpl = (App.templates || []).find(t => t.id === tplId);
+    if (!tpl) return;
+
+    if (typeof switchTab === 'function') switchTab('broadcast');
+
+    const subInput = document.getElementById('broadcast-subject');
+    const bodyTextarea = document.getElementById('broadcast-html');
+    const sel = document.getElementById('broadcast-saved-template-select');
+
+    if (subInput && tpl.subject) subInput.value = tpl.subject;
+    if (bodyTextarea) bodyTextarea.value = tpl.body_html || tpl.body_template || '';
+    if (sel) sel.value = tpl.id;
+
+    showToast(`✓ Switched to Broadcast with template "${tpl.name}"`, 'success');
+}
+
 function renderTemplatePresets() {
     const listEl = document.getElementById('template-starter-list');
+    populateBroadcastTemplateDropdown();
     if (!listEl) return;
 
     if (App.templates.length === 0) {
@@ -3284,6 +3339,9 @@ function renderTemplatePresets() {
                 <div class="text-xs font-bold text-white truncate">${escapeHtml(tpl.name)}</div>
                 <div class="text-[11px] text-slate-400 truncate mt-0.5">${escapeHtml(tpl.subject || '')}</div>
             </div>
+            <button onclick="useTemplateInBroadcast('${tpl.id}')" class="p-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 opacity-0 group-hover:opacity-100 transition-opacity" title="Use this template in Broadcast composer">
+                <i data-lucide="send" class="w-3 h-3"></i>
+            </button>
             <button onclick="deleteTemplate('${tpl.id}')" class="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete template">
                 <i data-lucide="trash-2" class="w-3 h-3"></i>
             </button>
