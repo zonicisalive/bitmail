@@ -481,3 +481,19 @@ div[id^="modal-"].fixed > div {
     accent-color: #6366f1;
     cursor: pointer;
 }
+
+/* ==========================================================================
+   Autofill Suppression & Theme Consistency
+   Prevents browser credential managers from turning dark theme inputs yellow.
+   ========================================================================== */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #0b111e inset !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    caret-color: #f8fafc !important;
+    transition: background-color 5000s ease-in-out 0s !important;
+}

@@ -158,12 +158,12 @@
                 <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden p-2 rounded-lg bg-slate-800/80 text-slate-300 hover:text-white border border-slate-700/60 shrink-0" title="Toggle Navigation Menu">
                     <i data-lucide="menu" class="w-4 h-4"></i>
                 </button>
-                <div class="relative w-full min-w-0">
+                <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative w-full min-w-0">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400"></i>
                     </div>
-                    <input type="search" id="global-search-input" name="search_bitmail_global" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
-                </div>
+                    <input type="search" id="global-search-input" name="search_bitmail_global" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                </form>
             </div>
 
             <!-- Right: Status, Secondary Actions, Primary CTA, User Profile -->
@@ -720,12 +720,12 @@
 
                 <!-- Search & Filters -->
                 <div class="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-3">
-                    <div class="relative flex-1 w-full min-w-[240px]">
+                    <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 w-full min-w-[240px]">
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                             <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
                         </div>
-                        <input type="search" id="vault-search-input" name="search_vault" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
-                    </div>
+                        <input type="search" id="vault-search-input" name="search_vault" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                    </form>
                     <select id="vault-filter-status" onchange="filterVaultEmails()" class="px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
                         <option value="all">All Statuses</option>
                         <option value="delivered">Delivered</option>
@@ -802,12 +802,12 @@
 
                 <!-- Search & Filters -->
                 <div class="glass-panel p-3 sm:p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-                    <div class="relative flex-1 min-w-[240px]">
+                    <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 min-w-[240px]">
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                             <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
                         </div>
-                        <input type="search" id="subscriber-search-input" name="search_subscribers" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
-                    </div>
+                        <input type="search" id="subscriber-search-input" name="search_subscribers" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                    </form>
                     <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
                         <div class="relative flex-1 sm:flex-none flex items-center gap-1.5">
                             <select id="subscriber-filter-list" onchange="filterSubscribers()" class="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
@@ -1089,12 +1089,12 @@
                 <!-- Filter Bar & Control Toolbar -->
                 <div class="glass-panel p-3.5 rounded-2xl border border-white/10 flex flex-wrap items-center justify-between gap-3">
                     <div class="flex items-center gap-2.5 flex-1 min-w-[240px]">
-                        <div class="relative flex-1 flex items-center">
+                        <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 flex items-center">
                             <div class="input-icon-left">
                                 <i data-lucide="search" class="w-4 h-4"></i>
                             </div>
-                            <input type="search" id="logs-search-input" name="search_logs" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
-                        </div>
+                            <input type="search" id="logs-search-input" name="search_logs" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                        </form>
                     </div>
 
                     <div class="flex items-center gap-2.5 flex-wrap">
@@ -1336,57 +1336,59 @@
                 <button onclick="closeModal('modal-add-smtp')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
 
-            <div class="space-y-3">
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Profile Name</label>
-                    <input type="text" id="modal-smtp-name" placeholder="e.g. Gmail Production / SendGrid" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                </div>
-                <div class="grid grid-cols-3 gap-3">
-                    <div class="col-span-2">
-                        <label class="block text-xs font-medium text-slate-300 mb-1">SMTP Host</label>
-                        <input type="text" id="modal-smtp-host" placeholder="smtp.gmail.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                    </div>
+            <form id="form-modal-smtp" autocomplete="off" onsubmit="event.preventDefault(); submitAddSmtpProfile();" class="space-y-4">
+                <div class="space-y-3">
                     <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Port</label>
-                        <input type="number" id="modal-smtp-port" value="587" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Profile Name</label>
+                        <input type="text" id="modal-smtp-name" placeholder="e.g. Gmail Production / SendGrid" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                     </div>
-                </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Username / Email</label>
-                        <input type="text" id="modal-smtp-user" placeholder="your-email@gmail.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-medium text-slate-300 mb-1">SMTP Host</label>
+                            <input type="text" id="modal-smtp-host" placeholder="smtp.gmail.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Port</label>
+                            <input type="number" id="modal-smtp-port" value="587" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Password / App Password</label>
-                        <input type="password" id="modal-smtp-pass" placeholder="••••••••••••" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Username / Email</label>
+                            <input type="text" id="modal-smtp-user" placeholder="your-email@gmail.com" autocomplete="off" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Password / App Password</label>
+                            <input type="password" id="modal-smtp-pass" placeholder="••••••••••••" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4 pt-1">
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="modal-smtp-tls" checked class="rounded bg-slate-900 text-indigo-600">
+                            <span>Use STARTTLS (Port 587)</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="modal-smtp-ssl" class="rounded bg-slate-900 text-indigo-600">
+                            <span>Use SSL (Port 465)</span>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                            <input type="checkbox" id="modal-smtp-default" checked class="rounded bg-slate-900 text-indigo-600">
+                            <span>Set Default</span>
+                        </label>
                     </div>
                 </div>
 
-                <div class="flex items-center gap-4 pt-1">
-                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                        <input type="checkbox" id="modal-smtp-tls" checked class="rounded bg-slate-900 text-indigo-600">
-                        <span>Use STARTTLS (Port 587)</span>
-                    </label>
-                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                        <input type="checkbox" id="modal-smtp-ssl" class="rounded bg-slate-900 text-indigo-600">
-                        <span>Use SSL (Port 465)</span>
-                    </label>
-                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                        <input type="checkbox" id="modal-smtp-default" checked class="rounded bg-slate-900 text-indigo-600">
-                        <span>Set Default</span>
-                    </label>
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <button type="button" onclick="testModalSmtpConnection()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                        <i data-lucide="activity" class="w-3.5 h-3.5"></i> Test Connection
+                    </button>
+                    <div class="flex items-center gap-2">
+                        <button type="button" onclick="closeModal('modal-add-smtp')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                        <button type="submit" id="btn-smtp-submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Mail Server</button>
+                    </div>
                 </div>
-            </div>
-
-            <div class="flex items-center justify-between pt-3 border-t border-white/5">
-                <button type="button" onclick="testModalSmtpConnection()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                    <i data-lucide="activity" class="w-3.5 h-3.5"></i> Test Connection
-                </button>
-                <div class="flex items-center gap-2">
-                    <button onclick="closeModal('modal-add-smtp')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                    <button id="btn-smtp-submit" onclick="submitAddSmtpProfile()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Mail Server</button>
-                </div>
-            </div>
+            </form>
         </div>
     </div>
 
@@ -1459,36 +1461,38 @@
                 </ol>
             </div>
 
-            <div class="space-y-3">
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Your Gmail or Workspace Email Address *</label>
-                    <input type="email" id="gmail-email-input" placeholder="youremail@gmail.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
+            <form id="form-modal-gmail" autocomplete="off" onsubmit="event.preventDefault(); submitGmailConnect();" class="space-y-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Your Gmail or Workspace Email Address *</label>
+                        <input type="email" id="gmail-email-input" placeholder="youremail@gmail.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">16-Character Google App Password *</label>
+                        <input type="text" id="gmail-app-password-input" placeholder="abcd efgh ijkl mnop" autocomplete="new-password" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
+                        <p class="text-[10px] text-slate-500 mt-1">Spaces are automatically removed for you.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Sender Display Name (optional)</label>
+                        <input type="text" id="gmail-sender-name-input" placeholder="e.g. Acme Support / Your Name" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-red-500">
+                    </div>
+
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                        <input type="checkbox" id="gmail-set-default" checked class="rounded bg-slate-900 text-red-600 focus:ring-red-500">
+                        <span>Set Gmail as Default Outgoing Mail Relay</span>
+                    </label>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">16-Character Google App Password *</label>
-                    <input type="text" id="gmail-app-password-input" placeholder="abcd efgh ijkl mnop" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
-                    <p class="text-[10px] text-slate-500 mt-1">Spaces are automatically removed for you.</p>
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <button type="button" onclick="closeModal('modal-gmail-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                    <button type="submit" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl btn-dark-blue text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                        <span>Connect & Verify Gmail</span>
+                    </button>
                 </div>
-
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Sender Display Name (optional)</label>
-                    <input type="text" id="gmail-sender-name-input" placeholder="e.g. Acme Support / Your Name" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-red-500">
-                </div>
-
-                <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
-                    <input type="checkbox" id="gmail-set-default" checked class="rounded bg-slate-900 text-red-600 focus:ring-red-500">
-                    <span>Set Gmail as Default Outgoing Mail Relay</span>
-                </label>
-            </div>
-
-            <div class="flex items-center justify-between pt-3 border-t border-white/5">
-                <button onclick="closeModal('modal-gmail-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button onclick="submitGmailConnect()" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl btn-dark-blue text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
-                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-                    <span>Connect & Verify Gmail</span>
-                </button>
-            </div>
+            </form>
         </div>
     </div>
 
@@ -1520,31 +1524,33 @@
                 </ol>
             </div>
 
-            <div class="space-y-3">
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Your Brevo Login Email Address *</label>
-                    <input type="email" id="brevo-email-input" placeholder="youremail@domain.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+            <form id="form-modal-brevo" autocomplete="off" onsubmit="event.preventDefault(); submitBrevoConnect();" class="space-y-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Your Brevo Login Email Address *</label>
+                        <input type="email" id="brevo-email-input" placeholder="youremail@domain.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Brevo SMTP Master Key *</label>
+                        <input type="text" id="brevo-key-input" placeholder="xsmtpsib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="new-password" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                        <p class="text-[10px] text-slate-500 mt-1">Generated from your Brevo SMTP Keys page.</p>
+                    </div>
+
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                        <input type="checkbox" id="brevo-set-default" checked class="rounded bg-slate-900 text-emerald-600 focus:ring-emerald-500">
+                        <span>Set Brevo as Default Outgoing Mail Relay</span>
+                    </label>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Brevo SMTP Master Key *</label>
-                    <input type="text" id="brevo-key-input" placeholder="xsmtpsib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
-                    <p class="text-[10px] text-slate-500 mt-1">Generated from your Brevo SMTP Keys page.</p>
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <button type="button" onclick="closeModal('modal-brevo-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                    <button type="submit" id="btn-submit-brevo-connect" class="px-5 py-2 rounded-xl btn-dark-green text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                        <span>Connect & Verify Brevo</span>
+                    </button>
                 </div>
-
-                <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
-                    <input type="checkbox" id="brevo-set-default" checked class="rounded bg-slate-900 text-emerald-600 focus:ring-emerald-500">
-                    <span>Set Brevo as Default Outgoing Mail Relay</span>
-                </label>
-            </div>
-
-            <div class="flex items-center justify-between pt-3 border-t border-white/5">
-                <button onclick="closeModal('modal-brevo-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button onclick="submitBrevoConnect()" id="btn-submit-brevo-connect" class="px-5 py-2 rounded-xl btn-dark-green text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
-                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
-                    <span>Connect & Verify Brevo</span>
-                </button>
-            </div>
+            </form>
         </div>
     </div>
 
@@ -1664,18 +1670,19 @@
                 </h3>
                 <button type="button" onclick="closeModal('modal-change-password')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
             </div>
-            <form onsubmit="handleChangePassword(event)" class="space-y-3">
+            <form id="form-change-password" onsubmit="handleChangePassword(event)" autocomplete="off" class="space-y-3">
+                <input type="text" name="username" value="admin" autocomplete="username" class="hidden" style="display:none;" aria-hidden="true" tabindex="-1">
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">Current Password</label>
-                    <input id="cp-current-password" type="password" required class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                    <input id="cp-current-password" type="password" required autocomplete="current-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">New Password (min 6 chars)</label>
-                    <input id="cp-new-password" type="password" required minlength="6" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                    <input id="cp-new-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">Confirm New Password</label>
-                    <input id="cp-confirm-password" type="password" required minlength="6" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                    <input id="cp-confirm-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
                 </div>
                 <div id="cp-error-alert" class="hidden p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs"></div>
                 <button type="submit" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all cursor-pointer">

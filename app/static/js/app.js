@@ -123,17 +123,29 @@ function initLucide() {
 
 function suppressUnwantedAutofill() {
     try {
+        // 1. Disable inputs inside all currently hidden modals so Chrome never treats them as active credential forms
+        document.querySelectorAll('.modal-overlay.hidden, div[id^="modal-"].hidden').forEach(modal => {
+            modal.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(el => {
+                el.disabled = true;
+            });
+        });
+
+        // 2. Protect all non-auth inputs with strict attributes
         const inputs = document.querySelectorAll('input:not([name="username"]):not([name="password"]):not([type="password"]):not(#login-input-identity):not(#login-input-password)');
         inputs.forEach(input => {
             if (!input.hasAttribute('autocomplete') || input.getAttribute('autocomplete') === 'on') {
                 input.setAttribute('autocomplete', 'off');
             }
+            input.setAttribute('autocorrect', 'off');
+            input.setAttribute('autocapitalize', 'off');
+            input.setAttribute('spellcheck', 'false');
             input.setAttribute('data-lpignore', 'true');
             input.setAttribute('data-1p-ignore', 'true');
             input.setAttribute('data-bwignore', 'true');
             input.setAttribute('data-form-type', 'other');
         });
 
+        // 3. Search inputs: apply readonly-until-focus lock to block Chrome password autofill dropdown
         ['global-search-input', 'subscriber-search-input', 'vault-search-input', 'logs-search-input'].forEach(id => {
             const el = document.getElementById(id);
             if (el) {
@@ -146,6 +158,17 @@ function suppressUnwantedAutofill() {
                 el.setAttribute('data-1p-ignore', 'true');
                 el.setAttribute('data-bwignore', 'true');
                 el.setAttribute('data-form-type', 'other');
+
+                if (!el.hasAttribute('data-autofill-locked')) {
+                    el.setAttribute('data-autofill-locked', 'true');
+                    el.setAttribute('readonly', 'readonly');
+                    el.addEventListener('focus', function() {
+                        this.removeAttribute('readonly');
+                    });
+                    el.addEventListener('blur', function() {
+                        this.setAttribute('readonly', 'readonly');
+                    });
+                }
             }
         });
     } catch (e) {
@@ -3726,14 +3749,24 @@ async function deleteSmtp(smtpId) {
 // ==========================================================================
 function openModal(modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(el => {
+            el.disabled = false;
+        });
+    }
     initLucide();
     suppressUnwantedAutofill();
 }
 
 function closeModal(modalId) {
     const modal = document.getElementById(modalId);
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(el => {
+            el.disabled = true;
+        });
+    }
 }
 
 // ==========================================================================
@@ -4339,13 +4372,23 @@ function updateUserDisplay(user) {
 
 function openLoginModal() {
     const modal = document.getElementById('modal-auth-login');
-    if (modal) modal.classList.remove('hidden');
+    if (modal) {
+        modal.classList.remove('hidden');
+        modal.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(el => {
+            el.disabled = false;
+        });
+    }
     switchAuthTab('password');
 }
 
 function closeLoginModal() {
     const modal = document.getElementById('modal-auth-login');
-    if (modal) modal.classList.add('hidden');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.querySelectorAll('input, select, textarea, button[type="submit"]').forEach(el => {
+            el.disabled = true;
+        });
+    }
 }
 
 function switchAuthTab(tab) {
@@ -4496,14 +4539,14 @@ async function logoutUser() {
 function openChangePasswordModal() {
     const menu = document.getElementById('user-dropdown-menu');
     if (menu) menu.classList.add('hidden');
-    const modal = document.getElementById('modal-change-password');
-    if (modal) {
-        modal.classList.remove('hidden');
-        document.getElementById('cp-current-password').value = '';
-        document.getElementById('cp-new-password').value = '';
-        document.getElementById('cp-confirm-password').value = '';
-        document.getElementById('cp-error-alert')?.classList.add('hidden');
-    }
+    openModal('modal-change-password');
+    const curr = document.getElementById('cp-current-password');
+    if (curr) curr.value = '';
+    const newP = document.getElementById('cp-new-password');
+    if (newP) newP.value = '';
+    const conf = document.getElementById('cp-confirm-password');
+    if (conf) conf.value = '';
+    document.getElementById('cp-error-alert')?.classList.add('hidden');
 }
 
 async function handleChangePassword(e) {
