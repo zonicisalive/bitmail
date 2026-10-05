@@ -30,6 +30,7 @@ from app.models import (
 from app.sender import EmailSender, email_sender, send_single_email
 from app.storage import EmailStorageVault, storage_vault
 from app.template_engine import TemplateEngine, template_engine
+from app.webhooks import WebhookDispatcher
 from app.websocket import emit_event
 
 logger = logging.getLogger("bitmail.queue")
@@ -290,6 +291,18 @@ class CampaignWorker:
             "failed_count": self._failed_count,
             "total": self._total,
             "progress_percent": min(100, round((processed / self._total) * 100)) if self._total else 100,
+        })
+
+        # Outbound Webhook dispatch
+        event_name = "email.delivered" if ok else "email.sent"
+        await WebhookDispatcher.dispatch_event(event_name, {
+            "campaign_id": self.campaign_id,
+            "recipient": sub.email,
+            "recipient_name": f"{sub.first_name or ''} {sub.last_name or ''}".strip(),
+            "storage_id": storage_id,
+            "subject": subject,
+            "status": "delivered" if ok else "failed",
+            "error": error
         })
 
     async def _finish(self, status: str, sent: int, total: int) -> None:

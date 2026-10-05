@@ -19,6 +19,7 @@ from app.db import init_db
 from app.routes import (
     auth,
     auth_scan,
+    bounces,
     bulk,
     campaigns,
     dashboard,
@@ -32,6 +33,7 @@ from app.routes import (
     tracking,
     transactional,
     warmup,
+    webhooks,
 )
 
 
@@ -77,11 +79,12 @@ app.add_middleware(
 # ----------------------------------------------------------------------
 # Register Routers
 # ----------------------------------------------------------------------
-# Public / Unrestricted routes (Pages, Authentication, QR Scan, Email Tracking)
+# Public / Unrestricted routes (Pages, Authentication, QR Scan, Email Tracking, Inbound Bounces)
 app.include_router(pages.router)
 app.include_router(auth.router)
 app.include_router(auth_scan.router)
 app.include_router(tracking.router)
+app.include_router(bounces.router)
 
 # Protected API Routers (Locked strictly behind user authentication)
 app.include_router(dashboard.router, dependencies=[Depends(get_current_user)])
@@ -95,6 +98,7 @@ app.include_router(transactional.router, dependencies=[Depends(get_current_user)
 app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 app.include_router(deliverability.router, dependencies=[Depends(get_current_user)])
 app.include_router(warmup.router, dependencies=[Depends(get_current_user)])
+app.include_router(webhooks.router, dependencies=[Depends(get_current_user)])
 
 
 

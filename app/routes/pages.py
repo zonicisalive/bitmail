@@ -219,6 +219,13 @@ async def page_warmup(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/webhooks", response_class=HTMLResponse)
+async def page_webhooks(request: Request):
+    """Dynamic Outbound Webhooks & Integrations Page."""
+    ctx = await get_initial_page_context(request, active_tab="webhooks")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
 
 @router.get("/auth/scan-approve/{token}", response_class=HTMLResponse)
 async def page_scan_approve(request: Request, token: str):

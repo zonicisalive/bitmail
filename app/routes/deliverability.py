@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.blacklist import BLACKLIST_ZONES, blacklist_service
 from app.deliverability import (
     DISPOSABLE_DOMAINS,
     DnsAuthenticatorService,
@@ -16,6 +17,8 @@ from app.deliverability import (
     PreSendSafetyGuard,
 )
 from app.models import (
+    BlacklistQueryRequest,
+    BlacklistReportResponse,
     SafetyBatchLookupRequest,
     SafetyBatchLookupResponse,
     SafetyLookupRequest,
@@ -169,5 +172,65 @@ async def inspect_batch_safety(payload: SafetyBatchLookupRequest) -> Any:
         strict_mode=payload.strict_mode
     )
     return res
+
+
+class CatchAllCheckRequest(BaseModel):
+    domain: str = Field(..., min_length=2, max_length=253, description="Domain to test for catch-all behavior")
+
+
+@router.post("/catch-all")
+async def check_catch_all_domain(payload: CatchAllCheckRequest) -> Dict[str, Any]:
+    """
+    Tests if a domain accepts all incoming email addresses unconditionally (Catch-All / Accept-All).
+    Probes MX server with a randomized nonexistent address.
+    """
+    domain = payload.domain.strip()
+    if not domain:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Domain cannot be empty."
+        )
+    return await PreSendSafetyGuard.detect_catch_all(domain)
+
+
+@router.post("/blacklist/check", response_model=BlacklistReportResponse)
+async def check_blacklist(payload: BlacklistQueryRequest) -> Any:
+    """
+    Queries 30+ real-time IP and Domain DNSBL / RBL blocklists in parallel.
+    Accepts an IP address (e.g. 192.0.2.1) or domain (e.g. mail.bitnade.com).
+    """
+    target = payload.target.strip()
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target IP or domain cannot be empty."
+        )
+    return await blacklist_service.check_target(target)
+
+
+@router.get("/blacklist/check", response_model=BlacklistReportResponse)
+async def check_blacklist_get(target: str) -> Any:
+    """
+    GET endpoint for DNSBL checks.
+    """
+    t = target.strip()
+    if not t:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Query parameter 'target' is required."
+        )
+    return await blacklist_service.check_target(t)
+
+
+@router.get("/blacklist/zones")
+async def list_blacklist_zones() -> Dict[str, Any]:
+    """
+    Returns list of all 30+ monitored DNSBL / RBL zones with metadata.
+    """
+    return {
+        "total_zones": len(BLACKLIST_ZONES),
+        "zones": BLACKLIST_ZONES
+    }
+
 
 

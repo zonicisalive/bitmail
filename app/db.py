@@ -451,6 +451,34 @@ async def init_db() -> None:
             );
         """)
 
+        # 16. Webhooks Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS webhooks (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                url TEXT NOT NULL,
+                secret TEXT NOT NULL,
+                events_json TEXT NOT NULL DEFAULT '[]',
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 17. Webhook Deliveries Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS webhook_deliveries (
+                id TEXT PRIMARY KEY,
+                webhook_id TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                status_code INTEGER,
+                response_body TEXT,
+                success INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+        """)
+
         # Migration helper to ensure columns exist in existing SQLite databases
         async def add_column_if_missing(table_name: str, col_name: str, col_type: str):
             try:
@@ -509,6 +537,9 @@ async def init_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_webhooks_is_active ON webhooks(is_active);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_created ON webhook_deliveries(created_at);")
 
         # Seed initial default administrator account if no users exist
         async with db.execute("SELECT COUNT(*) FROM users") as cur:

@@ -199,7 +199,11 @@ def build_mime_message(
     msg["Message-ID"] = msg_id
 
     if unsubscribe_url:
-        msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+        if "mailto:" in unsubscribe_url:
+            msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
+        else:
+            mailto_uri = f"mailto:unsubscribe@{domain}?subject=unsubscribe"
+            msg["List-Unsubscribe"] = f"<{unsubscribe_url}>, <{mailto_uri}>"
         msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
 
     if headers_dict:

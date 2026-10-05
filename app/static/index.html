@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitmail Enterprise | Production Mass Email Sender & Storage Vault</title>
+    <title>Bitmail | Minimalist Mass Email Platform & Storage Vault</title>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,17 +28,17 @@
         }
     </style>
 
-    <!-- Local Compiled Tailwind CSS -->
-    <link rel="stylesheet" href="css/tailwind.min.css">
+    <!-- Local Compiled Tailwind CSS & Fallback -->
+    <link rel="stylesheet" href="/static/css/tailwind.min.css">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="css/style.css?v=2.4.5">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.4.5">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
-    <script src="js/lucide.min.js"></script>
-    <script src="js/chart.min.js"></script>
+    <script src="/static/js/lucide.min.js"></script>
+    <script src="/static/js/chart.min.js"></script>
 </head>
-<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex antialiased selection:bg-indigo-500 selection:text-white">
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex antialiased selection:bg-indigo-500 selection:text-white" data-initial-tab="{{ active_tab }}">
 
     <!-- ========================================================================== -->
     <!-- Left Sidebar Navigation                                                    -->
@@ -47,13 +47,13 @@
         <div>
             <!-- Brand Logo -->
             <div class="p-6 pb-4 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-black text-xl">
+                <div class="w-10 h-10 rounded-xl bg-[#1f6feb] flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-black text-xl">
                     <i data-lucide="send" class="w-5 h-5"></i>
                 </div>
                 <div>
                     <div class="flex items-center gap-1.5">
-                        <span class="font-extrabold text-base tracking-tight text-white">Nexus<span class="text-indigo-400">Mail</span></span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">LIVE</span>
+                        <span class="font-extrabold text-base tracking-tight text-white">Bit<span class="text-emerald-400">mail</span></span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">DYNAMIC</span>
                     </div>
                     <p class="text-[11px] text-slate-400 font-medium">Enterprise Email Cluster</p>
                 </div>
@@ -62,99 +62,112 @@
             <!-- Navigation Links -->
             <nav class="mt-4 px-3 space-y-1">
                 <!-- Send to Customers (Quick Broadcast) - Primary Action -->
-                <a href="#" data-tab="broadcast" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600/30 to-purple-600/30 border border-indigo-500/40 hover:border-indigo-500/80 transition-all shadow-sm">
+                <a href="/broadcast" data-tab="broadcast" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#1f2c3f] border border-[#28374d] hover:border-[#388bfd] transition-all shadow-sm">
                     <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
                     <span>Send to Customers</span>
-                    <span class="ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">QUICK</span>
+                    <span class="ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#fbbf24] border border-[#f59e0b]/40">QUICK</span>
                 </a>
 
-                <a href="#" data-tab="dashboard" class="nav-item active flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/" data-tab="dashboard" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="layout-dashboard" class="w-4 h-4 text-indigo-400"></i>
                     <span>Dashboard & KPIs</span>
                 </a>
 
-                <a href="#" data-tab="campaigns" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/campaigns" data-tab="campaigns" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="rocket" class="w-4 h-4 text-blue-400"></i>
                     <span>Mass Campaigns</span>
-                    <span id="nav-campaigns-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">--</span>
+                    <span id="nav-campaigns-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">{{ recent_campaigns|length }}</span>
                 </a>
 
-                <a href="#" data-tab="vault" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/vault" data-tab="vault" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="archive" class="w-4 h-4 text-emerald-400"></i>
                     <span>Email Storage Vault</span>
-                    <span id="nav-vault-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">--</span>
+                    <span id="nav-vault-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">{{ stats.vault_stored }}</span>
                 </a>
 
-                <a href="#" data-tab="subscribers" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/customers" data-tab="subscribers" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="users" class="w-4 h-4 text-cyan-400"></i>
                     <span>Customers & Lists</span>
-                    <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">--</span>
+                    <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">{{ stats.active_subscribers }}</span>
                 </a>
 
-                <a href="#" data-tab="templates" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/templates-studio" data-tab="templates" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="palette" class="w-4 h-4 text-pink-400"></i>
                     <span>Template Studio</span>
                 </a>
 
-                <a href="#" data-tab="smtp" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/smtp" data-tab="smtp" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="server" class="w-4 h-4 text-amber-400"></i>
                     <span>Mail Servers</span>
                 </a>
 
-                <a href="#" data-tab="deliverability" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/deliverability" data-tab="deliverability" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="shield-check" class="w-4 h-4 text-cyan-400"></i>
                     <span>Deliverability & DNS</span>
                 </a>
 
-                <a href="#" data-tab="warmup" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                <a href="/warmup" data-tab="warmup" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
                     <span>Warmup & Relays</span>
                     <span id="nav-warmup-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">AUTO</span>
                 </a>
 
+                <a href="/webhooks" data-tab="webhooks" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="webhook" class="w-4 h-4 text-violet-400"></i>
+                    <span>Webhooks & API</span>
+                    <span id="nav-webhooks-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">REST</span>
+                </a>
 
-                <a href="#" data-tab="api" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+
+                <a href="/logs" data-tab="logs" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="scroll-text" class="w-4 h-4 text-emerald-400"></i>
+                    <span>System Logs</span>
+                    <span id="nav-logs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">0</span>
+                </a>
+
+                <a href="/docs" target="_blank" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="terminal" class="w-4 h-4 text-purple-400"></i>
-                    <span>REST API & Integration</span>
+                    <span>Swagger API Docs ↗</span>
                 </a>
             </nav>
         </div>
 
         <!-- Sidebar Footer Status -->
         <div class="p-4 border-t border-white/5 space-y-3">
-            <div class="p-3 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-white/5">
                 <div class="flex items-center justify-between text-xs">
-                    <span class="text-slate-400 font-medium">Storage Vault</span>
-                    <span class="text-emerald-400 font-semibold flex items-center gap-1">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500 status-dot-pulse"></span> 100% Archiving
-                    </span>
+                    <span class="text-slate-400 font-medium">Storage vault</span>
+                    <span class="text-slate-400">RFC 5322</span>
                 </div>
-                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                    <div class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full w-[100%]"></div>
-                </div>
-                <div class="flex items-center justify-between text-[11px] text-slate-500">
-                    <span id="sidebar-stored-count">0 Stored (.EML)</span>
-                    <span class="text-slate-400">RFC 5322 Compliant</span>
-                </div>
+                <div class="text-[11px] text-slate-500 mt-1" id="sidebar-stored-count">{{ stats.vault_stored }} Stored (.EML)</div>
             </div>
 
             <!-- Profile snippet -->
             <div class="flex items-center gap-3 pt-1">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow">
+                <div class="w-8 h-8 rounded-full bg-[#1f6feb] flex items-center justify-center text-xs font-bold text-white shadow">
                     EM
                 </div>
                 <div class="truncate">
                     <div class="text-xs font-semibold text-white truncate">Enterprise Sender</div>
-                    <div class="text-[11px] text-slate-400 truncate" id="sidebar-active-relay">Active Mail Cluster</div>
+                    <div class="text-[11px] text-slate-400 truncate" id="sidebar-active-relay">
+                        {% if default_relay %}
+                            {{ default_relay.name }} ({{ default_relay.host }})
+                        {% else %}
+                            Active Mail Cluster
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
     </aside>
 
+    <!-- Backdrop for responsive mobile/tablet sidebar drawer -->
+    <div id="sidebar-backdrop" onclick="toggleMobileSidebar()" class="fixed inset-0 z-30 bg-black/70 backdrop-blur-sm hidden lg:hidden"></div>
+
     <!-- ========================================================================== -->
     <!-- Main Content Area                                                          -->
     <!-- ========================================================================== -->
-    <main class="flex-1 ml-64 flex flex-col min-h-screen">
+    <main class="flex-1 lg:ml-64 flex flex-col min-h-screen min-w-0 max-w-full">
 
         <!-- Top Header Bar (Strict Single Row, Ultra-Modern SaaS Hierarchy) -->
         <header class="h-16 glass-header sticky top-0 z-30 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 flex-nowrap">
@@ -228,7 +241,7 @@
         </header>
 
         <!-- Body Container -->
-        <div class="p-8 flex-1">
+        <div class="p-4 sm:p-6 lg:p-8 flex-1 min-w-0 max-w-full">
 
             <!-- ========================================================================== -->
             <!-- 0. SEND TO CUSTOMERS (QUICK MASS BROADCAST) PANEL                          -->
@@ -239,7 +252,7 @@
                     <div>
                         <div class="flex items-center gap-2">
                             <h1 class="text-2xl font-bold text-white tracking-tight">Send Message to Customers</h1>
-                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">Direct Dispatch</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#f59e0b]/20 text-[#fbbf24] border border-[#f59e0b]/40">Direct Dispatch</span>
                         </div>
                         <p class="text-sm text-slate-400 mt-1">Paste multiple customer emails or select your saved customer audience to dispatch personalized emails immediately with full Storage Vault archiving.</p>
                     </div>
@@ -259,13 +272,13 @@
                                     <button type="button" onclick="runBroadcastPreflightCheck()" id="btn-broadcast-preflight" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 transition-all flex items-center gap-1 cursor-pointer" title="Scan recipients for invalid syntax, disposable domains, and missing MX records before sending">
                                         <i data-lucide="shield-check" class="w-3 h-3"></i> Pre-flight Scan
                                     </button>
-                                    <span id="broadcast-recipient-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">0 Recipients</span>
+                                    <span id="broadcast-recipient-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#1f6feb]/20 text-[#58a6ff] border border-[#388bfd]/40">0 Recipients</span>
                                 </div>
                             </div>
 
                             <!-- Mode Selector Tabs -->
                             <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/90 rounded-xl border border-white/5 text-xs font-semibold">
-                                <button type="button" id="tab-btn-paste-emails" onclick="setBroadcastAudienceMode('paste')" class="py-2 px-3 rounded-lg text-center bg-indigo-600 text-white transition-all">
+                                <button type="button" id="tab-btn-paste-emails" onclick="setBroadcastAudienceMode('paste')" class="py-2 px-3 rounded-lg text-center btn-dark-blue text-white transition-all">
                                     Paste Customer Emails
                                 </button>
                                 <button type="button" id="tab-btn-list-emails" onclick="setBroadcastAudienceMode('list')" class="py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all">
@@ -276,7 +289,7 @@
                             <!-- Input Mode A: Paste Multiple Emails -->
                             <div id="broadcast-mode-paste" class="space-y-2">
                                 <label class="block text-xs font-medium text-slate-300">Paste Multiple Customer Emails:</label>
-                                <textarea id="broadcast-raw-emails" rows="6" oninput="updateBroadcastEmailCount()" placeholder="Enter emails separated by commas or line breaks:&#10;customer1@gmail.com&#10;&quot;Sarah Connor&quot; <sarah@cyber.com>&#10;john.doe@company.com, alex@tech.io" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
+                                <textarea id="broadcast-raw-emails" rows="6" oninput="updateBroadcastEmailCount()" placeholder="Enter emails separated by commas or line breaks:&#10;customer1@example.com&#10;&quot;Bitnade&quot; <admin@bitnade.com>&#10;john.doe@company.com, alex@tech.io" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
                                 <div class="flex items-center justify-between text-[11px] text-slate-400">
                                     <span>Supports: <code>email@domain.com</code> or <code>Name &lt;email&gt;</code></span>
                                     <button type="button" onclick="loadSampleCustomerEmails()" class="text-indigo-400 hover:text-indigo-300 font-semibold underline">Insert Sample List</button>
@@ -308,7 +321,10 @@
                                     </button>
                                 </div>
                                 <select id="broadcast-list-select" onchange="handleBroadcastAudienceChange()" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                                    <option value="all">⭐ All Active Customers</option>
+                                    <option value="all">⭐ All Active Customers ({{ stats.active_subscribers }})</option>
+                                    {% for lst in subscriber_lists %}
+                                        <option value="{{ lst.id }}">{{ lst.name }}</option>
+                                    {% endfor %}
                                 </select>
                             </div>
                         </div>
@@ -319,7 +335,7 @@
                                 <h3 class="text-sm font-bold text-white flex items-center gap-2">
                                     <i data-lucide="server" class="w-4 h-4 text-amber-400"></i> Step 2: Sender & Mail Server
                                 </h3>
-                                <button type="button" onclick="switchTab('smtp')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
+                                <button type="button" onclick="switchTab('smtp')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer">
                                     <i data-lucide="settings" class="w-3.5 h-3.5"></i> Manage SMTP
                                 </button>
                             </div>
@@ -328,19 +344,26 @@
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
                                         <label class="block text-[11px] font-medium text-slate-400 mb-1">Sender Display Name:</label>
-                                        <input type="text" id="broadcast-sender-name" value="Acme Growth Team" placeholder="e.g. Acme Support" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                        <input type="text" id="broadcast-sender-name" value="Bitmail Operations" placeholder="e.g. Acme Support" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                                     </div>
                                     <div>
                                         <label class="block text-[11px] font-medium text-slate-400 mb-1">Sender Email Address:</label>
-                                        <input type="email" id="broadcast-sender-email" value="support@acme.com" placeholder="e.g. support@acme.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                        <input type="email" id="broadcast-sender-email" value="ops@bitmail.io" placeholder="e.g. support@acme.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                                     </div>
                                 </div>
 
                                 <div>
                                     <label class="block text-[11px] font-medium text-slate-400 mb-1">Select Outgoing Mail Server (SMTP Relay):</label>
-                                    <select id="broadcast-smtp-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                                        <!-- Loaded dynamically -->
+                                    <select id="broadcast-smtp-select" onchange="updateSmtpStatusHint()" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                        {% for s in smtp_configs %}
+                                            <option value="{{ s.id }}" data-host="{{ s.host }}" data-sandbox="{{ 'true' if s.is_sandbox else 'false' }}" {% if s.is_default %}selected{% endif %}>
+                                                {{ s.name }} ({{ s.host }}:{{ s.port }}) {% if s.is_default %}⭐ Default{% endif %} {% if s.is_sandbox %}[Sandbox]{% endif %}
+                                            </option>
+                                        {% else %}
+                                            <option value="">Default Mail Cluster (Active Relay)</option>
+                                        {% endfor %}
                                     </select>
+                                    <div id="broadcast-smtp-hint" class="mt-2 p-2.5 rounded-xl text-[11px] flex items-center justify-between transition-all"></div>
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-3 pt-1">
@@ -374,7 +397,7 @@
                             <div class="space-y-3">
                                 <div>
                                     <label class="block text-xs font-medium text-slate-300 mb-1">Subject Line:</label>
-                                    <input type="text" id="broadcast-subject" value="Important Update for {{first_name}}" placeholder="e.g. Exclusive announcement for {{first_name}}" class="w-full px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    <input type="text" id="broadcast-subject" value="Important Update for {{ '{{' }}first_name{{ '}}' }}" placeholder="e.g. Exclusive announcement for {{ '{{' }}first_name{{ '}}' }}" class="w-full px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                                 </div>
 
                                 <!-- Full-Width Merge Variables & Presets Toolbar -->
@@ -384,10 +407,10 @@
                                             <i data-lucide="tag" class="w-3.5 h-3.5 text-indigo-400"></i> Insert Tag:
                                         </span>
                                         <div id="broadcast-merge-tags" class="flex items-center gap-1.5 flex-wrap">
-                                            <button type="button" onclick="insertMergeTag('{{first_name}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{first_name}}</button>
-                                            <button type="button" onclick="insertMergeTag('{{email}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{email}}</button>
-                                            <button type="button" onclick="insertMergeTag('{{company}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{company}}</button>
-                                            <button type="button" onclick="insertMergeTag('{{unsubscribe_url}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{unsubscribe}}</button>
+                                            <button type="button" onclick="insertMergeTag('{{ '{{' }}first_name{{ '}}' }}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}first_name{{ '}}' }}</button>
+                                            <button type="button" onclick="insertMergeTag('{{ '{{' }}email{{ '}}' }}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}email{{ '}}' }}</button>
+                                            <button type="button" onclick="insertMergeTag('{{ '{{' }}company{{ '}}' }}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}company{{ '}}' }}</button>
+                                            <button type="button" onclick="insertMergeTag('{{ '{{' }}unsubscribe_url{{ '}}' }}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}unsubscribe{{ '}}' }}</button>
                                         </div>
                                         <button type="button" onclick="promptAddCustomPlaceholder('broadcast')" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Add a custom placeholder (e.g. phone, city, order_id)">
                                             <i data-lucide="plus" class="w-3 h-3"></i> Add Tag
@@ -411,19 +434,19 @@
 
                                 <div>
                                     <label class="block text-xs font-medium text-slate-300 mb-1.5">Message Body (HTML & Merge Variables Supported):</label>
-                                    <textarea id="broadcast-html" rows="10" placeholder="<h2>Hello {{first_name}},</h2><p>We are excited to share our latest product updates with you.</p><p><a href='https://example.com/learn'>Discover What's New</a></p>" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"><div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
-    <h2 style="color: #4f46e5;">Hello {{first_name}},</h2>
-    <p>We're thrilled to connect with you today! Here is an exclusive update from our team.</p>
-    <p style="background: #f8fafc; padding: 16px; border-left: 4px solid #4f46e5; border-radius: 4px;">
-        <strong>New Features Live:</strong> Your account now has access to high-speed email delivery, live open tracking, and comprehensive storage archiving.
-    </p>
+                                    <textarea id="broadcast-html" rows="10" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"><div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; padding: 20px;">
+    <h2 style="color: #4f46e5;">Hello {{ '{{' }}first_name{{ '}}' }},</h2>
+    <p>We are delighted to share our latest product updates with you today!</p>
+    <div style="background: #f8fafc; padding: 16px; border-left: 4px solid #4f46e5; border-radius: 4px; margin: 16px 0;">
+        <p style="margin: 0;"><strong>Account:</strong> {{ '{{' }}email{{ '}}' }}<br><strong>Status:</strong> Active Production Node</p>
+    </div>
     <p>
-        <a href="https://example.com/dashboard" style="display: inline-block; padding: 10px 20px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Explore Your Account</a>
+        <a href="https://example.com/dashboard" style="display: inline-block; padding: 10px 20px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Launch Portal</a>
     </p>
     <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
-        Best regards,<br>
-        <strong>The Team</strong>
+        Sent with Bitmail Enterprise.
     </p>
+</div></textarea>
                                 </div>
 
                                 <!-- Delivery Schedule Selector -->
@@ -464,9 +487,9 @@
                                     </div>
                                 </div>
 
+
                                 <!-- Sending Controls & Trigger -->
                                 <div class="pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
-
                                     <div class="flex items-center gap-2 flex-shrink-0">
                                         <label class="text-xs text-slate-400 whitespace-nowrap">Speed Limit:</label>
                                         <select id="broadcast-rate-limit" onchange="handleRateLimitChange(this)" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500">
@@ -502,7 +525,7 @@
                                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 status-dot-pulse"></span>
                                     <h4 class="text-sm font-bold text-white">Live Broadcast Execution Monitor</h4>
                                 </div>
-                                <span id="broadcast-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Sending</span>
+                                <span id="broadcast-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">Sending</span>
                             </div>
 
                             <!-- Progress Bar -->
@@ -539,136 +562,145 @@
             <!-- ========================================================================== -->
             <!-- 1. DASHBOARD PANEL                                                         -->
             <!-- ========================================================================== -->
-            <div id="panel-dashboard" class="app-panel hidden space-y-6">
-                <!-- Welcome Banner -->
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div id="panel-dashboard" class="app-panel hidden space-y-5">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
                     <div>
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Delivery Performance & Analytics</h1>
-                        <p class="text-sm text-slate-400 mt-1">Real-time throughput metrics, inbox placement health, and event dispatch feed.</p>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Delivery Performance</h1>
+                        <p class="text-sm text-slate-400 mt-1">Send health, engagement, and the live event stream for your lead campaigns.</p>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-slate-400">Live Auto-Sync:</span>
-                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot-pulse"></span> Streaming
+                    <div class="flex items-center gap-2 text-xs">
+                        <span id="ws-indicator" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 border border-white/5 font-medium">
+                            <span id="ws-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                            <span id="ws-label">Connecting</span>
                         </span>
                     </div>
                 </div>
 
-                <!-- 5 KPI Cards -->
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                    <!-- Total Sent -->
-                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-indigo-500/30 transition-all">
-                        <div class="flex items-center justify-between text-slate-400">
-                            <span class="text-xs font-medium uppercase tracking-wider">Total Sent</span>
-                            <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
-                                <i data-lucide="mail" class="w-4 h-4"></i>
+                <!-- Relay banner: what a launch would actually do right now -->
+                <div id="relay-banner" class="hidden rounded-xl border px-4 py-3 flex items-start gap-3 text-sm">
+                    <i data-lucide="server" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                    <div class="flex-1 min-w-0">
+                        <p id="relay-banner-title" class="font-semibold"></p>
+                        <p id="relay-banner-body" class="text-xs mt-0.5 opacity-90"></p>
+                    </div>
+                    <button onclick="switchTab('smtp')" class="shrink-0 text-xs font-semibold underline underline-offset-2 hover:opacity-80">Open relays</button>
+                </div>
+
+                <!-- Send health: the first thing an operator checks -->
+                <div class="glass-panel p-6 rounded-2xl">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
+                        <div>
+                            <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Send health</h2>
+                            <div class="flex items-baseline gap-3 mt-2">
+                                <span class="text-4xl font-bold text-white tabular-nums" id="kpi-delivery-rate">0%</span>
+                                <span class="text-sm text-slate-400">accepted by the relay</span>
                             </div>
                         </div>
-                        <div class="mt-3">
-                            <div class="text-2xl font-bold text-white" id="kpi-total-sent">0</div>
-                            <div class="flex items-center gap-1 mt-1 text-xs text-emerald-400 font-medium">
-                                <i data-lucide="check" class="w-3.5 h-3.5"></i> Dispatched via Relay
+                        <dl class="flex items-center gap-6 text-right">
+                            <div>
+                                <dt class="text-xs text-slate-400 uppercase tracking-wider">Attempted</dt>
+                                <dd class="text-xl font-semibold text-white tabular-nums mt-0.5" id="kpi-attempted">0</dd>
                             </div>
-                        </div>
+                            <div>
+                                <dt class="text-xs text-slate-400 uppercase tracking-wider">Delivered</dt>
+                                <dd class="text-xl font-semibold text-emerald-400 tabular-nums mt-0.5" id="kpi-total-sent">{{ stats.total_sent }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-xs text-slate-400 uppercase tracking-wider">Failed</dt>
+                                <dd class="text-xl font-semibold tabular-nums mt-0.5" id="kpi-failed">0</dd>
+                            </div>
+                        </dl>
                     </div>
 
-                    <!-- Delivery Rate -->
-                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-emerald-500/30 transition-all">
-                        <div class="flex items-center justify-between text-slate-400">
-                            <span class="text-xs font-medium uppercase tracking-wider">Delivery Rate</span>
-                            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-                                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="text-2xl font-bold text-white" id="kpi-delivery-rate">100%</div>
-                            <div class="flex items-center gap-1 mt-1 text-xs text-emerald-400 font-medium">
-                                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Inbox Validated
-                            </div>
-                        </div>
+                    <div class="mt-5 h-2 w-full rounded-full bg-slate-900 overflow-hidden flex" role="img" aria-labelledby="health-bar-label">
+                        <div id="health-bar-delivered" class="h-full bg-emerald-500 transition-[width] duration-500" style="width:0%"></div>
+                        <div id="health-bar-failed" class="h-full bg-rose-500 transition-[width] duration-500" style="width:0%"></div>
                     </div>
+                    <p id="health-bar-label" class="mt-2 text-xs text-slate-400">No sends recorded yet.</p>
 
-                    <!-- Open Rate -->
-                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-purple-500/30 transition-all">
-                        <div class="flex items-center justify-between text-slate-400">
-                            <span class="text-xs font-medium uppercase tracking-wider">Open Rate</span>
-                            <div class="p-2 rounded-lg bg-purple-500/10 text-purple-400">
-                                <i data-lucide="eye" class="w-4 h-4"></i>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="text-2xl font-bold text-white" id="kpi-open-rate">0.0%</div>
-                            <div class="flex items-center gap-1 mt-1 text-xs text-purple-400 font-medium">
-                                <i data-lucide="activity" class="w-3.5 h-3.5"></i> 1x1 Pixel Beacon
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Click Rate -->
-                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-blue-500/30 transition-all">
-                        <div class="flex items-center justify-between text-slate-400">
-                            <span class="text-xs font-medium uppercase tracking-wider">Click Rate</span>
-                            <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400">
-                                <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="text-2xl font-bold text-white" id="kpi-click-rate">0.0%</div>
-                            <div class="flex items-center gap-1 mt-1 text-xs text-blue-400 font-medium">
-                                <i data-lucide="link" class="w-3.5 h-3.5"></i> Hyperlink Telemetry
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Storage Vault Retained -->
-                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-cyan-500/30 transition-all">
-                        <div class="flex items-center justify-between text-slate-400">
-                            <span class="text-xs font-medium uppercase tracking-wider">Archived in Vault</span>
-                            <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
-                                <i data-lucide="archive" class="w-4 h-4"></i>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <div class="text-2xl font-bold text-white" id="kpi-vault-stored">0</div>
-                            <div class="flex items-center gap-1 mt-1 text-xs text-cyan-400 font-medium">
-                                <i data-lucide="database" class="w-3.5 h-3.5"></i> Raw .EML Files
-                            </div>
-                        </div>
+                    <div id="failure-callout" class="hidden mt-4 rounded-xl border border-rose-500/30 bg-rose-500/5 px-4 py-3 flex items-center gap-3">
+                        <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400 shrink-0"></i>
+                        <p class="text-sm text-rose-200 flex-1" id="failure-callout-text"></p>
+                        <button onclick="switchTab('vault')" class="text-xs font-semibold text-rose-200 underline underline-offset-2 hover:text-white shrink-0">Inspect in vault</button>
                     </div>
                 </div>
 
-                <!-- Charts & Feed Grid -->
-                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    <!-- Deliverability Trends Chart (8 cols) -->
-                    <div class="lg:col-span-8 glass-panel p-6 rounded-2xl border border-white/10">
-                        <div class="flex items-center justify-between mb-4">
-                            <div>
-                                <h3 class="text-base font-bold text-white">Deliverability & Dispatch Velocity</h3>
-                                <p class="text-xs text-slate-400 mt-0.5">Sent, Delivered, Opened, and Clicked trends.</p>
-                            </div>
-                            <span class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-white/5">Last 14 Days</span>
+                <!-- Engagement and audience -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                            <span class="text-xs font-medium uppercase tracking-wider">Open rate</span>
                         </div>
-                        <div class="h-72 w-full">
+                        <div class="text-2xl font-bold text-white tabular-nums mt-2" id="kpi-open-rate">{{ stats.open_rate }}%</div>
+                        <p class="text-xs text-slate-400 mt-1" id="kpi-open-sub">&mdash;</p>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i>
+                            <span class="text-xs font-medium uppercase tracking-wider">Click rate</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white tabular-nums mt-2" id="kpi-click-rate">{{ stats.click_rate }}%</div>
+                        <p class="text-xs text-slate-400 mt-1" id="kpi-click-sub">&mdash;</p>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+                            <span class="text-xs font-medium uppercase tracking-wider">Reachable leads</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white tabular-nums mt-2" id="kpi-reachable">{{ stats.active_subscribers }}</div>
+                        <p class="text-xs text-slate-400 mt-1" id="kpi-reachable-sub">&mdash;</p>
+                    </div>
+                    <div class="glass-panel p-4 rounded-xl">
+                        <div class="flex items-center gap-2 text-slate-400">
+                            <i data-lucide="archive" class="w-3.5 h-3.5"></i>
+                            <span class="text-xs font-medium uppercase tracking-wider">Archived</span>
+                        </div>
+                        <div class="text-2xl font-bold text-white tabular-nums mt-2" id="kpi-vault-stored">{{ stats.vault_stored }}</div>
+                        <p class="text-xs text-slate-400 mt-1">Raw .eml messages</p>
+                    </div>
+                </div>
+
+                <!-- Trend and live stream -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                    <div class="lg:col-span-8 glass-panel p-6 rounded-2xl">
+                        <div class="flex items-center justify-between mb-5">
+                            <div>
+                                <h2 class="text-base font-semibold text-white">Deliverability trend</h2>
+                                <p class="text-xs text-slate-400 mt-0.5">Delivered, opened, and clicked per day.</p>
+                            </div>
+                            <span class="text-xs px-2.5 py-1 rounded-lg bg-slate-900 text-slate-400 border border-white/5">Last 14 days</span>
+                        </div>
+                        <div class="relative h-72 w-full">
                             <canvas id="deliverabilityChart"></canvas>
+                            <div id="chart-empty" class="hidden absolute inset-0 flex flex-col items-center justify-center text-center gap-3">
+                                <i data-lucide="line-chart" class="w-7 h-7 text-slate-600"></i>
+                                <div>
+                                    <p class="text-sm font-medium text-slate-300">No sends in the last 14 days</p>
+                                    <p class="text-xs text-slate-500 mt-1">Launch a broadcast and the trend fills in as messages leave the relay.</p>
+                                </div>
+                                <button onclick="switchTab('broadcast')" class="btn-dark-blue text-xs">
+                                    <i data-lucide="send" class="w-3.5 h-3.5"></i> New broadcast
+                                </button>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- Live Dispatch Feed (4 cols) -->
-                    <div class="lg:col-span-4 glass-panel p-6 rounded-2xl border border-white/10 flex flex-col justify-between">
-                        <div>
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-base font-bold text-white">Live Activity Stream</h3>
-                                <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
-                            </div>
-                            <div id="dashboard-activity-feed" class="space-y-3 max-h-72 overflow-y-auto pr-1">
-                                <!-- Populated dynamically by app.js -->
+                    <div class="lg:col-span-4 glass-panel p-6 rounded-2xl flex flex-col">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-base font-semibold text-white">Live activity</h2>
+                            <span id="activity-count" class="text-xs text-slate-500 tabular-nums"></span>
+                        </div>
+                        <div id="dashboard-activity-feed" class="space-y-2 flex-1 overflow-y-auto pr-1" style="max-height: 18rem;">
+                            <div class="py-8 text-center">
+                                <p class="text-sm text-slate-400">Nothing has happened yet</p>
+                                <p class="text-xs text-slate-500 mt-1">Sends, opens, and clicks appear here the moment they occur.</p>
                             </div>
                         </div>
-                        <div class="pt-4 mt-4 border-t border-white/5">
-                            <button onclick="switchTab('vault')" class="w-full py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-2">
-                                <i data-lucide="archive" class="w-3.5 h-3.5"></i> Explore Full Storage Vault
-                            </button>
-                        </div>
+                        <button onclick="switchTab('vault')" class="mt-4 pt-4 border-t border-white/5 w-full py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-white/5 transition-colors flex items-center justify-center gap-2">
+                            <i data-lucide="archive" class="w-3.5 h-3.5"></i> Open storage vault
+                        </button>
                     </div>
                 </div>
             </div>
@@ -684,8 +716,8 @@
                         <p class="text-sm text-slate-400 mt-1">Manage scheduled broadcasts, monitor real-time sending queues, and inspect delivery telemetry.</p>
                     </div>
                     <div class="flex items-center gap-3">
-                        <button onclick="openNewCampaignModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
-                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Create Campaign
+                        <button onclick="switchTab('broadcast')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> New Broadcast
                         </button>
                     </div>
                 </div>
@@ -735,12 +767,12 @@
                     <div>
                         <div class="flex items-center gap-2">
                             <h1 class="text-2xl font-bold text-white tracking-tight">Email Storage Vault & Archive</h1>
-                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">100% Retained</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">100% Retained</span>
                         </div>
                         <p class="text-sm text-slate-400 mt-1">Every dispatched email is permanently archived as a raw RFC 5322 MIME <code>.eml</code> file and indexed database record.</p>
                     </div>
                     <div class="flex items-center gap-2 text-xs font-medium text-slate-400">
-                        <span id="vault-summary-disk">Disk: 0.0 MB</span>
+                        <span id="vault-summary-disk">Archived: {{ stats.vault_stored }} emails</span>
                     </div>
                 </div>
 
@@ -790,7 +822,7 @@
                                 </tr>
                             </thead>
                             <tbody id="vault-table-body">
-                                <!-- Populated dynamically by app.js -->
+                                <!-- Populated dynamically by app.js and updated live via WebSocket -->
                             </tbody>
                         </table>
                     </div>
@@ -814,13 +846,13 @@
                         <button onclick="openCreateGroupModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
                             <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-purple-400"></i> + New Group
                         </button>
-                        <button onclick="openBulkPasteModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all whitespace-nowrap">
+                        <button onclick="openBulkPasteModal()" class="btn-dark-green px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer">
                             <i data-lucide="clipboard" class="w-3.5 h-3.5"></i> Paste Multiple Emails
                         </button>
-                        <button onclick="openCsvImportModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap">
+                        <button onclick="openCsvImportModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
                             <i data-lucide="file-up" class="w-3.5 h-3.5 text-indigo-400"></i> Import CSV
                         </button>
-                        <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap">
+                        <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap cursor-pointer">
                             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add Single Customer
                         </button>
                     </div>
@@ -899,7 +931,10 @@
                         <h1 class="text-2xl font-bold text-white tracking-tight">Template Studio</h1>
                         <p class="text-sm text-slate-400 mt-1">Design responsive email templates with dynamic merge tags and live device preview.</p>
                     </div>
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <button type="button" onclick="openLivePreviewModal('studio')" class="px-3.5 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 transition-all shadow-sm">
+                            <i data-lucide="eye" class="w-3.5 h-3.5"></i> Live Preview
+                        </button>
                         <button onclick="newStudioTemplate()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors">
                             <i data-lucide="file-plus" class="w-3.5 h-3.5 text-indigo-400"></i> New Template
                         </button>
@@ -932,7 +967,7 @@
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-slate-300 mb-1">Subject Line Template:</label>
-                            <input type="text" id="studio-tpl-subject" value="Welcome {{first_name}} to Bitmail!" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                            <input type="text" id="studio-tpl-subject" value="Welcome {{ '{{' }}first_name{{ '}}' }} to Bitmail!" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                         </div>
                         <div>
                             <!-- Full-Width Merge Variables & Live Preview Toolbar -->
@@ -942,10 +977,10 @@
                                         <i data-lucide="tag" class="w-3.5 h-3.5 text-indigo-400"></i> Insert Tag:
                                     </span>
                                     <div id="studio-merge-tags" class="flex items-center gap-1.5 flex-wrap">
-                                        <button type="button" onclick="insertMergeTag('{{first_name}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{first_name}}</button>
-                                        <button type="button" onclick="insertMergeTag('{{email}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{email}}</button>
-                                        <button type="button" onclick="insertMergeTag('{{company}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{company}}</button>
-                                        <button type="button" onclick="insertMergeTag('{{unsubscribe_url}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{unsubscribe}}</button>
+                                        <button type="button" onclick="insertMergeTag('{{ '{{' }}first_name{{ '}}' }}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}first_name{{ '}}' }}</button>
+                                        <button type="button" onclick="insertMergeTag('{{ '{{' }}email{{ '}}' }}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}email{{ '}}' }}</button>
+                                        <button type="button" onclick="insertMergeTag('{{ '{{' }}company{{ '}}' }}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}company{{ '}}' }}</button>
+                                        <button type="button" onclick="insertMergeTag('{{ '{{' }}unsubscribe_url{{ '}}' }}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{ '{{' }}unsubscribe{{ '}}' }}</button>
                                     </div>
                                     <button type="button" onclick="promptAddCustomPlaceholder('studio')" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Add a custom placeholder (e.g. phone, city, order_id)">
                                         <i data-lucide="plus" class="w-3 h-3"></i> Add Tag
@@ -954,6 +989,9 @@
                                 <div class="flex items-center gap-2 ml-auto">
                                     <select id="studio-table-select" onchange="loadTablePlaceholders(this.value, 'studio')" class="px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500">
                                         <option value="">Table: Standard Tags</option>
+                                        {% for lst in subscriber_lists %}
+                                            <option value="{{ lst.id }}">{{ lst.name }}</option>
+                                        {% endfor %}
                                     </select>
                                     <button type="button" onclick="openInsertTableModal('studio')" class="px-2 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-[11px] font-semibold text-purple-300 border border-purple-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Insert styled responsive HTML table into template">
                                         <i data-lucide="table" class="w-3 h-3"></i> Insert Table
@@ -976,16 +1014,16 @@
             <!-- ========================================================================== -->
             <div id="panel-smtp" class="app-panel hidden space-y-6">
                 <!-- Header -->
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Mail Servers & SMTP Relay Config</h1>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Mail Servers</h1>
                         <p class="text-sm text-slate-400 mt-1">Configure your real SMTP credentials (Gmail, Outlook, SendGrid, Amazon SES, or Custom SMTP server).</p>
                     </div>
-                    <div class="flex items-center gap-3">
-                        <button onclick="openGmailConnectModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-500/25 transition-all">
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button onclick="openGmailConnectModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-500/25 transition-all whitespace-nowrap">
                             <i data-lucide="mail" class="w-3.5 h-3.5"></i> Connect Gmail Account
                         </button>
-                        <button onclick="openAddSmtpModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                        <button onclick="openAddSmtpModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i> Custom SMTP
                         </button>
                     </div>
@@ -1000,8 +1038,8 @@
                         <span class="text-[11px] text-slate-400">Click any provider to auto-fill settings</span>
                     </div>
                     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                        <button type="button" onclick="presetSmtp('gmail')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
-                            <div class="text-xs font-bold text-white">Gmail / Workspace</div>
+                        <button type="button" onclick="presetSmtp('gmail')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-red-500/50">
+                            <div class="text-xs font-bold text-red-400 flex items-center gap-1"><i data-lucide="mail" class="w-3.5 h-3.5"></i> Gmail</div>
                             <div class="text-[10px] text-slate-400 mt-0.5">smtp.gmail.com:587</div>
                         </button>
                         <button type="button" onclick="presetSmtp('outlook')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
@@ -1017,12 +1055,12 @@
                             <div class="text-[10px] text-slate-400 mt-0.5">email-smtp.us-east-1</div>
                         </button>
                         <button type="button" onclick="presetSmtp('brevo')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
-                            <div class="text-xs font-bold text-white">Brevo (Sendinblue)</div>
+                            <div class="text-xs font-bold text-white">Brevo</div>
                             <div class="text-[10px] text-slate-400 mt-0.5">smtp-relay.brevo.com</div>
                         </button>
                         <button type="button" onclick="presetSmtp('sandbox')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/30 text-left transition-all hover:border-emerald-500">
-                            <div class="text-xs font-bold text-emerald-400">Sandbox Test Mode</div>
-                            <div class="text-[10px] text-slate-400 mt-0.5">Zero-config simulation</div>
+                            <div class="text-xs font-bold text-emerald-400">Sandbox Mode</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">Zero-config test</div>
                         </button>
                     </div>
                 </div>
@@ -1034,37 +1072,152 @@
             </div>
 
             <!-- ========================================================================== -->
-            <!-- 7. API & TRANSACTIONAL PANEL                                               -->
+            <!-- 8. System & Dispatch Logs Panel                                            -->
             <!-- ========================================================================== -->
-            <div id="panel-api" class="app-panel hidden space-y-6">
+            <div id="panel-logs" class="app-panel hidden space-y-6">
                 <!-- Header -->
-                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Transactional REST API Integration</h1>
-                        <p class="text-sm text-slate-400 mt-1">Integrate instant transactional delivery and mass broadcast dispatches into your code.</p>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">System & Dispatch Logs</h1>
+                            <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                                <span id="logs-stream-status">LIVE STREAM</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Real-time unified audit and dispatch telemetry terminal across workers, scheduler, SMTP relays, and security.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button onclick="toggleLogsStreamPause()" id="btn-logs-pause-stream" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="pause" id="logs-pause-icon" class="w-3.5 h-3.5 text-amber-400"></i>
+                            <span id="logs-pause-text">Pause Stream</span>
+                        </button>
+                        <button onclick="exportLogsFile('text')" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer" title="Download raw .log file">
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-indigo-400"></i> Export .log
+                        </button>
+                        <button onclick="clearSystemLogsBuffer()" class="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold border border-rose-500/20 transition-colors flex items-center gap-1.5 cursor-pointer" title="Clear console buffer">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Clear Logs
+                        </button>
+                        <button onclick="fetchLogs()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 transition-colors cursor-pointer" title="Reload logs">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                        </button>
                     </div>
                 </div>
 
-                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
-                    <h3 class="text-sm font-bold text-white">Send Transactional Email via cURL / Python</h3>
-                    <div class="bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-xs text-indigo-300 overflow-x-auto leading-relaxed">
-curl -X POST http://localhost:8000/api/v1/send \
-  -H "Content-Type: application/json" \
-  -d '{
-    "recipient_email": "customer@company.com",
-    "recipient_name": "Customer Name",
-    "subject": "Your Order Confirmation #{{order_id}}",
-    "body_html": "<p>Hello {{name}}, your order <strong>#{{order_id}}</strong> is ready.</p>",
-    "merge_variables": { "order_id": "ORD-12345", "name": "Customer Name" },
-    "track_opens": true,
-    "track_clicks": true
-  }'
+                <!-- KPI Metric Summary Cards -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                            <i data-lucide="scroll-text" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Total Recorded</div>
+                            <div class="text-xl font-bold text-white font-mono mt-0.5" id="logs-kpi-total">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                            <i data-lucide="alert-circle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Errors & Critical</div>
+                            <div class="text-xl font-bold text-rose-400 font-mono mt-0.5" id="logs-kpi-errors">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Warnings</div>
+                            <div class="text-xl font-bold text-amber-400 font-mono mt-0.5" id="logs-kpi-warnings">0</div>
+                        </div>
+                    </div>
+                    <div class="glass-panel p-4 rounded-2xl border border-white/10 flex items-center gap-3.5">
+                        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                            <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                        </div>
+                        <div>
+                            <div class="text-[11px] font-medium text-slate-400">Info & Dispatches</div>
+                            <div class="text-xl font-bold text-emerald-400 font-mono mt-0.5" id="logs-kpi-info">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Bar & Control Toolbar -->
+                <div class="glass-panel p-3.5 rounded-2xl border border-white/10 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5 flex-1 min-w-[240px]">
+                        <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 flex items-center">
+                            <div class="input-icon-left">
+                                <i data-lucide="search" class="w-4 h-4"></i>
+                            </div>
+                            <input type="search" id="logs-search-input" name="search_logs" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                        </form>
+                    </div>
+
+                    <div class="flex items-center gap-2.5 flex-wrap">
+                        <div class="flex items-center gap-1.5">
+                            <label class="text-xs text-slate-400">Level:</label>
+                            <select id="logs-level-filter" onchange="handleLogsFilterChange()" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="all">All Levels</option>
+                                <option value="error">Errors Only</option>
+                                <option value="warning">Warnings Only</option>
+                                <option value="info">Info Only</option>
+                                <option value="debug">Debug Only</option>
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-1.5">
+                            <label class="text-xs text-slate-400">Source:</label>
+                            <select id="logs-source-filter" onchange="handleLogsFilterChange()" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <option value="all">All Sources</option>
+                                <option value="queue">Queue & Worker</option>
+                                <option value="scheduler">Scheduler</option>
+                                <option value="smtp">SMTP Relay</option>
+                                <option value="auth">Auth & Security</option>
+                                <option value="storage">Storage Vault</option>
+                                <option value="tracking">Email Tracking</option>
+                                <option value="system">System Core</option>
+                            </select>
+                        </div>
+
+                        <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer pl-2 border-l border-white/10 select-none">
+                            <input type="checkbox" id="logs-auto-scroll" checked class="rounded bg-slate-900 border-white/20 text-indigo-600 focus:ring-0">
+                            <span>Auto-Scroll</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Logs Terminal Viewer -->
+                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden shadow-2xl bg-slate-950/90 flex flex-col">
+                    <!-- Console Header Bar -->
+                    <div class="px-4 py-2.5 bg-slate-900/90 border-b border-white/5 flex items-center justify-between text-xs text-slate-400">
+                        <div class="flex items-center gap-2 font-mono">
+                            <span class="w-2.5 h-2.5 rounded-full bg-rose-500/80"></span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-amber-500/80"></span>
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></span>
+                            <span class="ml-2 text-[11px] text-slate-400 font-mono">bitmail-telemetry.log</span>
+                        </div>
+                        <div class="flex items-center gap-3 text-[11px]">
+                            <span id="logs-visible-count">Showing 0 events</span>
+                            <button onclick="emitDiagnosticTestLog()" class="hover:text-white text-indigo-400 transition-colors flex items-center gap-1 font-semibold cursor-pointer" title="Emit diagnostic test entry">
+                                <i data-lucide="zap" class="w-3 h-3"></i> Test Event
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Terminal Scrollable Stream Area -->
+                    <div id="logs-container" class="p-4 font-mono text-xs overflow-y-auto space-y-1.5 min-h-[420px] max-h-[640px] select-text">
+                        <div class="text-center py-16 text-slate-500 text-xs font-mono">
+                            <i data-lucide="terminal" class="w-8 h-8 mx-auto mb-2 text-slate-600 opacity-60"></i>
+                            Initializing real-time telemetry stream...
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- ========================================================================== -->
-            <!-- Deliverability Engine & DNS Diagnostics Panel                              -->
+            <!-- 9. Deliverability Engine & DNS Diagnostics Panel                           -->
             <!-- ========================================================================== -->
             <div id="panel-deliverability" class="app-panel hidden space-y-6">
                 <!-- Header -->
@@ -1348,9 +1501,13 @@ curl -X POST http://localhost:8000/api/v1/send \
                                     <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="shield-alert" class="w-3.5 h-3.5 text-slate-500"></i> Global Suppression List:</span>
                                     <span id="safety-res-suppression" class="font-medium text-emerald-400">Not Suppressed</span>
                                 </div>
-                                <div class="flex items-center justify-between py-1">
+                                <div class="flex items-center justify-between py-1 border-b border-white/5">
                                     <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="zap" class="w-3.5 h-3.5 text-slate-500"></i> Active SMTP Port 25 Probe:</span>
                                     <span id="safety-res-probe" class="font-medium text-slate-400">Untested</span>
+                                </div>
+                                <div class="flex items-center justify-between py-1">
+                                    <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="check-check" class="w-3.5 h-3.5 text-slate-500"></i> Catch-All / Accept-All:</span>
+                                    <span id="safety-res-catchall" class="font-medium text-slate-400">Untested</span>
                                 </div>
                             </div>
 
@@ -1453,6 +1610,88 @@ curl -X POST http://localhost:8000/api/v1/send \
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Live IP & Domain Blacklist Monitor (DNSBL / RBL Checker) -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-5">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+                                    Live Blacklist Monitor (30+ Real-Time DNSBL / RBL Lists)
+                                </h2>
+                                <span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 text-[10px] font-semibold border border-rose-500/20">Real-Time Reputation</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">1-Click diagnostic querying 30+ major real-time blacklists (Spamhaus ZEN, Barracuda, SpamCop, SORBS, UCEPROTECT, SURBL) for your sending domain and relay IP addresses.</p>
+                        </div>
+                    </div>
+
+                    <!-- Query Target Input -->
+                    <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault(); runBlacklistCheck();" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                        <div class="md:col-span-9">
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Domain or IP Address to Probe *</label>
+                            <div class="relative">
+                                <i data-lucide="server" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                                <input type="text" id="blacklist-check-target" name="blacklist_target" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" value="mail.bitnade.com" placeholder="e.g. mail.bitnade.com, 192.0.2.1, yourdomain.com" class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500">
+                            </div>
+                        </div>
+                        <div class="md:col-span-3">
+                            <button type="submit" id="btn-run-blacklist-check" class="w-full py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                <i data-lucide="activity" id="icon-blacklist-search" class="w-4 h-4"></i>
+                                <span id="text-blacklist-search">Check 30+ RBLs</span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Quick Preset Chips -->
+                    <div class="flex items-center flex-wrap gap-2 text-[11px] text-slate-400">
+                        <span class="text-slate-500">Quick Test:</span>
+                        <button type="button" onclick="setBlacklistTarget('mail.bitnade.com')" class="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-white/5 cursor-pointer transition-colors">mail.bitnade.com</button>
+                        <button type="button" onclick="setBlacklistTarget('127.0.0.2')" class="px-2 py-0.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/20 cursor-pointer transition-colors">127.0.0.2 (Test Listed IP)</button>
+                        <button type="button" onclick="setBlacklistTarget('1.1.1.1')" class="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-white/5 cursor-pointer transition-colors">1.1.1.1 (Clean IP)</button>
+                    </div>
+
+                    <!-- Blacklist Report Results Container -->
+                    <div id="blacklist-results-container" class="space-y-4 pt-2 hidden">
+                        <!-- KPI summary badges -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Target</span>
+                                <div id="blacklist-res-target" class="text-sm font-mono font-bold text-white truncate">--</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Zones Queried</span>
+                                <div id="blacklist-res-total" class="text-base font-bold text-white font-mono">0 / 0</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Clean Status</span>
+                                <div id="blacklist-res-clean" class="text-base font-bold text-emerald-400 font-mono">0 Clean</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Listed Detections</span>
+                                <div id="blacklist-res-listed" class="text-base font-bold text-slate-400 font-mono">0 Listings</div>
+                            </div>
+                        </div>
+
+                        <!-- Results List Table -->
+                        <div class="rounded-xl border border-white/5 overflow-hidden max-h-80 overflow-y-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-900/90 text-[11px] text-slate-400 sticky top-0">
+                                    <tr>
+                                        <th class="py-2.5 px-3 font-medium">Blacklist Name</th>
+                                        <th class="py-2.5 px-3 font-medium">Zone</th>
+                                        <th class="py-2.5 px-3 font-medium">Status</th>
+                                        <th class="py-2.5 px-3 font-medium">Return Code / Category</th>
+                                        <th class="py-2.5 px-3 font-medium text-right">Delisting</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="blacklist-results-tbody" class="divide-y divide-white/5 text-[11px]">
+                                    <!-- Injected dynamically -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1624,6 +1863,86 @@ curl -X POST http://localhost:8000/api/v1/send \
                 </div>
             </div>
 
+            <!-- ========================================================================== -->
+            <!-- 11. Outbound Webhooks & Integrations Panel                                 -->
+            <!-- ========================================================================== -->
+            <div id="panel-webhooks" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">Webhooks & Integrations</h1>
+                            <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-semibold">
+                                <i data-lucide="webhook" class="w-3.5 h-3.5"></i>
+                                <span>HMAC-SHA256 Signed</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Real-time webhook events dispatched to external CRMs, Slack, or endpoints on email sent, delivered, opened, clicked, bounced, or unsubscribed.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button type="button" onclick="openNewWebhookModal()" class="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                            <span>Add Webhook Endpoint</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Webhooks Table Glass Panel -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <i data-lucide="network" class="w-4 h-4 text-violet-400"></i>
+                            Registered Webhook Endpoints
+                        </h2>
+                        <span id="webhooks-count-badge" class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-400">0 Endpoints</span>
+                    </div>
+
+                    <div class="rounded-xl border border-white/5 overflow-hidden">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-900/90 text-[11px] text-slate-400">
+                                <tr>
+                                    <th class="py-2.5 px-3 font-medium">Integration Name</th>
+                                    <th class="py-2.5 px-3 font-medium">Target URL</th>
+                                    <th class="py-2.5 px-3 font-medium">Subscribed Events</th>
+                                    <th class="py-2.5 px-3 font-medium">Signing Secret</th>
+                                    <th class="py-2.5 px-3 font-medium">Status</th>
+                                    <th class="py-2.5 px-3 font-medium text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="webhooks-table-tbody" class="divide-y divide-white/5 text-[11px]">
+                                <!-- Injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Recent Deliveries Log -->
+                <div id="webhook-deliveries-container" class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4 hidden">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i data-lucide="history" class="w-4 h-4 text-slate-400"></i>
+                            Recent Delivery History: <span id="webhook-deliveries-name" class="text-violet-400 font-mono">--</span>
+                        </h3>
+                        <button type="button" onclick="closeWebhookDeliveries()" class="text-xs text-slate-400 hover:text-white cursor-pointer">Close</button>
+                    </div>
+                    <div class="rounded-xl border border-white/5 overflow-hidden max-h-60 overflow-y-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-900/90 text-[11px] text-slate-400 sticky top-0">
+                                <tr>
+                                    <th class="py-2 px-3 font-medium">Time</th>
+                                    <th class="py-2 px-3 font-medium">Event</th>
+                                    <th class="py-2 px-3 font-medium">HTTP Code</th>
+                                    <th class="py-2 px-3 font-medium">Response Snippet</th>
+                                </tr>
+                            </thead>
+                            <tbody id="webhook-deliveries-tbody" class="divide-y divide-white/5 text-[11px] font-mono">
+                                <!-- Injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
 
@@ -1694,6 +2013,68 @@ curl -X POST http://localhost:8000/api/v1/send \
                 <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-new-warmup')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer">Cancel</button>
                     <button type="submit" id="btn-submit-warmup" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-lg shadow-orange-500/25 transition-all cursor-pointer">Initialize Warmup Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add New Webhook Endpoint -->
+    <div id="modal-new-webhook" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden modal-overlay">
+        <div class="glass-panel max-w-lg w-full rounded-2xl border border-violet-500/30 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl bg-violet-500/20 text-violet-400">
+                        <i data-lucide="webhook" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-white">Add Webhook Endpoint</h3>
+                </div>
+                <button type="button" onclick="closeNewWebhookModal()" class="text-slate-400 hover:text-white cursor-pointer"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form onsubmit="event.preventDefault(); submitCreateWebhook();" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Integration Name *</label>
+                    <input type="text" id="modal-webhook-name" placeholder="e.g. HubSpot CRM Sync, Slack Notifications" required class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Target Endpoint URL (HTTPS recommended) *</label>
+                    <input type="url" id="modal-webhook-url" placeholder="https://api.yourdomain.com/webhooks/bitmail" required class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Custom Secret (optional, auto-generated if blank)</label>
+                    <input type="text" id="modal-webhook-secret" placeholder="Leave blank to generate random 32-byte secret" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Subscribed Events</label>
+                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-300">
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-sent" value="email.sent" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.sent</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-delivered" value="email.delivered" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.delivered</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-opened" value="email.opened" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.opened</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-clicked" value="email.clicked" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.clicked</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-bounced" value="email.bounced" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.bounced</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-unsub" value="subscriber.unsubscribed" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>subscriber.unsubscribed</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                    <button type="button" onclick="closeNewWebhookModal()" class="px-3.5 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer">Cancel</button>
+                    <button type="submit" id="btn-submit-webhook" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-lg shadow-violet-500/20 cursor-pointer">Save Webhook</button>
                 </div>
             </form>
         </div>
@@ -1812,7 +2193,7 @@ curl -X POST http://localhost:8000/api/v1/send \
     </div>
 
     <!-- Modal 2b: CSV Import -->
-    <div id="modal-csv-import" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div id="modal-csv-import" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between">
                 <h3 class="text-base font-bold text-white">Import Customers from CSV</h3>
@@ -1864,7 +2245,7 @@ curl -X POST http://localhost:8000/api/v1/send \
     </div>
 
     <!-- Modal 3: Add / Edit SMTP Relay Server -->
-    <div id="modal-add-smtp" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div id="modal-add-smtp" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between">
                 <h3 id="modal-smtp-title" class="text-base font-bold text-white">Configure Mail Server (SMTP Relay)</h3>
@@ -2022,12 +2403,270 @@ curl -X POST http://localhost:8000/api/v1/send \
 
                 <div class="flex items-center justify-between pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-gmail-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                    <button type="submit" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-xs font-bold text-white shadow-lg shadow-red-500/25 flex items-center gap-1.5 transition-all">
+                    <button type="submit" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl btn-dark-blue text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
                         <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
                         <span>Connect & Verify Gmail</span>
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal 5b: Brevo Free Cloud Relay Setup (300/day) -->
+    <div id="modal-brevo-connect" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-lg rounded-3xl border border-emerald-500/30 p-6 sm:p-8 space-y-6 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-400">
+                        <i data-lucide="send" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Connect Free Brevo Relay</h3>
+                        <p class="text-xs text-slate-400">300 Free emails/day • Delivers directly to real inboxes</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('modal-brevo-connect')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <!-- Steps -->
+            <div class="p-3.5 rounded-xl bg-slate-900/80 border border-white/5 space-y-1.5 text-xs text-slate-300">
+                <div class="font-bold text-emerald-300 flex items-center gap-1.5">
+                    <i data-lucide="info" class="w-4 h-4"></i> How to Get Your Free Brevo SMTP Key (in 30s):
+                </div>
+                <ol class="list-decimal pl-4 space-y-1 text-slate-400">
+                    <li>Log into your Brevo dashboard at <a href="https://app.brevo.com/settings/keys/smtp" target="_blank" class="text-emerald-400 underline font-semibold">app.brevo.com/settings/keys/smtp</a>.</li>
+                    <li>Click <strong>"Generate a new SMTP key"</strong>.</li>
+                    <li>Name it <code>Bitmail</code>, copy the generated key, and paste below.</li>
+                </ol>
+            </div>
+
+            <form id="form-modal-brevo" autocomplete="off" onsubmit="event.preventDefault(); submitBrevoConnect();" class="space-y-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Your Brevo Login Email Address *</label>
+                        <input type="email" id="brevo-email-input" placeholder="youremail@domain.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Brevo SMTP Master Key *</label>
+                        <input type="text" id="brevo-key-input" placeholder="xsmtpsib-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="new-password" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500">
+                        <p class="text-[10px] text-slate-500 mt-1">Generated from your Brevo SMTP Keys page.</p>
+                    </div>
+
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                        <input type="checkbox" id="brevo-set-default" checked class="rounded bg-slate-900 text-emerald-600 focus:ring-emerald-500">
+                        <span>Set Brevo as Default Outgoing Mail Relay</span>
+                    </label>
+                </div>
+
+                <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                    <button type="button" onclick="closeModal('modal-brevo-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                    <button type="submit" id="btn-submit-brevo-connect" class="px-5 py-2 rounded-xl btn-dark-green text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
+                        <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                        <span>Connect & Verify Brevo</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 0: Unified Secure Authentication Login (Locked Gate) -->
+    <div id="modal-auth-login" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-md rounded-3xl border border-indigo-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
+            <!-- Glow accents -->
+            <div class="absolute -top-20 -left-20 w-44 h-44 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <!-- Header -->
+            <div class="text-center relative z-10 space-y-1">
+                <div class="inline-flex p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-2">
+                    <i data-lucide="shield-check" class="w-7 h-7"></i>
+                </div>
+                <h2 class="text-xl font-extrabold text-white tracking-tight">Bitmail Authorization</h2>
+                <p class="text-xs text-slate-400">Sign in to access your mass email campaigns, vault, and relays</p>
+            </div>
+
+            <!-- Auth Tabs: Password vs QR Scan -->
+            <div class="flex rounded-xl bg-slate-900/90 border border-white/10 p-1 relative z-10">
+                <button type="button" id="auth-tab-btn-password" onclick="switchAuthTab('password')" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow">
+                    Password Sign In
+                </button>
+                <button type="button" id="auth-tab-btn-scan" onclick="switchAuthTab('scan')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
+                    Direct QR Scan
+                </button>
+            </div>
+
+            <!-- Tab 1: Password Form -->
+            <div id="auth-tab-password" class="space-y-4 relative z-10">
+                <form id="auth-login-form" onsubmit="handlePasswordLogin(event)" class="space-y-3.5">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Email or Username</label>
+                        <div class="relative flex items-center">
+                            <div class="input-icon-left">
+                                <i data-lucide="user" class="w-4 h-4"></i>
+                            </div>
+                            <input id="login-input-identity" name="username" type="text" autocomplete="username" required placeholder="admin@bitmail.com or admin" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <label class="text-xs font-medium text-slate-300">Password</label>
+                        </div>
+                        <div class="relative flex items-center">
+                            <div class="input-icon-left">
+                                <i data-lucide="lock" class="w-4 h-4"></i>
+                            </div>
+                            <input id="login-input-password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" class="w-full pl-9 pr-10 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                            <button type="button" onclick="togglePasswordVisibility('login-input-password', this)" class="input-icon-right hover:text-white cursor-pointer" title="Toggle password visibility">
+                                <i data-lucide="eye" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
+                        <label class="flex items-center gap-2 cursor-pointer select-none">
+                            <input id="login-remember-me" type="checkbox" checked class="rounded border-slate-700 text-indigo-600 focus:ring-0">
+                            <span>Remember for 30 days</span>
+                        </label>
+                    </div>
+
+                    <div id="login-error-alert" class="hidden p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center"></div>
+
+                    <button id="login-submit-btn" type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                        <i data-lucide="log-in" class="w-4 h-4"></i>
+                        <span>Unlock Platform</span>
+                    </button>
+                </form>
+
+                <!-- Quick Demo Helper Banner -->
+                <div class="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-between text-[11px] text-indigo-300">
+                    <div>
+                        <span class="font-bold text-white">Default Admin:</span>
+                        <span class="font-mono text-indigo-200">admin@bitmail.com / admin123</span>
+                    </div>
+                    <button type="button" onclick="fillDemoAdminCredentials()" class="px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 font-semibold border border-indigo-400/30 transition-colors cursor-pointer">
+                        Auto-Fill
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Direct QR Scan -->
+            <div id="auth-tab-scan" class="space-y-4 relative z-10 hidden">
+                <div class="p-5 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col items-center justify-center space-y-3 relative overflow-hidden">
+                    <div id="scan-qr-svg-wrapper-auth" class="w-48 h-48 bg-white p-2.5 rounded-2xl shadow-inner flex items-center justify-center relative overflow-hidden">
+                        <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating Live QR...
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between w-full text-xs text-slate-400 pt-1">
+                        <div class="flex items-center gap-1.5 text-emerald-400 font-medium">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                            <span id="scan-status-text-auth">Waiting for phone scan...</span>
+                        </div>
+                        <span id="scan-timer-text-auth" class="font-mono text-[11px] text-slate-500">05:00</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="simulateAuthScanApproval()" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 text-center border border-white/5 transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span>Simulate Mobile Scan Approval (1-Click)</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Change Password Modal -->
+    <div id="modal-change-password" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden modal-overlay">
+        <div class="glass-panel w-full max-w-sm rounded-2xl border border-white/10 p-5 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="key" class="w-4 h-4 text-indigo-400"></i> Change Account Password
+                </h3>
+                <button type="button" onclick="closeModal('modal-change-password')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            <form id="form-change-password" onsubmit="handleChangePassword(event)" autocomplete="off" class="space-y-3">
+                <input type="text" name="username" value="admin" autocomplete="username" class="hidden" style="display:none;" aria-hidden="true" tabindex="-1">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Current Password</label>
+                    <input id="cp-current-password" type="password" required autocomplete="current-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">New Password (min 6 chars)</label>
+                    <input id="cp-new-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Confirm New Password</label>
+                    <input id="cp-confirm-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
+                </div>
+                <div id="cp-error-alert" class="hidden p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs"></div>
+                <button type="submit" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all cursor-pointer">
+                    Update Password
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 6: Direct Scan-to-Login & Mobile Device Linking -->
+    <div id="modal-scan-login" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-md rounded-3xl border border-purple-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
+            <!-- Background Glow Effect -->
+            <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
+
+            <div class="flex items-center justify-between relative z-10">
+                <div class="flex items-center gap-2.5">
+                    <div class="p-2 rounded-xl bg-purple-500/20 text-purple-300">
+                        <i data-lucide="qr-code" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Direct Scan-to-Login</h3>
+                        <p class="text-[11px] text-slate-400">Scan with your phone to authenticate</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('modal-scan-login')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <!-- QR Code Card -->
+            <div class="p-5 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col items-center justify-center space-y-3 relative overflow-hidden">
+                <!-- QR SVG Container -->
+                <div id="scan-qr-svg-wrapper" class="w-48 h-48 bg-white p-2.5 rounded-2xl shadow-inner flex items-center justify-center relative overflow-hidden">
+                    <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating QR...
+                    </div>
+                </div>
+
+                <!-- Live Status & Countdown -->
+                <div class="flex items-center justify-between w-full text-xs text-slate-400 pt-1">
+                    <div class="flex items-center gap-1.5 text-emerald-400 font-medium">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                        <span id="scan-status-text">Waiting for phone scan...</span>
+                    </div>
+                    <span id="scan-timer-text" class="font-mono text-[11px] text-slate-500">05:00</span>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 space-y-1 text-xs text-slate-300">
+                <div class="font-bold text-purple-300 flex items-center gap-1.5">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Quick 3-Step Scan:
+                </div>
+                <ol class="list-decimal pl-4 space-y-0.5 text-[11px] text-slate-400">
+                    <li>Open your mobile phone camera or scanner.</li>
+                    <li>Point at the QR code above.</li>
+                    <li>Tap <strong>Approve</strong> on your phone to unlock this desktop session.</li>
+                </ol>
+            </div>
+
+            <!-- Quick Action Links -->
+            <div class="flex items-center gap-2 pt-1">
+                <a id="scan-open-link-btn" href="#" target="_blank" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 text-center border border-white/5 transition-colors flex items-center justify-center gap-1.5">
+                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-indigo-400"></i> Open Link
+                </a>
+                <button type="button" onclick="simulateScanApproval()" id="btn-simulate-scan" class="flex-1 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold text-center transition-all flex items-center justify-center gap-1.5">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i> 1-Click Test Approve
+                </button>
+            </div>
         </div>
     </div>
 
@@ -2353,204 +2992,10 @@ curl -X POST http://localhost:8000/api/v1/send \
         </div>
     </div>
 
-    <!-- Modal 0: Unified Secure Authentication Login (Locked Gate) -->
-    <div id="modal-auth-login" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
-        <div class="glass-panel w-full max-w-md rounded-3xl border border-indigo-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
-            <!-- Glow accents -->
-            <div class="absolute -top-20 -left-20 w-44 h-44 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
-            <div class="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-            <!-- Header -->
-            <div class="text-center relative z-10 space-y-1">
-                <div class="inline-flex p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-2">
-                    <i data-lucide="shield-check" class="w-7 h-7"></i>
-                </div>
-                <h2 class="text-xl font-extrabold text-white tracking-tight">Bitmail Authorization</h2>
-                <p class="text-xs text-slate-400">Sign in to access your mass email campaigns, vault, and relays</p>
-            </div>
-
-            <!-- Auth Tabs: Password vs QR Scan -->
-            <div class="flex rounded-xl bg-slate-900/90 border border-white/10 p-1 relative z-10">
-                <button type="button" id="auth-tab-btn-password" onclick="switchAuthTab('password')" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow">
-                    Password Sign In
-                </button>
-                <button type="button" id="auth-tab-btn-scan" onclick="switchAuthTab('scan')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
-                    Direct QR Scan
-                </button>
-            </div>
-
-            <!-- Tab 1: Password Form -->
-            <div id="auth-tab-password" class="space-y-4 relative z-10">
-                <form id="auth-login-form" onsubmit="handlePasswordLogin(event)" class="space-y-3.5">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Email or Username</label>
-                        <div class="relative flex items-center">
-                            <div class="input-icon-left">
-                                <i data-lucide="user" class="w-4 h-4"></i>
-                            </div>
-                            <input id="login-input-identity" name="username" type="text" autocomplete="username" required placeholder="admin@bitmail.com or admin" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-                        </div>
-                    </div>
-
-                    <div>
-                        <div class="flex items-center justify-between mb-1">
-                            <label class="text-xs font-medium text-slate-300">Password</label>
-                        </div>
-                        <div class="relative flex items-center">
-                            <div class="input-icon-left">
-                                <i data-lucide="lock" class="w-4 h-4"></i>
-                            </div>
-                            <input id="login-input-password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" class="w-full pl-9 pr-10 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
-                            <button type="button" onclick="togglePasswordVisibility('login-input-password', this)" class="input-icon-right hover:text-white cursor-pointer" title="Toggle password visibility">
-                                <i data-lucide="eye" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center justify-between text-xs text-slate-400 pt-1">
-                        <label class="flex items-center gap-2 cursor-pointer select-none">
-                            <input id="login-remember-me" type="checkbox" checked class="rounded border-slate-700 text-indigo-600 focus:ring-0">
-                            <span>Remember for 30 days</span>
-                        </label>
-                    </div>
-
-                    <div id="login-error-alert" class="hidden p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center"></div>
-
-                    <button id="login-submit-btn" type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
-                        <i data-lucide="log-in" class="w-4 h-4"></i>
-                        <span>Unlock Platform</span>
-                    </button>
-                </form>
-
-                <!-- Quick Demo Helper Banner -->
-                <div class="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-between text-[11px] text-indigo-300">
-                    <div>
-                        <span class="font-bold text-white">Default Admin:</span>
-                        <span class="font-mono text-indigo-200">admin@bitmail.com / admin123</span>
-                    </div>
-                    <button type="button" onclick="fillDemoAdminCredentials()" class="px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 font-semibold border border-indigo-400/30 transition-colors cursor-pointer">
-                        Auto-Fill
-                    </button>
-                </div>
-            </div>
-
-            <!-- Tab 2: Direct QR Scan -->
-            <div id="auth-tab-scan" class="space-y-4 relative z-10 hidden">
-                <div class="p-5 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col items-center justify-center space-y-3 relative overflow-hidden">
-                    <div id="scan-qr-svg-wrapper-auth" class="w-48 h-48 bg-white p-2.5 rounded-2xl shadow-inner flex items-center justify-center relative overflow-hidden">
-                        <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating Live QR...
-                        </div>
-                    </div>
-                    <div class="flex items-center justify-between w-full text-xs text-slate-400 pt-1">
-                        <div class="flex items-center gap-1.5 text-emerald-400 font-medium">
-                            <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
-                            <span id="scan-status-text-auth">Waiting for phone scan...</span>
-                        </div>
-                        <span id="scan-timer-text-auth" class="font-mono text-[11px] text-slate-500">05:00</span>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="simulateAuthScanApproval()" class="w-full py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 text-center border border-white/5 transition-colors flex items-center justify-center gap-1.5 cursor-pointer">
-                        <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i>
-                        <span>Simulate Mobile Scan Approval (1-Click)</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal: Change Password Modal -->
-    <div id="modal-change-password" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden modal-overlay">
-        <div class="glass-panel w-full max-w-sm rounded-2xl border border-white/10 p-5 space-y-4 shadow-2xl relative">
-            <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                    <i data-lucide="key" class="w-4 h-4 text-indigo-400"></i> Change Account Password
-                </h3>
-                <button type="button" onclick="closeModal('modal-change-password')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-4 h-4"></i></button>
-            </div>
-            <form id="form-change-password" onsubmit="handleChangePassword(event)" autocomplete="off" class="space-y-3">
-                <input type="text" name="username" value="admin" autocomplete="username" class="hidden" style="display:none;" aria-hidden="true" tabindex="-1">
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Current Password</label>
-                    <input id="cp-current-password" type="password" required autocomplete="current-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">New Password (min 6 chars)</label>
-                    <input id="cp-new-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
-                </div>
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Confirm New Password</label>
-                    <input id="cp-confirm-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
-                </div>
-                <div id="cp-error-alert" class="hidden p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs"></div>
-                <button type="submit" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all cursor-pointer">
-                    Update Password
-                </button>
-            </form>
-        </div>
-    </div>
-
-    <!-- Modal 6: Direct Scan-to-Login & Mobile Device Linking -->
-    <div id="modal-scan-login" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
-        <div class="glass-panel w-full max-w-md rounded-3xl border border-purple-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
-            <!-- Background Glow Effect -->
-            <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-            <div class="flex items-center justify-between relative z-10">
-                <div class="flex items-center gap-2.5">
-                    <div class="p-2 rounded-xl bg-purple-500/20 text-purple-300">
-                        <i data-lucide="qr-code" class="w-5 h-5"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-base font-bold text-white">Direct Scan-to-Login</h3>
-                        <p class="text-[11px] text-slate-400">Scan with your phone to authenticate</p>
-                    </div>
-                </div>
-                <button type="button" onclick="closeModal('modal-scan-login')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-
-            <!-- QR Code Card -->
-            <div class="p-5 rounded-2xl bg-slate-900/90 border border-white/10 flex flex-col items-center justify-center space-y-3 relative overflow-hidden">
-                <div id="scan-qr-svg-wrapper" class="w-48 h-48 bg-white p-2.5 rounded-2xl shadow-inner flex items-center justify-center relative overflow-hidden">
-                    <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating QR...
-                    </div>
-                </div>
-
-                <div class="flex items-center justify-between w-full text-xs text-slate-400 pt-1">
-                    <div class="flex items-center gap-1.5 text-emerald-400 font-medium">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
-                        <span id="scan-status-text">Waiting for phone scan...</span>
-                    </div>
-                    <span id="scan-timer-text" class="font-mono text-[11px] text-slate-500">05:00</span>
-                </div>
-            </div>
-
-            <div class="p-3 rounded-xl bg-slate-900/60 border border-white/5 space-y-1 text-xs text-slate-300">
-                <div class="font-bold text-purple-300 flex items-center gap-1.5">
-                    <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> Quick 3-Step Scan:
-                </div>
-                <ol class="list-decimal pl-4 space-y-0.5 text-[11px] text-slate-400">
-                    <li>Open your mobile phone camera or scanner.</li>
-                    <li>Point at the QR code above.</li>
-                    <li>Tap <strong>Approve</strong> on your phone to unlock this desktop session.</li>
-                </ol>
-            </div>
-
-            <div class="flex items-center gap-2 pt-1">
-                <a id="scan-open-link-btn" href="#" target="_blank" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 text-center border border-white/5 transition-colors flex items-center justify-center gap-1.5">
-                    <i data-lucide="external-link" class="w-3.5 h-3.5 text-indigo-400"></i> Open Link
-                </a>
-                <button type="button" onclick="simulateScanApproval()" id="btn-simulate-scan" class="flex-1 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-bold text-center transition-all flex items-center justify-center gap-1.5">
-                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i> 1-Click Test Approve
-                </button>
-            </div>
-        </div>
-    </div>
+    <!-- Toast Notifications Container -->
     <div id="toast-container" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
 
-    <!-- Application Core Script -->
-    <script src="js/app.js?v=2.4.4"></script>
+    <!-- Application Core Script with Real-time WebSocket Client -->
+    <script src="/static/js/app.js?v=2.4.4"></script>
 </body>
 </html>

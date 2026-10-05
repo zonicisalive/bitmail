@@ -112,6 +112,12 @@
                     <span id="nav-warmup-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">AUTO</span>
                 </a>
 
+                <a href="/webhooks" data-tab="webhooks" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="webhook" class="w-4 h-4 text-violet-400"></i>
+                    <span>Webhooks & API</span>
+                    <span id="nav-webhooks-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">REST</span>
+                </a>
+
 
                 <a href="/logs" data-tab="logs" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="scroll-text" class="w-4 h-4 text-emerald-400"></i>
@@ -1495,9 +1501,13 @@
                                     <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="shield-alert" class="w-3.5 h-3.5 text-slate-500"></i> Global Suppression List:</span>
                                     <span id="safety-res-suppression" class="font-medium text-emerald-400">Not Suppressed</span>
                                 </div>
-                                <div class="flex items-center justify-between py-1">
+                                <div class="flex items-center justify-between py-1 border-b border-white/5">
                                     <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="zap" class="w-3.5 h-3.5 text-slate-500"></i> Active SMTP Port 25 Probe:</span>
                                     <span id="safety-res-probe" class="font-medium text-slate-400">Untested</span>
+                                </div>
+                                <div class="flex items-center justify-between py-1">
+                                    <span class="text-slate-400 flex items-center gap-1.5"><i data-lucide="check-check" class="w-3.5 h-3.5 text-slate-500"></i> Catch-All / Accept-All:</span>
+                                    <span id="safety-res-catchall" class="font-medium text-slate-400">Untested</span>
                                 </div>
                             </div>
 
@@ -1600,6 +1610,88 @@
                                     </tbody>
                                 </table>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Live IP & Domain Blacklist Monitor (DNSBL / RBL Checker) -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-5">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-4">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+                                    Live Blacklist Monitor (30+ Real-Time DNSBL / RBL Lists)
+                                </h2>
+                                <span class="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 text-[10px] font-semibold border border-rose-500/20">Real-Time Reputation</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">1-Click diagnostic querying 30+ major real-time blacklists (Spamhaus ZEN, Barracuda, SpamCop, SORBS, UCEPROTECT, SURBL) for your sending domain and relay IP addresses.</p>
+                        </div>
+                    </div>
+
+                    <!-- Query Target Input -->
+                    <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault(); runBlacklistCheck();" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                        <div class="md:col-span-9">
+                            <label class="block text-xs font-medium text-slate-300 mb-1.5">Domain or IP Address to Probe *</label>
+                            <div class="relative">
+                                <i data-lucide="server" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                                <input type="text" id="blacklist-check-target" name="blacklist_target" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" value="mail.bitnade.com" placeholder="e.g. mail.bitnade.com, 192.0.2.1, yourdomain.com" class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-rose-500">
+                            </div>
+                        </div>
+                        <div class="md:col-span-3">
+                            <button type="submit" id="btn-run-blacklist-check" class="w-full py-2 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                <i data-lucide="activity" id="icon-blacklist-search" class="w-4 h-4"></i>
+                                <span id="text-blacklist-search">Check 30+ RBLs</span>
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Quick Preset Chips -->
+                    <div class="flex items-center flex-wrap gap-2 text-[11px] text-slate-400">
+                        <span class="text-slate-500">Quick Test:</span>
+                        <button type="button" onclick="setBlacklistTarget('mail.bitnade.com')" class="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-white/5 cursor-pointer transition-colors">mail.bitnade.com</button>
+                        <button type="button" onclick="setBlacklistTarget('127.0.0.2')" class="px-2 py-0.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-500/20 cursor-pointer transition-colors">127.0.0.2 (Test Listed IP)</button>
+                        <button type="button" onclick="setBlacklistTarget('1.1.1.1')" class="px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-white/5 cursor-pointer transition-colors">1.1.1.1 (Clean IP)</button>
+                    </div>
+
+                    <!-- Blacklist Report Results Container -->
+                    <div id="blacklist-results-container" class="space-y-4 pt-2 hidden">
+                        <!-- KPI summary badges -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Target</span>
+                                <div id="blacklist-res-target" class="text-sm font-mono font-bold text-white truncate">--</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Zones Queried</span>
+                                <div id="blacklist-res-total" class="text-base font-bold text-white font-mono">0 / 0</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Clean Status</span>
+                                <div id="blacklist-res-clean" class="text-base font-bold text-emerald-400 font-mono">0 Clean</div>
+                            </div>
+                            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/5 space-y-1">
+                                <span class="text-[11px] text-slate-400">Listed Detections</span>
+                                <div id="blacklist-res-listed" class="text-base font-bold text-slate-400 font-mono">0 Listings</div>
+                            </div>
+                        </div>
+
+                        <!-- Results List Table -->
+                        <div class="rounded-xl border border-white/5 overflow-hidden max-h-80 overflow-y-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-900/90 text-[11px] text-slate-400 sticky top-0">
+                                    <tr>
+                                        <th class="py-2.5 px-3 font-medium">Blacklist Name</th>
+                                        <th class="py-2.5 px-3 font-medium">Zone</th>
+                                        <th class="py-2.5 px-3 font-medium">Status</th>
+                                        <th class="py-2.5 px-3 font-medium">Return Code / Category</th>
+                                        <th class="py-2.5 px-3 font-medium text-right">Delisting</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="blacklist-results-tbody" class="divide-y divide-white/5 text-[11px]">
+                                    <!-- Injected dynamically -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1771,6 +1863,86 @@
                 </div>
             </div>
 
+            <!-- ========================================================================== -->
+            <!-- 11. Outbound Webhooks & Integrations Panel                                 -->
+            <!-- ========================================================================== -->
+            <div id="panel-webhooks" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2.5">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">Webhooks & Integrations</h1>
+                            <div class="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-400 text-xs font-semibold">
+                                <i data-lucide="webhook" class="w-3.5 h-3.5"></i>
+                                <span>HMAC-SHA256 Signed</span>
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Real-time webhook events dispatched to external CRMs, Slack, or endpoints on email sent, delivered, opened, clicked, bounced, or unsubscribed.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button type="button" onclick="openNewWebhookModal()" class="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                            <span>Add Webhook Endpoint</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Webhooks Table Glass Panel -->
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <i data-lucide="network" class="w-4 h-4 text-violet-400"></i>
+                            Registered Webhook Endpoints
+                        </h2>
+                        <span id="webhooks-count-badge" class="text-xs font-mono px-2 py-0.5 rounded-md bg-slate-800 text-slate-400">0 Endpoints</span>
+                    </div>
+
+                    <div class="rounded-xl border border-white/5 overflow-hidden">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-900/90 text-[11px] text-slate-400">
+                                <tr>
+                                    <th class="py-2.5 px-3 font-medium">Integration Name</th>
+                                    <th class="py-2.5 px-3 font-medium">Target URL</th>
+                                    <th class="py-2.5 px-3 font-medium">Subscribed Events</th>
+                                    <th class="py-2.5 px-3 font-medium">Signing Secret</th>
+                                    <th class="py-2.5 px-3 font-medium">Status</th>
+                                    <th class="py-2.5 px-3 font-medium text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="webhooks-table-tbody" class="divide-y divide-white/5 text-[11px]">
+                                <!-- Injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Recent Deliveries Log -->
+                <div id="webhook-deliveries-container" class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4 hidden">
+                    <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i data-lucide="history" class="w-4 h-4 text-slate-400"></i>
+                            Recent Delivery History: <span id="webhook-deliveries-name" class="text-violet-400 font-mono">--</span>
+                        </h3>
+                        <button type="button" onclick="closeWebhookDeliveries()" class="text-xs text-slate-400 hover:text-white cursor-pointer">Close</button>
+                    </div>
+                    <div class="rounded-xl border border-white/5 overflow-hidden max-h-60 overflow-y-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-slate-900/90 text-[11px] text-slate-400 sticky top-0">
+                                <tr>
+                                    <th class="py-2 px-3 font-medium">Time</th>
+                                    <th class="py-2 px-3 font-medium">Event</th>
+                                    <th class="py-2 px-3 font-medium">HTTP Code</th>
+                                    <th class="py-2 px-3 font-medium">Response Snippet</th>
+                                </tr>
+                            </thead>
+                            <tbody id="webhook-deliveries-tbody" class="divide-y divide-white/5 text-[11px] font-mono">
+                                <!-- Injected dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </main>
 
@@ -1841,6 +2013,68 @@
                 <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-new-warmup')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer">Cancel</button>
                     <button type="submit" id="btn-submit-warmup" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-lg shadow-orange-500/25 transition-all cursor-pointer">Initialize Warmup Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add New Webhook Endpoint -->
+    <div id="modal-new-webhook" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden modal-overlay">
+        <div class="glass-panel max-w-lg w-full rounded-2xl border border-violet-500/30 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-white/5 pb-3">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl bg-violet-500/20 text-violet-400">
+                        <i data-lucide="webhook" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-white">Add Webhook Endpoint</h3>
+                </div>
+                <button type="button" onclick="closeNewWebhookModal()" class="text-slate-400 hover:text-white cursor-pointer"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form onsubmit="event.preventDefault(); submitCreateWebhook();" class="space-y-3.5">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Integration Name *</label>
+                    <input type="text" id="modal-webhook-name" placeholder="e.g. HubSpot CRM Sync, Slack Notifications" required class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Target Endpoint URL (HTTPS recommended) *</label>
+                    <input type="url" id="modal-webhook-url" placeholder="https://api.yourdomain.com/webhooks/bitmail" required class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Custom Secret (optional, auto-generated if blank)</label>
+                    <input type="text" id="modal-webhook-secret" placeholder="Leave blank to generate random 32-byte secret" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-violet-500">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Subscribed Events</label>
+                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-300">
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-sent" value="email.sent" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.sent</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-delivered" value="email.delivered" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.delivered</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-opened" value="email.opened" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.opened</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-clicked" value="email.clicked" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.clicked</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-bounced" value="email.bounced" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>email.bounced</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900/60 p-2 rounded-lg border border-white/5 cursor-pointer">
+                            <input type="checkbox" id="wh-evt-unsub" value="subscriber.unsubscribed" checked class="rounded bg-slate-900 text-violet-600">
+                            <span>subscriber.unsubscribed</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
+                    <button type="button" onclick="closeNewWebhookModal()" class="px-3.5 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer">Cancel</button>
+                    <button type="submit" id="btn-submit-webhook" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-lg shadow-violet-500/20 cursor-pointer">Save Webhook</button>
                 </div>
             </form>
         </div>

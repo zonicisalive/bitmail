@@ -584,6 +584,8 @@ function switchTab(tabId, updateUrl = true) {
         initDeliverabilityPanel();
     } else if (tabId === 'warmup') {
         initWarmupPanel();
+    } else if (tabId === 'webhooks') {
+        fetchWebhooks();
     }
 
 
@@ -5498,6 +5500,21 @@ function renderSafetyInspectionResult(v) {
         }
     }
 
+    const catchallTag = document.getElementById('safety-res-catchall');
+    if (catchallTag) {
+        const ca = c.catch_all;
+        if (!ca || ca.status === 'untested') {
+            catchallTag.textContent = 'Untested (DNS-only)';
+            catchallTag.className = 'font-medium text-slate-400';
+        } else if (ca.metadata && ca.metadata.is_catch_all) {
+            catchallTag.textContent = 'Warning: Catch-All Active (Accept-All)';
+            catchallTag.className = 'font-bold text-amber-400';
+        } else {
+            catchallTag.textContent = 'Strict Recipient Validation (Not Catch-All)';
+            catchallTag.className = 'font-medium text-emerald-400';
+        }
+    }
+
     if (mxList) {
         const recs = (c.domain_mx && c.domain_mx.metadata && c.domain_mx.metadata.records) || [];
         if (recs.length > 0) {
@@ -6201,5 +6218,348 @@ async function submitNewWarmupSchedule(event) {
         if (btn) btn.disabled = false;
     }
 }
+
+
+// ==========================================================================
+// 12. DNSBL / RBL Blacklist Monitor
+// ==========================================================================
+function setBlacklistTarget(target) {
+    const input = document.getElementById('blacklist-check-target');
+    if (input) {
+        input.value = target;
+        runBlacklistCheck();
+    }
+}
+
+async function runBlacklistCheck() {
+    const input = document.getElementById('blacklist-check-target');
+    const btn = document.getElementById('btn-run-blacklist-check');
+    const icon = document.getElementById('icon-blacklist-search');
+    const text = document.getElementById('text-blacklist-search');
+    const container = document.getElementById('blacklist-results-container');
+
+    if (!input) return;
+    const target = input.value.trim();
+    if (!target) {
+        showToast('Please enter an IP or domain to check against blacklists.', 'warning');
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (text) text.textContent = 'Querying 30+ RBLs...';
+    if (icon) {
+        icon.setAttribute('data-lucide', 'loader-2');
+        icon.classList.add('animate-spin');
+        initLucide();
+    }
+
+    try {
+        const res = await fetch('/api/deliverability/blacklist/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Blacklist query failed', 'error');
+            return;
+        }
+
+        renderBlacklistResults(data);
+        if (container) container.classList.remove('hidden');
+
+        if (data.is_blacklisted) {
+            showToast(`⚠️ Target is listed on ${data.listed_count} blacklist(s)!`, 'warning');
+        } else {
+            showToast(`✅ Clean! Target is clean across all ${data.total_zones_checked} blacklists.`, 'success');
+        }
+    } catch (err) {
+        showToast('Blacklist query error: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+        if (text) text.textContent = 'Check 30+ RBLs';
+        if (icon) {
+            icon.setAttribute('data-lucide', 'activity');
+            icon.classList.remove('animate-spin');
+            initLucide();
+        }
+    }
+}
+
+function renderBlacklistResults(data) {
+    const targetEl = document.getElementById('blacklist-res-target');
+    const totalEl = document.getElementById('blacklist-res-total');
+    const cleanEl = document.getElementById('blacklist-res-clean');
+    const listedEl = document.getElementById('blacklist-res-listed');
+    const tbody = document.getElementById('blacklist-results-tbody');
+
+    if (targetEl) targetEl.textContent = `${data.target} ${data.resolved_ip ? `(${data.resolved_ip})` : ''}`;
+    if (totalEl) totalEl.textContent = `${data.total_zones_checked} Zones`;
+    if (cleanEl) cleanEl.textContent = `${data.clean_count} Clean`;
+    if (listedEl) {
+        listedEl.textContent = `${data.listed_count} Listed`;
+        listedEl.className = data.listed_count > 0 ? 'text-base font-bold text-rose-400 font-mono' : 'text-base font-bold text-emerald-400 font-mono';
+    }
+
+    if (tbody) {
+        if (!data.results || data.results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-slate-500">No results found</td></tr>';
+            return;
+        }
+
+        const sorted = [...data.results].sort((a, b) => (b.listed ? 1 : 0) - (a.listed ? 1 : 0));
+
+        tbody.innerHTML = sorted.map(r => {
+            const isListed = r.listed;
+            const statusBadge = isListed
+                ? `<span class="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 text-[10px]">LISTED</span>`
+                : (r.error ? `<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">INCONCLUSIVE</span>`
+                           : `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium text-[10px]">CLEAN</span>`);
+
+            const delistLink = r.delist_url
+                ? `<a href="${escapeHtml(r.delist_url)}" target="_blank" rel="noopener noreferrer" class="text-rose-400 hover:text-rose-300 underline font-semibold flex items-center justify-end gap-1">Delist ↗</a>`
+                : `<span class="text-slate-600">--</span>`;
+
+            const returnDesc = isListed
+                ? `<span class="text-rose-300 font-semibold">${escapeHtml(r.category || 'Listed')}</span> <span class="font-mono text-slate-500">(${escapeHtml(r.return_code || '')})</span>`
+                : `<span class="text-slate-500 font-mono">${r.response_time_ms}ms</span>`;
+
+            return `
+                <tr class="hover:bg-white/[0.02] ${isListed ? 'bg-rose-950/20' : ''}">
+                    <td class="py-2.5 px-3 font-medium text-white">${escapeHtml(r.name)}</td>
+                    <td class="py-2.5 px-3 font-mono text-slate-400 text-[10px]">${escapeHtml(r.zone)}</td>
+                    <td class="py-2.5 px-3">${statusBadge}</td>
+                    <td class="py-2.5 px-3">${returnDesc}</td>
+                    <td class="py-2.5 px-3 text-right">${delistLink}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    initLucide();
+}
+
+
+// ==========================================================================
+// 13. Outbound Webhooks Management
+// ==========================================================================
+function openNewWebhookModal() {
+    openModal('modal-new-webhook');
+}
+
+function closeNewWebhookModal() {
+    closeModal('modal-new-webhook');
+}
+
+async function fetchWebhooks() {
+    try {
+        const res = await fetch('/api/webhooks');
+        if (!res.ok) return;
+        const webhooks = await res.json();
+        renderWebhooksTable(webhooks);
+        const badge = document.getElementById('webhooks-count-badge');
+        if (badge) badge.textContent = `${webhooks.length} Endpoints`;
+    } catch (err) {
+        console.error('Failed to fetch webhooks:', err);
+    }
+}
+
+function renderWebhooksTable(webhooks) {
+    const tbody = document.getElementById('webhooks-table-tbody');
+    if (!tbody) return;
+
+    if (!webhooks || webhooks.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="py-8 text-center text-slate-500">
+                    <div class="flex flex-col items-center justify-center gap-2">
+                        <i data-lucide="webhook" class="w-8 h-8 text-slate-600"></i>
+                        <p>No webhooks configured yet.</p>
+                        <button type="button" onclick="openNewWebhookModal()" class="mt-1 px-3 py-1.5 rounded-lg bg-violet-600/20 text-violet-300 hover:bg-violet-600/30 text-xs font-semibold border border-violet-500/30 transition-colors cursor-pointer">
+                            Add First Webhook Endpoint
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+        initLucide();
+        return;
+    }
+
+    tbody.innerHTML = webhooks.map(w => {
+        const eventsBadges = (w.events || []).map(e =>
+            `<span class="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 text-[10px] font-mono border border-violet-500/20">${escapeHtml(e)}</span>`
+        ).join(' ');
+
+        const maskedSecret = w.secret ? `${w.secret.slice(0, 8)}••••••••` : '--';
+
+        return `
+            <tr class="hover:bg-white/[0.02]">
+                <td class="py-2.5 px-3 font-semibold text-white">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="webhook" class="w-3.5 h-3.5 text-violet-400"></i>
+                        <span>${escapeHtml(w.name)}</span>
+                    </div>
+                </td>
+                <td class="py-2.5 px-3 font-mono text-slate-300 text-[10px] max-w-xs truncate" title="${escapeHtml(w.url)}">
+                    ${escapeHtml(w.url)}
+                </td>
+                <td class="py-2.5 px-3">
+                    <div class="flex flex-wrap gap-1">${eventsBadges}</div>
+                </td>
+                <td class="py-2.5 px-3 font-mono text-[10px] text-slate-400">
+                    <code>${maskedSecret}</code>
+                </td>
+                <td class="py-2.5 px-3">
+                    <span class="px-2 py-0.5 rounded-full ${w.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-400'} text-[10px] font-semibold">
+                        ${w.is_active ? 'ACTIVE' : 'DISABLED'}
+                    </span>
+                </td>
+                <td class="py-2.5 px-3 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        <button type="button" onclick="testWebhook('${w.id}')" class="px-2.5 py-1 rounded-lg bg-violet-600/20 hover:bg-violet-600/30 text-violet-300 text-[11px] font-semibold border border-violet-500/30 transition-colors cursor-pointer">
+                            Test Ping
+                        </button>
+                        <button type="button" onclick="viewWebhookDeliveries('${w.id}', '${escapeHtml(w.name)}')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer">
+                            Logs
+                        </button>
+                        <button type="button" onclick="deleteWebhook('${w.id}')" class="p-1 rounded-lg hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Delete Webhook">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    initLucide();
+}
+
+async function submitCreateWebhook() {
+    const nameInput = document.getElementById('modal-webhook-name');
+    const urlInput = document.getElementById('modal-webhook-url');
+    const secretInput = document.getElementById('modal-webhook-secret');
+    const btn = document.getElementById('btn-submit-webhook');
+
+    if (!nameInput || !urlInput) return;
+    const name = nameInput.value.trim();
+    const url = urlInput.value.trim();
+    const secret = secretInput ? secretInput.value.trim() : null;
+
+    if (!name || !url) {
+        showToast('Integration name and endpoint URL are required', 'warning');
+        return;
+    }
+
+    const events = [];
+    ['sent', 'delivered', 'opened', 'clicked', 'bounced', 'unsub'].forEach(k => {
+        const cb = document.getElementById(`wh-evt-${k}`);
+        if (cb && cb.checked) events.push(cb.value);
+    });
+
+    if (events.length === 0) events.push('*');
+
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/webhooks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, url, secret: secret || null, events })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to create webhook', 'error');
+            return;
+        }
+
+        closeNewWebhookModal();
+        showToast(`🎉 Webhook '${data.name}' registered successfully!`, 'success');
+        nameInput.value = '';
+        urlInput.value = '';
+        if (secretInput) secretInput.value = '';
+        await fetchWebhooks();
+    } catch (err) {
+        showToast('Error registering webhook: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function testWebhook(webhookId) {
+    showToast('Sending HMAC-SHA256 signed test ping...', 'info');
+    try {
+        const res = await fetch(`/api/webhooks/${webhookId}/test`, { method: 'POST' });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast(`✅ Ping delivered! Status: ${data.status_code} (${data.latency_ms}ms)`, 'success');
+        } else {
+            showToast(`⚠️ Delivery failed: Status ${data.status_code || '--'} (${data.response_body || 'Error'})`, 'error');
+        }
+    } catch (err) {
+        showToast('Webhook test failed: ' + err.message, 'error');
+    }
+}
+
+async function deleteWebhook(webhookId) {
+    if (!confirm('Are you sure you want to delete this webhook endpoint and its delivery logs?')) return;
+    try {
+        const res = await fetch(`/api/webhooks/${webhookId}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToast('Webhook deleted', 'success');
+            await fetchWebhooks();
+        } else {
+            showToast('Failed to delete webhook', 'error');
+        }
+    } catch (err) {
+        showToast('Delete error: ' + err.message, 'error');
+    }
+}
+
+async function viewWebhookDeliveries(webhookId, name) {
+    const container = document.getElementById('webhook-deliveries-container');
+    const nameEl = document.getElementById('webhook-deliveries-name');
+    const tbody = document.getElementById('webhook-deliveries-tbody');
+
+    if (nameEl) nameEl.textContent = name || webhookId;
+    if (container) container.classList.remove('hidden');
+
+    try {
+        const res = await fetch(`/api/webhooks/${webhookId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const deliveries = data.recent_deliveries || [];
+
+        if (tbody) {
+            if (deliveries.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-3 text-center text-slate-500">No delivery logs recorded yet.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = deliveries.map(d => {
+                const statusBadge = d.success
+                    ? `<span class="text-emerald-400 font-bold">${d.status_code || 200} OK</span>`
+                    : `<span class="text-rose-400 font-bold">${d.status_code || 'FAIL'}</span>`;
+
+                return `
+                    <tr class="hover:bg-white/[0.02]">
+                        <td class="py-1.5 px-3 text-slate-400">${escapeHtml(d.created_at || '')}</td>
+                        <td class="py-1.5 px-3 text-violet-300">${escapeHtml(d.event_type || '')}</td>
+                        <td class="py-1.5 px-3">${statusBadge}</td>
+                        <td class="py-1.5 px-3 text-slate-400 max-w-xs truncate">${escapeHtml(d.response_body || '--')}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+    } catch (err) {
+        console.error('Failed to load webhook deliveries:', err);
+    }
+}
+
+function closeWebhookDeliveries() {
+    const container = document.getElementById('webhook-deliveries-container');
+    if (container) container.classList.add('hidden');
+}
+
 
 

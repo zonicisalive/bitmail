@@ -9,13 +9,14 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import EventType, SubscriberStatus
 from app.sender import verify_unsubscribe_token
 from app.template_engine import template_engine
+from app.webhooks import WebhookDispatcher
 from app.websocket import emit_event
 
 router = APIRouter(tags=["Tracking & Analytics"])
@@ -87,6 +88,14 @@ async def track_email_open(
             # Broadcast live dynamic open notification
             recipient_email = email_row["recipient_email"] if "recipient_email" in email_row.keys() else ""
             await emit_event("email_opened", {
+                "email_id": email_id,
+                "campaign_id": campaign_id,
+                "recipient": recipient_email,
+                "ip": client_ip,
+                "timestamp": now
+            })
+
+            await WebhookDispatcher.dispatch_event("email.opened", {
                 "email_id": email_id,
                 "campaign_id": campaign_id,
                 "recipient": recipient_email,
@@ -199,6 +208,14 @@ async def track_email_click(
             "timestamp": now
         })
 
+        await WebhookDispatcher.dispatch_event("email.clicked", {
+            "email_id": email_id,
+            "campaign_id": campaign_id,
+            "target_url": target_url,
+            "ip": client_ip,
+            "timestamp": now
+        })
+
     return RedirectResponse(url=target_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
@@ -263,6 +280,12 @@ async def handle_unsubscribe(
                 VALUES (?, ?, NULL, 'user_unsubscribed', ?)
             """, (f"sup_{uuid.uuid4().hex[:10]}", email_target, now))
 
+            await db.execute("""
+                INSERT OR IGNORE INTO suppression_list (id, email, campaign_id, reason, created_at)
+                VALUES (?, ?, NULL, 'user_unsubscribed', ?)
+            """, (f"sup_{uuid.uuid4().hex[:10]}", email_target, now))
+
+            campaign_id_for_event = None
             async with db.execute(
                 "SELECT id, campaign_id FROM sent_emails WHERE recipient_email = ? ORDER BY created_at DESC LIMIT 1",
                 (email_target,)
@@ -271,6 +294,7 @@ async def handle_unsubscribe(
                 if s_row:
                     email_id = s_row["id"]
                     camp_id = s_row["campaign_id"]
+                    campaign_id_for_event = camp_id
                     event_id = f"evt_{uuid.uuid4().hex[:12]}"
 
                     await db.execute("""
@@ -294,6 +318,27 @@ async def handle_unsubscribe(
                         """, (now, camp_id))
 
             await db.commit()
+
+            # Dispatch outbound webhook event
+            await WebhookDispatcher.dispatch_event("subscriber.unsubscribed", {
+                "recipient_email": email_target,
+                "reason": "user_unsubscribed",
+                "campaign_id": campaign_id_for_event,
+                "timestamp": now
+            })
+
+    # RFC 8058 One-Click HTTP POST response
+    if request.method == "POST":
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "unsubscribed": True,
+                "email": email_target,
+                "timestamp": now,
+                "message": "Recipient has been unsubscribed per RFC 8058 One-Click standard."
+            }
+        )
 
     display_email = email_target or "your email address"
 
@@ -332,7 +377,7 @@ async def handle_unsubscribe(
       Did you do this by mistake? Contact support to reactivate your subscription.
     </p>
   </div>
-</body>
+ </body>
 </html>"""
 
     return HTMLResponse(content=html_page, status_code=status.HTTP_200_OK)

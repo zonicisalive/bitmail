@@ -918,3 +918,130 @@ class SafetyBatchLookupResponse(BaseModel):
     clean_emails: List[str]
 
 
+# ----------------------------------------------------------------------
+# DNSBL / RBL Blacklist Monitor Schemas
+# ----------------------------------------------------------------------
+
+class BlacklistQueryRequest(BaseModel):
+    target: str = Field(..., min_length=1, max_length=255, description="IP address or domain to query against blacklists")
+
+
+class BlacklistZoneResult(BaseModel):
+    zone: str
+    name: str
+    target_type: str  # "ip" or "domain"
+    listed: bool
+    return_code: Optional[str] = None
+    category: Optional[str] = None
+    delist_url: Optional[str] = None
+    severity: str = "clean"  # "clean", "critical", "warning", "info"
+    response_time_ms: float = 0.0
+    error: Optional[str] = None
+
+
+class BlacklistReportResponse(BaseModel):
+    target: str
+    target_type: str  # "ip" or "domain"
+    resolved_ip: Optional[str] = None
+    total_zones_checked: int
+    listed_count: int
+    clean_count: int
+    is_blacklisted: bool
+    status: str  # "clean", "warning", "blacklisted"
+    results: List[BlacklistZoneResult]
+    checked_at: str
+
+
+# ----------------------------------------------------------------------
+# Smart Bounce & Feedback Loop (FBL) Schemas
+# ----------------------------------------------------------------------
+
+class BounceType(str, Enum):
+    HARD = "hard"
+    SOFT = "soft"
+    COMPLAINT = "complaint"
+    TRANSIENT = "transient"
+
+
+class InboundBouncePayload(BaseModel):
+    recipient_email: str = Field(..., min_length=3, max_length=320)
+    bounce_type: BounceType = BounceType.HARD
+    status_code: Optional[str] = Field(default=None, description="RFC 3463 status code like 5.1.1, 4.2.2")
+    diagnostic_code: Optional[str] = None
+    reason: Optional[str] = None
+    campaign_id: Optional[str] = None
+    message_id: Optional[str] = None
+    raw_dsn: Optional[str] = None
+
+
+class InboundBounceResponse(BaseModel):
+    success: bool
+    recipient_email: str
+    bounce_type: BounceType
+    suppressed: bool
+    action_taken: str
+    message: str
+
+
+# ----------------------------------------------------------------------
+# Outbound Webhooks Schemas
+# ----------------------------------------------------------------------
+
+class WebhookEventType(str, Enum):
+    EMAIL_SENT = "email.sent"
+    EMAIL_DELIVERED = "email.delivered"
+    EMAIL_OPENED = "email.opened"
+    EMAIL_CLICKED = "email.clicked"
+    EMAIL_BOUNCED = "email.bounced"
+    SUBSCRIBER_UNSUBSCRIBED = "subscriber.unsubscribed"
+    PING = "ping"
+
+
+class WebhookBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=150, description="Webhook name or integration name")
+    url: str = Field(..., min_length=7, max_length=1000, description="HTTP or HTTPS endpoint URL")
+    events: List[str] = Field(
+        default_factory=lambda: ["email.sent", "email.bounced", "subscriber.unsubscribed"],
+        description="Subscribed event types"
+    )
+    is_active: bool = Field(default=True)
+
+
+class WebhookCreate(WebhookBase):
+    secret: Optional[str] = Field(default=None, description="Custom secret for HMAC-SHA256 signature (generated if omitted)")
+
+
+class WebhookUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    secret: Optional[str] = None
+    events: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class WebhookResponse(WebhookBase):
+    id: str
+    secret: str
+    created_at: str
+    updated_at: str
+
+
+class WebhookDeliveryResponse(BaseModel):
+    id: str
+    webhook_id: str
+    event_type: str
+    status_code: Optional[int] = None
+    response_body: Optional[str] = None
+    success: bool
+    created_at: str
+
+
+class WebhookTestResponse(BaseModel):
+    success: bool
+    status_code: Optional[int]
+    response_body: Optional[str]
+    delivery_id: str
+    latency_ms: float
+
+
+

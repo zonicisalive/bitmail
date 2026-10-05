@@ -10,6 +10,7 @@ import logging
 import re
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
+import uuid
 
 import dns.asyncresolver
 import dns.exception
@@ -996,6 +997,58 @@ class PreSendSafetyGuard:
             }
 
     @classmethod
+    async def detect_catch_all(cls, domain: str, timeout: float = 3.0) -> Dict[str, Any]:
+        """
+        Probes recipient mail server with a randomized dummy address
+        to detect if the domain accepts all incoming addresses unconditionally (Catch-All / Accept-All).
+        """
+        clean_domain = domain.strip().lower()
+        if "@" in clean_domain:
+            clean_domain = clean_domain.split("@")[-1]
+
+        if not clean_domain:
+            return {"tested": False, "is_catch_all": False, "status": "failed", "details": "No domain provided"}
+
+        dummy_user = f"bitmail_dummy_probe_{uuid.uuid4().hex[:12]}"
+        dummy_email = f"{dummy_user}@{clean_domain}"
+
+        probe_res = await cls.probe_smtp_mailbox(dummy_email, timeout=timeout)
+        if not probe_res.get("tested"):
+            return {
+                "tested": False,
+                "is_catch_all": False,
+                "status": probe_res.get("status", "untested"),
+                "details": probe_res.get("details", "DNS or MX resolution failed"),
+                "mx_host": probe_res.get("mx_host")
+            }
+
+        # If dummy nonexistent address was accepted (250 OK), domain is catch-all
+        if probe_res.get("status") == "accepted" and probe_res.get("code") == 250:
+            return {
+                "tested": True,
+                "is_catch_all": True,
+                "status": "catch_all_detected",
+                "details": f"Domain '{clean_domain}' blindly accepts all incoming addresses (Catch-All enabled).",
+                "mx_host": probe_res.get("mx_host")
+            }
+        elif probe_res.get("status") == "rejected":
+            return {
+                "tested": True,
+                "is_catch_all": False,
+                "status": "strict_validation",
+                "details": f"Domain '{clean_domain}' rejects invalid addresses (Strict mailbox validation active).",
+                "mx_host": probe_res.get("mx_host")
+            }
+        else:
+            return {
+                "tested": True,
+                "is_catch_all": False,
+                "status": probe_res.get("status", "inconclusive"),
+                "details": probe_res.get("details", "Probe inconclusive"),
+                "mx_host": probe_res.get("mx_host")
+            }
+
+    @classmethod
     async def evaluate_sendability(
         cls,
         email: str,
@@ -1117,6 +1170,27 @@ class PreSendSafetyGuard:
                 "status": "untested",
                 "details": "Active SMTP port 25 probe skipped (DNS MX verification only)",
                 "metadata": {"tested": False}
+            }
+
+        # 7. Catch-All Domain Detection
+        if probe_smtp and not hard_block and domain:
+            catch_res = await cls.detect_catch_all(domain, timeout=timeout)
+            is_catch_all = bool(catch_res.get("is_catch_all"))
+            checks["catch_all"] = {
+                "passed": True,
+                "status": "warning" if is_catch_all else "ok",
+                "details": catch_res.get("details", "Catch-all status evaluated"),
+                "metadata": catch_res
+            }
+            if is_catch_all:
+                reasons.append(f"Domain '{domain}' is configured as Catch-All (blindly accepts all mailboxes).")
+                warning_flags = True
+        else:
+            checks["catch_all"] = {
+                "passed": True,
+                "status": "untested",
+                "details": "Catch-all detection skipped (requires active probe)",
+                "metadata": {"tested": False, "is_catch_all": False}
             }
 
         # Verdict calculation
