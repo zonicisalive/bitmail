@@ -3263,9 +3263,21 @@ async function fetchTemplates() {
     }
 }
 
-function populateBroadcastTemplateDropdown() {
+async function populateBroadcastTemplateDropdown(forceFetch = false) {
     const sel = document.getElementById('broadcast-saved-template-select');
     if (!sel) return;
+
+    if (forceFetch || !App.templates || App.templates.length === 0) {
+        try {
+            const res = await fetch('/api/templates');
+            if (res.ok) {
+                App.templates = await res.json();
+            }
+        } catch (err) {
+            console.warn('Templates refresh error:', err);
+        }
+    }
+
     const currentVal = sel.value;
     if (!App.templates || App.templates.length === 0) {
         sel.innerHTML = '<option value="">📁 No Saved Templates</option>';
