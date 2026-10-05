@@ -369,18 +369,50 @@ async def import_subscribers_csv(
 
 
 @router.get("/api/subscribers/placeholders")
-async def get_available_placeholders():
+async def get_available_placeholders(list_id: Optional[str] = Query(default=None, description="Optional customer table/list ID")):
     """
     Return all discovered merge tag placeholders across subscribers, custom attributes,
     and lists to support multi-table dynamic placeholder discovery.
+    If list_id is provided, includes specific schema columns and subscriber attributes for that table.
     """
     standard_tags = ["first_name", "last_name", "email", "name", "company", "unsubscribe_url", "year", "date"]
     custom_tags = set()
+    table_fields = []
+    selected_list_name = None
 
     async with get_db() as db:
-        # Inspect subscribers table custom_fields JSON
-        sql = "SELECT custom_fields FROM subscribers WHERE custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}'"
-        async with db.execute(sql) as cur:
+        if list_id and list_id.lower() != "all":
+            # Load list schema
+            async with db.execute("SELECT id, name, schema_fields FROM subscriber_lists WHERE id = ?", (list_id,)) as cur:
+                l_row = await cur.fetchone()
+                if l_row:
+                    selected_list_name = l_row["name"]
+                    try:
+                        sf = json.loads(l_row["schema_fields"] or "[]")
+                        if isinstance(sf, list):
+                            for col in sf:
+                                clean_c = re.sub(r'[^a-z0-9_]+', '_', str(col).strip().lower()).strip('_')
+                                if clean_c:
+                                    table_fields.append(clean_c)
+                                    custom_tags.add(clean_c)
+                    except Exception:
+                        pass
+
+            # Inspect subscribers belonging to this specific list
+            sql = """
+                SELECT DISTINCT s.custom_fields 
+                FROM subscribers s
+                LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
+                LEFT JOIN list_subscribers ls ON s.id = ls.subscriber_id
+                WHERE (m.list_id = ? OR ls.list_id = ?)
+                  AND s.custom_fields IS NOT NULL AND s.custom_fields != '' AND s.custom_fields != '{}'
+            """
+            params = [list_id, list_id]
+        else:
+            sql = "SELECT custom_fields FROM subscribers WHERE custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}'"
+            params = []
+
+        async with db.execute(sql, params) as cur:
             rows = await cur.fetchall()
             for r in rows:
                 try:
@@ -388,21 +420,24 @@ async def get_available_placeholders():
                     if isinstance(cf, dict):
                         for k in cf.keys():
                             if k:
-                                clean_k = re.sub(r'[^a-z0-9]+', '_', k.strip().lower()).strip('_')
+                                clean_k = re.sub(r'[^a-z0-9_]+', '_', k.strip().lower()).strip('_')
                                 if clean_k:
                                     custom_tags.add(clean_k)
                 except Exception:
                     pass
 
-        # Inspect lists
+        # Inspect all list names
         async with db.execute("SELECT id, name FROM subscriber_lists") as cur:
             list_rows = await cur.fetchall()
             list_names = [lr["name"] for lr in list_rows if lr["name"]]
 
     return {
         "success": True,
+        "list_id": list_id,
+        "list_name": selected_list_name,
         "standard_tags": standard_tags,
         "standard_placeholders": standard_tags,
+        "table_placeholders": sorted(list(set(table_fields))),
         "custom_tags": sorted(list(custom_tags)),
         "custom_fields": sorted(list(custom_tags)),
         "list_names": list_names
@@ -555,7 +590,7 @@ async def delete_subscriber(subscriber_id: str):
 @router.get("/api/subscribers/lists", response_model=List[SubscriberListResponse], include_in_schema=False)
 async def list_subscriber_lists():
     """
-    List all subscriber lists with live member counts.
+    List all subscriber lists with live member counts and schema fields.
     """
     async with get_db() as db:
         query = """
@@ -563,6 +598,7 @@ async def list_subscriber_lists():
                 l.id,
                 l.name,
                 l.description,
+                l.schema_fields,
                 l.created_at,
                 l.updated_at,
                 (SELECT COUNT(DISTINCT subscriber_id) FROM (
@@ -575,39 +611,58 @@ async def list_subscriber_lists():
         """
         async with db.execute(query) as cursor:
             rows = await cursor.fetchall()
-            return [
-                SubscriberListResponse(
-                    id=r["id"],
-                    name=r["name"],
-                    description=r["description"],
-                    subscriber_count=r["subscriber_count"] or 0,
-                    created_at=r["created_at"],
-                    updated_at=r["updated_at"]
+            results = []
+            for r in rows:
+                sf = []
+                try:
+                    if r["schema_fields"]:
+                        sf = json.loads(r["schema_fields"])
+                        if not isinstance(sf, list):
+                            sf = []
+                except Exception:
+                    sf = []
+                results.append(
+                    SubscriberListResponse(
+                        id=r["id"],
+                        name=r["name"],
+                        description=r["description"],
+                        schema_fields=sf,
+                        subscriber_count=r["subscriber_count"] or 0,
+                        created_at=r["created_at"],
+                        updated_at=r["updated_at"]
+                    )
                 )
-                for r in rows
-            ]
+            return results
 
 
 @router.post("/api/lists", response_model=SubscriberListResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/api/subscribers/lists", response_model=SubscriberListResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_subscriber_list(payload: SubscriberListCreate):
     """
-    Create a new subscriber list.
+    Create a new subscriber list / customer data table with custom schema columns.
     """
     list_id = f"list_{uuid.uuid4().hex[:10]}"
     now = utc_now_iso()
 
+    clean_schema: List[str] = []
+    if payload.schema_fields:
+        for f in payload.schema_fields:
+            cf = re.sub(r'[^a-z0-9_]+', '_', str(f).strip().lower()).strip('_')
+            if cf and cf not in clean_schema:
+                clean_schema.append(cf)
+
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO subscriber_lists (id, name, description, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (list_id, payload.name.strip(), payload.description, now, now))
+            INSERT INTO subscriber_lists (id, name, description, schema_fields, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (list_id, payload.name.strip(), payload.description, json.dumps(clean_schema), now, now))
         await db.commit()
 
     return SubscriberListResponse(
         id=list_id,
         name=payload.name.strip(),
         description=payload.description,
+        schema_fields=clean_schema,
         subscriber_count=0,
         created_at=now,
         updated_at=now
@@ -625,6 +680,15 @@ async def get_subscriber_list(list_id: str):
             if not row:
                 raise HTTPException(status_code=404, detail="Subscriber list not found")
             list_dict = dict(row)
+
+        schema_fields = []
+        try:
+            if list_dict.get("schema_fields"):
+                schema_fields = json.loads(list_dict["schema_fields"])
+                if not isinstance(schema_fields, list):
+                    schema_fields = []
+        except Exception:
+            schema_fields = []
 
         query = """
             SELECT DISTINCT s.*
@@ -664,6 +728,7 @@ async def get_subscriber_list(list_id: str):
             id=list_dict["id"],
             name=list_dict["name"],
             description=list_dict["description"],
+            schema_fields=schema_fields,
             subscriber_count=len(subs),
             created_at=list_dict["created_at"],
             updated_at=list_dict["updated_at"],
@@ -675,7 +740,7 @@ async def get_subscriber_list(list_id: str):
 @router.put("/api/subscribers/lists/{list_id}", response_model=SubscriberListResponse, include_in_schema=False)
 async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
     """
-    Update subscriber list name or description.
+    Update subscriber list name, description, or schema fields.
     """
     now = utc_now_iso()
     async with get_db() as db:
@@ -687,12 +752,29 @@ async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
 
         new_name = payload.name.strip() if payload.name is not None else list_dict["name"]
         new_desc = payload.description if payload.description is not None else list_dict["description"]
+        
+        current_schema = []
+        try:
+            if list_dict.get("schema_fields"):
+                current_schema = json.loads(list_dict["schema_fields"])
+        except Exception:
+            pass
+
+        if payload.schema_fields is not None:
+            clean_schema = []
+            for f in payload.schema_fields:
+                cf = re.sub(r'[^a-z0-9_]+', '_', str(f).strip().lower()).strip('_')
+                if cf and cf not in clean_schema:
+                    clean_schema.append(cf)
+            new_schema = clean_schema
+        else:
+            new_schema = current_schema
 
         await db.execute("""
             UPDATE subscriber_lists
-            SET name = ?, description = ?, updated_at = ?
+            SET name = ?, description = ?, schema_fields = ?, updated_at = ?
             WHERE id = ?
-        """, (new_name, new_desc, now, list_id))
+        """, (new_name, new_desc, json.dumps(new_schema), now, list_id))
         await db.commit()
 
         async with db.execute(
@@ -706,6 +788,7 @@ async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
             id=list_id,
             name=new_name,
             description=new_desc,
+            schema_fields=new_schema,
             subscriber_count=count,
             created_at=list_dict["created_at"],
             updated_at=now

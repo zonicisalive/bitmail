@@ -531,6 +531,56 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("company", sub1["custom_fields"])
         self.assertEqual(sub1["custom_fields"]["company"], "Themyscira Corp")
 
+    def test_13_table_schema_and_dynamic_placeholders(self):
+        """Creating customer table with custom schema columns and dynamic placeholder resolution."""
+        # 1. Create table with custom schema columns
+        table_payload = {
+            "name": "Billing Invoices Table",
+            "description": "Customer invoice tracking table",
+            "schema_fields": ["invoice_no", "due_date", "amount_due", "payment_link"]
+        }
+        res = self.client.post("/api/lists", json=table_payload)
+        self.assertEqual(res.status_code, 201)
+        table_data = res.json()
+        table_id = table_data["id"]
+        self.assertEqual(table_data["schema_fields"], ["invoice_no", "due_date", "amount_due", "payment_link"])
+
+        # 2. Add customer to this table with custom fields
+        customer_payload = {
+            "email": "billingsub@example.com",
+            "first_name": "Alice",
+            "last_name": "Smith",
+            "list_ids": [table_id],
+            "custom_fields": {
+                "invoice_no": "INV-2026-001",
+                "due_date": "2026-11-01",
+                "amount_due": "$1,250.00",
+                "payment_link": "https://pay.bitnade.com/inv-001"
+            }
+        }
+        c_res = self.client.post("/api/subscribers", json=customer_payload)
+        self.assertEqual(c_res.status_code, 201)
+        c_data = c_res.json()
+        self.assertEqual(c_data["custom_fields"]["invoice_no"], "INV-2026-001")
+
+        # 3. Query placeholders for this specific table
+        ph_res = self.client.get(f"/api/subscribers/placeholders?list_id={table_id}")
+        self.assertEqual(ph_res.status_code, 200)
+        ph_data = ph_res.json()
+        self.assertIn("invoice_no", ph_data["table_placeholders"])
+        self.assertIn("due_date", ph_data["table_placeholders"])
+        self.assertIn("amount_due", ph_data["table_placeholders"])
+        self.assertIn("payment_link", ph_data["table_placeholders"])
+        self.assertIn("first_name", ph_data["standard_placeholders"])
+
+        # 4. Update table schema
+        up_res = self.client.put(f"/api/lists/{table_id}", json={
+            "schema_fields": ["invoice_no", "due_date", "amount_due", "payment_link", "discount_code"]
+        })
+        self.assertEqual(up_res.status_code, 200)
+        up_data = up_res.json()
+        self.assertIn("discount_code", up_data["schema_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()

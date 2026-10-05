@@ -176,6 +176,10 @@ class SubscriberBulkImportResponse(BaseModel):
 class SubscriberListBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="List name")
     description: Optional[str] = Field(default=None, description="Optional description of the list")
+    schema_fields: List[str] = Field(
+        default_factory=list,
+        description="Custom placeholder column names defined for this table (e.g. ['order_id', 'amount'])"
+    )
 
 
 class SubscriberListCreate(SubscriberListBase):
@@ -185,6 +189,7 @@ class SubscriberListCreate(SubscriberListBase):
 class SubscriberListUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = Field(default=None)
+    schema_fields: Optional[List[str]] = Field(default=None)
 
 
 class SubscriberListResponse(SubscriberListBase):

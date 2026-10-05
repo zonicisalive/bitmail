@@ -85,7 +85,12 @@ const App = {
     previewSource: 'broadcast',
     logs: [],
     logsStreamPaused: false,
-    logsFilterDebounce: null
+    logsFilterDebounce: null,
+    newTableColumns: [],
+    currentBroadcastTablePlaceholders: [],
+    currentStudioTablePlaceholders: [],
+    currentInsertTablePreset: 'invoice',
+    currentInsertTableContext: 'broadcast'
 };
 
 // ==========================================================================
@@ -976,6 +981,216 @@ function renderAllPlaceholderChips() {
     initLucide();
 }
 
+const HTML_TABLE_PRESETS = {
+    invoice: `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; margin: 20px 0; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; font-family: Arial, sans-serif; font-size: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <thead>
+        <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Invoice #</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Description</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Due Date</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; text-align: right;">Amount</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 14px 16px; color: #64748b; font-family: Courier, monospace; font-size: 13px;">{{invoice_no}}</td>
+            <td style="padding: 14px 16px; color: #1e293b; font-weight: 600;">Monthly Services / Plan</td>
+            <td style="padding: 14px 16px; color: #64748b;">{{due_date}}</td>
+            <td style="padding: 14px 16px; color: #0f172a; font-weight: 700; text-align: right;">{{amount_due}}</td>
+        </tr>
+    </tbody>
+    <tfoot>
+        <tr style="background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+            <td colspan="3" style="padding: 12px 16px; text-align: right; color: #475569; font-weight: 600;">Total Amount Due:</td>
+            <td style="padding: 12px 16px; text-align: right; color: #4f46e5; font-size: 16px; font-weight: 800;">{{amount_due}}</td>
+        </tr>
+    </tfoot>
+</table>`,
+
+    order: `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; margin: 20px 0; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; font-family: Arial, sans-serif; font-size: 14px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+    <thead>
+        <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Order ID</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Product Item</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; text-align: center;">Qty</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; text-align: right;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 14px 16px; color: #64748b; font-family: Courier, monospace; font-size: 13px;">{{order_id}}</td>
+            <td style="padding: 14px 16px; color: #1e293b; font-weight: 600;">{{product_name}}</td>
+            <td style="padding: 14px 16px; color: #64748b; text-align: center;">1</td>
+            <td style="padding: 14px 16px; color: #0f172a; font-weight: 700; text-align: right;">{{order_total}}</td>
+        </tr>
+    </tbody>
+    <tfoot>
+        <tr style="background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+            <td colspan="3" style="padding: 12px 16px; text-align: right; color: #475569; font-weight: 600;">Order Total:</td>
+            <td style="padding: 12px 16px; text-align: right; color: #10b981; font-size: 16px; font-weight: 800;">{{order_total}}</td>
+        </tr>
+    </tfoot>
+</table>`,
+
+    specs: `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; margin: 20px 0; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; font-family: Arial, sans-serif; font-size: 14px; overflow: hidden;">
+    <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; width: 35%; background-color: #f8fafc; font-weight: 600; color: #475569; border-right: 1px solid #f1f5f9;">Account ID</td>
+            <td style="padding: 12px 16px; color: #0f172a; font-family: Courier, monospace; font-weight: 600;">{{account_id}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; width: 35%; background-color: #f8fafc; font-weight: 600; color: #475569; border-right: 1px solid #f1f5f9;">Subscription Plan</td>
+            <td style="padding: 12px 16px; color: #4f46e5; font-weight: 700;">{{plan_name}}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 12px 16px; width: 35%; background-color: #f8fafc; font-weight: 600; color: #475569; border-right: 1px solid #f1f5f9;">Renewal Date</td>
+            <td style="padding: 12px 16px; color: #64748b;">{{renewal_date}}</td>
+        </tr>
+        <tr>
+            <td style="padding: 12px 16px; width: 35%; background-color: #f8fafc; font-weight: 600; color: #475569; border-right: 1px solid #f1f5f9;">Support Tier</td>
+            <td style="padding: 12px 16px; color: #10b981; font-weight: 600;">{{support_tier}}</td>
+        </tr>
+    </tbody>
+</table>`,
+
+    custom: `<table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-collapse: collapse; margin: 20px 0; background-color: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; font-family: Arial, sans-serif; font-size: 14px; overflow: hidden;">
+    <thead>
+        <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0; text-align: left;">
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Item</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Details</th>
+            <th style="padding: 12px 16px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 14px 16px; color: #1e293b; font-weight: 600;">Service Item</td>
+            <td style="padding: 14px 16px; color: #4f46e5; font-family: Courier, monospace;">{{item_code}}</td>
+            <td style="padding: 14px 16px; color: #10b981; font-weight: 700;">Active</td>
+        </tr>
+        <tr>
+            <td style="padding: 14px 16px; color: #1e293b; font-weight: 600;">Account Description</td>
+            <td style="padding: 14px 16px; color: #4f46e5; font-family: Courier, monospace;">{{item_notes}}</td>
+            <td style="padding: 14px 16px; color: #64748b;">Pending</td>
+        </tr>
+    </tbody>
+</table>`
+};
+
+function openInsertTableModal(context = 'broadcast') {
+    App.currentInsertTableContext = context;
+    setInsertTablePreset('invoice');
+    openModal('modal-insert-table');
+}
+
+function setInsertTablePreset(presetKey) {
+    if (!HTML_TABLE_PRESETS[presetKey]) presetKey = 'invoice';
+    App.currentInsertTablePreset = presetKey;
+
+    ['invoice', 'order', 'specs', 'custom'].forEach(k => {
+        const card = document.getElementById(`insert-table-card-${k}`);
+        if (card) {
+            if (k === presetKey) {
+                card.classList.add('border-purple-500/50', 'bg-purple-950/20');
+                card.classList.remove('border-white/10');
+            } else {
+                card.classList.remove('border-purple-500/50', 'bg-purple-950/20');
+                card.classList.add('border-white/10');
+            }
+        }
+    });
+
+    renderInsertTablePreview();
+}
+
+function renderInsertTablePreview() {
+    const box = document.getElementById('insert-table-preview-box');
+    if (!box) return;
+    const tplHtml = HTML_TABLE_PRESETS[App.currentInsertTablePreset] || '';
+    box.innerHTML = tplHtml;
+}
+
+function confirmInsertHtmlTable() {
+    const tableHtml = HTML_TABLE_PRESETS[App.currentInsertTablePreset];
+    if (!tableHtml) {
+        showToast('No table preset selected', 'warning');
+        return;
+    }
+
+    const context = App.currentInsertTableContext || 'broadcast';
+    let target = null;
+    if (App.lastFocusedInput && (
+        (context === 'studio' && (App.lastFocusedInput.id === 'studio-tpl-html')) ||
+        (context === 'broadcast' && (App.lastFocusedInput.id === 'broadcast-html'))
+    )) {
+        target = App.lastFocusedInput;
+    } else {
+        target = context === 'studio' ? document.getElementById('studio-tpl-html') : document.getElementById('broadcast-html');
+    }
+
+    if (!target) {
+        showToast('Could not find composer text area', 'error');
+        return;
+    }
+
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const val = target.value;
+    target.value = val.substring(0, start) + "\n\n" + tableHtml + "\n\n" + val.substring(end);
+    target.focus();
+    const newPos = start + tableHtml.length + 4;
+    target.setSelectionRange(newPos, newPos);
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+
+    closeModal('modal-insert-table');
+    showToast('Table inserted into message composer!', 'success');
+}
+
+async function loadTablePlaceholders(listId, context = 'broadcast') {
+    if (!listId || listId === 'all') {
+        if (context === 'broadcast') App.currentBroadcastTablePlaceholders = [];
+        else App.currentStudioTablePlaceholders = [];
+        renderPlaceholderChips(context === 'broadcast' ? 'broadcast-merge-tags' : 'studio-merge-tags', context);
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/subscribers/placeholders?list_id=${encodeURIComponent(listId)}`);
+        if (res.ok) {
+            const data = await res.json();
+            const cols = Array.isArray(data.table_placeholders) ? data.table_placeholders : [];
+            if (context === 'broadcast') {
+                App.currentBroadcastTablePlaceholders = cols;
+            } else {
+                App.currentStudioTablePlaceholders = cols;
+            }
+
+            // Also integrate any list custom fields into App.customPlaceholders
+            if (Array.isArray(data.custom_fields)) {
+                let addedAny = false;
+                data.custom_fields.forEach(f => {
+                    const clean = String(f).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                    if (clean && !App.customPlaceholders.includes(clean)) {
+                        App.customPlaceholders.push(clean);
+                        addedAny = true;
+                    }
+                });
+                if (addedAny) saveCustomPlaceholders();
+            }
+
+            renderPlaceholderChips(context === 'broadcast' ? 'broadcast-merge-tags' : 'studio-merge-tags', context);
+        }
+    } catch (e) {
+        console.warn('Failed to load table placeholders for list', listId, e);
+    }
+}
+
+function handleBroadcastAudienceChange() {
+    updateBroadcastEmailCount();
+    const select = document.getElementById('broadcast-list-select');
+    const selectedVal = select ? select.value : 'all';
+    loadTablePlaceholders(selectedVal, 'broadcast');
+}
+
 function renderPlaceholderChips(containerId, context) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -988,12 +1203,27 @@ function renderPlaceholderChips(containerId, context) {
     ];
 
     let html = '';
+
+    // Check for active table column placeholders for this context
+    const tableCols = context === 'studio' ? (App.currentStudioTablePlaceholders || []) : (App.currentBroadcastTablePlaceholders || []);
+    if (tableCols && tableCols.length > 0) {
+        html += `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-purple-300 bg-purple-950/80 border border-purple-500/30 uppercase tracking-wide">
+            <i data-lucide="table" class="w-3 h-3 text-purple-400"></i> Table:
+        </span>`;
+        tableCols.forEach(col => {
+            html += `<button type="button" onclick="insertMergeTag('{{${col}}}', '${context}')" class="px-2 py-0.5 rounded bg-purple-900/60 hover:bg-purple-800 text-[11px] font-mono text-purple-200 border border-purple-500/30 transition-colors cursor-pointer shadow-xs" title="Insert Table Column {{${col}}}">📁 {{${col}}}</button>`;
+        });
+        html += `<span class="w-px h-3.5 bg-white/10 mx-1 self-center"></span>`;
+    }
+
     standardTags.forEach(t => {
         html += `<button type="button" onclick="insertMergeTag('{{${t.key}}}', '${context}')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer" title="Insert {{${t.key}}}">${t.label}</button>`;
     });
 
     if (App.customPlaceholders && App.customPlaceholders.length > 0) {
         App.customPlaceholders.forEach(tag => {
+            // Avoid duplicate rendering if tag is already shown in tableCols
+            if (tableCols && tableCols.includes(tag)) return;
             html += `<span class="inline-flex items-center rounded bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-[11px] font-mono group shadow-xs">
                 <button type="button" onclick="insertMergeTag('{{${tag}}}', '${context}')" class="px-2 py-0.5 hover:text-white transition-colors cursor-pointer" title="Insert {{${tag}}}">{{${tag}}}</button>
                 <button type="button" onclick="removeCustomPlaceholder('${tag}', event)" class="pr-1.5 pl-0.5 py-0.5 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Remove custom placeholder">&times;</button>
@@ -1002,6 +1232,7 @@ function renderPlaceholderChips(containerId, context) {
     }
 
     container.innerHTML = html;
+    if (window.lucide) lucide.createIcons();
 }
 
 function insertMergeTag(tag, context = 'broadcast') {
@@ -1102,6 +1333,30 @@ function loadBroadcastTemplatePreset(type) {
     <p style="color: #334155; line-height: 1.6;">Discover how asynchronous queue workers and token-bucket governors prevent ISP throttling and maintain 99.8% inbox deliverability rates.</p>
     <p><a href="https://example.com/article" style="color: #4f46e5; font-weight: bold;">Read Full Analysis →</a></p>
 </div>`;
+    } else if (type === 'invoice') {
+        if (subjectInput) subjectInput.value = 'Invoice {{invoice_no}} from Our Team';
+        textarea.value = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+    <h2 style="color: #4f46e5; margin-bottom: 8px;">Hello {{first_name}},</h2>
+    <p>Please find your itemized invoice details below for your recent billing cycle with {{company}}.</p>
+    
+    ${HTML_TABLE_PRESETS.invoice}
+    
+    <p>Please review and let us know if you have any questions or require updated billing details.</p>
+    <p><a href="https://example.com/pay" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Pay Invoice Online</a></p>
+    <p style="color: #64748b; font-size: 12px; margin-top: 24px;">Thank you for your business!</p>
+</div>`;
+    } else if (type === 'order') {
+        if (subjectInput) subjectInput.value = 'Your Order Confirmation #{{order_id}} 📦';
+        textarea.value = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.6;">
+    <h2 style="color: #059669; margin-bottom: 8px;">Thank You for Your Order, {{first_name}}! 🎉</h2>
+    <p>Your order <strong>#{{order_id}}</strong> has been confirmed and is being processed for shipment.</p>
+    
+    ${HTML_TABLE_PRESETS.order}
+    
+    <p>You can track the live delivery status of your package using your tracking number once dispatched.</p>
+    <p><a href="https://example.com/track" style="display: inline-block; padding: 12px 24px; background: #059669; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Track Your Order</a></p>
+    <p style="color: #64748b; font-size: 12px; margin-top: 24px;">Sent with Bitmail.</p>
+</div>`;
     }
     showToast('Loaded template preset into composer', 'info');
 }
@@ -1134,6 +1389,14 @@ function populateBroadcastDropdowns() {
         const curVal = filterListSelect.value || 'all';
         filterListSelect.innerHTML = `<option value="all">📁 All Groups / Lists</option>` +
             App.lists.map(l => `<option value="${l.id}" ${curVal === l.id ? 'selected' : ''}>📁 ${escapeHtml(l.name)} (${l.subscriber_count})</option>`).join('');
+    }
+
+    // Populate Template Studio Table Dropdown
+    const studioTableSelect = document.getElementById('studio-table-select');
+    if (studioTableSelect) {
+        const curStudioVal = studioTableSelect.value || '';
+        studioTableSelect.innerHTML = `<option value="">Table: Standard Tags</option>` +
+            App.lists.map(l => `<option value="${l.id}" ${curStudioVal === l.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
     }
 
     // Update Manage Groups counts in Customers tab header and modal badge
@@ -1812,7 +2075,7 @@ function renderSubscribersTable(rows = App.subscribers) {
         try {
             const cf = typeof sub.custom_fields === 'string' ? JSON.parse(sub.custom_fields || '{}') : (sub.custom_fields || {});
             customBadges = Object.entries(cf).map(([k, v]) =>
-                `<span class="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-500/25 text-[10px] font-mono" title="Custom Attribute">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>`
+                `<span class="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-500/25 text-[10px] font-mono" title="Custom Attribute / Placeholder: {{${escapeHtml(k)}}}">&#123;&#123;${escapeHtml(k)}&#125;&#125;: <strong class="text-white">${escapeHtml(String(v))}</strong></span>`
             ).join('');
         } catch (e) {}
 
@@ -1952,11 +2215,119 @@ async function submitCsvImport() {
     }
 }
 
+const TABLE_PRESETS = {
+    ecommerce: {
+        name: 'E-Commerce Orders',
+        desc: 'Customer purchase orders with tracking and item details',
+        columns: ['order_id', 'product_name', 'quantity', 'order_total', 'tracking_no']
+    },
+    billing: {
+        name: 'Invoices & Billing',
+        desc: 'Client invoice notifications and payment schedules',
+        columns: ['invoice_no', 'due_date', 'amount_due', 'payment_status', 'billing_period']
+    },
+    leads: {
+        name: 'B2B Sales Leads',
+        desc: 'Qualified leads, accounts, and contact designations',
+        columns: ['company_name', 'job_title', 'phone_number', 'lead_source', 'deal_size']
+    },
+    events: {
+        name: 'Event Attendees',
+        desc: 'Conferences, webinars, and RSVP ticket management',
+        columns: ['event_name', 'ticket_tier', 'event_date', 'seat_number', 'qr_code']
+    },
+    membership: {
+        name: 'SaaS Memberships',
+        desc: 'Active subscriptions, license tiers, and renewal dates',
+        columns: ['account_id', 'plan_name', 'billing_interval', 'renewal_date', 'support_tier']
+    },
+    custom: {
+        name: '',
+        desc: '',
+        columns: []
+    }
+};
+
+function applyTableTemplate(presetKey) {
+    const preset = TABLE_PRESETS[presetKey];
+    if (!preset) return;
+
+    ['ecommerce', 'billing', 'leads', 'events', 'membership', 'custom'].forEach(k => {
+        const card = document.getElementById(`tpl-card-${k}`);
+        if (card) {
+            if (k === presetKey) {
+                card.classList.add('border-purple-500/50', 'bg-purple-950/20');
+                card.classList.remove('border-white/10');
+            } else {
+                card.classList.remove('border-purple-500/50', 'bg-purple-950/20');
+                card.classList.add('border-white/10');
+            }
+        }
+    });
+
+    const nameInput = document.getElementById('new-group-name');
+    const descInput = document.getElementById('new-group-desc');
+    if (preset.name && nameInput) nameInput.value = preset.name;
+    if (preset.desc && descInput) descInput.value = preset.desc;
+
+    App.newTableColumns = [...preset.columns];
+    renderNewTableColumns();
+}
+
+function renderNewTableColumns() {
+    const container = document.getElementById('new-table-columns-chips');
+    if (!container) return;
+
+    if (!App.newTableColumns || App.newTableColumns.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-500 italic p-1">No custom columns added yet. Type a column name below or pick a template above.</span>`;
+        return;
+    }
+
+    container.innerHTML = App.newTableColumns.map(col => `
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/80 border border-purple-500/30 text-purple-200 text-xs font-mono shadow-xs">
+            <span>&#123;&#123;${col}&#125;&#125;</span>
+            <button type="button" onclick="removeTableColumn('${col}')" class="text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Remove column">&times;</button>
+        </span>
+    `).join('');
+}
+
+function addNewTableColumnChip() {
+    const input = document.getElementById('new-table-col-input');
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const clean = raw.toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+    if (!clean) {
+        showToast('Invalid column name', 'warning');
+        return;
+    }
+
+    if (!App.newTableColumns) App.newTableColumns = [];
+    if (!App.newTableColumns.includes(clean)) {
+        App.newTableColumns.push(clean);
+        renderNewTableColumns();
+        input.value = '';
+    } else {
+        showToast(`Column "${clean}" already exists in table`, 'info');
+    }
+}
+
+function removeTableColumn(col) {
+    if (!App.newTableColumns) return;
+    App.newTableColumns = App.newTableColumns.filter(c => c !== col);
+    renderNewTableColumns();
+}
+
 function openCreateGroupModal() {
     const input = document.getElementById('new-group-name');
     const desc = document.getElementById('new-group-desc');
+    const colInput = document.getElementById('new-table-col-input');
     if (input) input.value = '';
     if (desc) desc.value = '';
+    if (colInput) colInput.value = '';
+    App.newTableColumns = [];
+    applyTableTemplate('billing');
     openModal('modal-create-group');
     if (input) setTimeout(() => input.focus(), 60);
 }
@@ -1966,7 +2337,7 @@ async function handleCreateGroupSubmit(e) {
     const name = document.getElementById('new-group-name')?.value?.trim();
     const desc = document.getElementById('new-group-desc')?.value?.trim();
     if (!name) {
-        showToast('Please enter a group name.', 'warning');
+        showToast('Please enter a group / table name.', 'warning');
         return;
     }
     const btn = document.getElementById('btn-create-group-submit');
@@ -1976,14 +2347,18 @@ async function handleCreateGroupSubmit(e) {
         const res = await fetch('/api/lists', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, description: desc || '' })
+            body: JSON.stringify({ 
+                name, 
+                description: desc || '',
+                schema_fields: App.newTableColumns || []
+            })
         });
         const data = await safeJson(res);
         if (!res.ok) {
-            showToast(`Failed to create group: ${data.detail || 'Unknown error'}`, 'error');
+            showToast(`Failed to create table: ${data.detail || 'Unknown error'}`, 'error');
             return;
         }
-        showToast(`Customer group "${name}" created successfully!`, 'success');
+        showToast(`Customer table "${name}" created with ${App.newTableColumns ? App.newTableColumns.length : 0} placeholder columns!`, 'success');
         closeModal('modal-create-group');
         
         // Refresh lists and dropdowns across UI
@@ -1995,7 +2370,7 @@ async function handleCreateGroupSubmit(e) {
         }
         await fetchSubscribers();
     } catch (err) {
-        showToast(`Error creating group: ${err.message}`, 'error');
+        showToast(`Error creating table: ${err.message}`, 'error');
     } finally {
         if (btn) btn.disabled = false;
     }
@@ -2045,6 +2420,20 @@ function renderManageGroupsList() {
         const safeDesc = escapeHtml(list.description || 'No description provided');
         const listId = list.id;
 
+        let schemaCols = [];
+        try {
+            if (Array.isArray(list.schema_fields)) schemaCols = list.schema_fields;
+            else if (typeof list.schema_fields === 'string') schemaCols = JSON.parse(list.schema_fields || '[]');
+        } catch(e) {}
+
+        const schemaBadges = schemaCols.length > 0
+            ? `<div class="flex items-center gap-1 flex-wrap mt-1.5">
+                 <span class="text-[10px] text-purple-400 font-semibold flex items-center gap-0.5"><i data-lucide="columns" class="w-2.5 h-2.5"></i> Schema:</span>
+                 ${schemaCols.slice(0, 5).map(c => `<span class="px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-500/25 text-[10px] font-mono">&#123;&#123;${escapeHtml(c)}&#125;&#125;</span>`).join('')}
+                 ${schemaCols.length > 5 ? `<span class="text-[10px] text-purple-400 font-mono">+${schemaCols.length - 5} more</span>` : ''}
+               </div>`
+            : '';
+
         return `
             <div class="p-4 rounded-xl bg-slate-900/80 border border-white/5 hover:border-purple-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div class="flex items-start gap-3 min-w-0">
@@ -2059,6 +2448,7 @@ function renderManageGroupsList() {
                             </span>
                         </div>
                         <p class="text-xs text-slate-400 mt-0.5 line-clamp-1">${safeDesc}</p>
+                        ${schemaBadges}
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
@@ -2174,6 +2564,81 @@ async function deleteCustomerGroup(listId, groupName) {
     }
 }
 
+function onSubListSelectionChanged() {
+    const listSelect = document.getElementById('modal-sub-list-select');
+    const section = document.getElementById('modal-sub-table-schema-section');
+    const inputsContainer = document.getElementById('modal-sub-table-schema-inputs');
+    if (!listSelect || !section || !inputsContainer) return;
+
+    const listId = listSelect.value;
+    if (!listId) {
+        section.classList.add('hidden');
+        inputsContainer.innerHTML = '';
+        return;
+    }
+
+    const list = App.lists.find(l => l.id === listId);
+    let schema = [];
+    if (list && list.schema_fields) {
+        if (Array.isArray(list.schema_fields)) schema = list.schema_fields;
+        else if (typeof list.schema_fields === 'string') {
+            try { schema = JSON.parse(list.schema_fields); } catch (e) {}
+        }
+    }
+
+    if (schema.length === 0) {
+        section.classList.add('hidden');
+        inputsContainer.innerHTML = '';
+        return;
+    }
+
+    section.classList.remove('hidden');
+    inputsContainer.innerHTML = schema.map(col => `
+        <div>
+            <label class="block text-[11px] font-mono text-purple-300 mb-1 flex items-center justify-between">
+                <span>&#123;&#123;${escapeHtml(col)}&#125;&#125;</span>
+                <span class="text-[9px] text-slate-500 font-sans">Column</span>
+            </label>
+            <input type="text" data-schema-col="${escapeHtml(col)}" class="schema-col-input w-full px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-mono" placeholder="Value for ${escapeHtml(col)}">
+        </div>
+    `).join('');
+    if (window.lucide) lucide.createIcons();
+}
+
+function addSubCustomFieldRow(key = '', val = '') {
+    const container = document.getElementById('modal-sub-custom-fields-list');
+    if (!container) return;
+
+    const cleanKey = key.trim().toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+    const row = document.createElement('div');
+    row.className = 'sub-custom-field-row flex items-center gap-2 bg-slate-900/60 p-2 rounded-xl border border-white/5';
+    row.innerHTML = `
+        <div class="w-1/3 min-w-0">
+            <input type="text" placeholder="e.g. phone" value="${escapeHtml(key)}" oninput="updateKeyPlaceholderBadge(this)" class="custom-field-key w-full px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-indigo-300 font-mono focus:outline-none focus:border-indigo-500">
+        </div>
+        <div class="flex-1 min-w-0">
+            <input type="text" placeholder="Value..." value="${escapeHtml(String(val))}" class="custom-field-val w-full px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500">
+        </div>
+        <span class="custom-field-badge px-2 py-1 rounded bg-indigo-950/70 text-indigo-300 text-[10px] font-mono border border-indigo-500/25 shrink-0 hidden sm:inline-block">
+            &#123;&#123;${cleanKey || 'tag'}&#125;&#125;
+        </span>
+        <button type="button" onclick="this.closest('.sub-custom-field-row').remove()" class="p-1 text-slate-400 hover:text-rose-400 cursor-pointer" title="Remove placeholder">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+    `;
+    container.appendChild(row);
+    if (window.lucide) lucide.createIcons();
+}
+
+function updateKeyPlaceholderBadge(input) {
+    const row = input.closest('.sub-custom-field-row');
+    if (!row) return;
+    const badge = row.querySelector('.custom-field-badge');
+    if (!badge) return;
+    const cleanKey = input.value.trim().toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+    badge.textContent = `{{${cleanKey || 'tag'}}}`;
+}
+
 function openAddSubscriberModal() {
     App.editing.subscriber = null;
     setText('modal-sub-title', 'Add Customer Contact');
@@ -2183,7 +2648,16 @@ function openAddSubscriberModal() {
     setValue('modal-sub-first-name', '');
     setValue('modal-sub-last-name', '');
     setValue('modal-sub-status', 'active');
+    
+    // Ensure dropdown options are loaded
+    populateBroadcastDropdowns();
     setValue('modal-sub-list-select', '');
+
+    // Reset table schema inputs & custom fields list
+    const customList = document.getElementById('modal-sub-custom-fields-list');
+    if (customList) customList.innerHTML = '';
+    onSubListSelectionChanged();
+
     openModal('modal-add-subscriber');
 }
 
@@ -2201,7 +2675,41 @@ function openEditSubscriberModal(subId) {
     setValue('modal-sub-first-name', sub.first_name || '');
     setValue('modal-sub-last-name', sub.last_name || '');
     setValue('modal-sub-status', sub.status || 'active');
-    setValue('modal-sub-list-select', (sub.lists && sub.lists[0]) || '');
+    
+    // Ensure dropdown options are loaded
+    populateBroadcastDropdowns();
+    const assignedList = (sub.lists && sub.lists[0]) || '';
+    setValue('modal-sub-list-select', assignedList);
+    onSubListSelectionChanged();
+
+    // Reset custom fields list
+    const customList = document.getElementById('modal-sub-custom-fields-list');
+    if (customList) customList.innerHTML = '';
+
+    // Parse custom fields
+    let cf = {};
+    try {
+        cf = typeof sub.custom_fields === 'string' ? JSON.parse(sub.custom_fields || '{}') : (sub.custom_fields || {});
+    } catch (e) {}
+
+    // Populate schema inputs if present
+    const schemaInputs = document.querySelectorAll('.schema-col-input');
+    const handledCols = new Set();
+    schemaInputs.forEach(input => {
+        const col = input.getAttribute('data-schema-col');
+        if (col && cf[col] !== undefined) {
+            input.value = cf[col];
+            handledCols.add(col);
+        }
+    });
+
+    // Any remaining custom fields become key-value rows
+    Object.entries(cf).forEach(([k, v]) => {
+        if (!handledCols.has(k)) {
+            addSubCustomFieldRow(k, v);
+        }
+    });
+
     openModal('modal-add-subscriber');
 }
 
@@ -2218,14 +2726,35 @@ async function submitAddSubscriber() {
         return;
     }
 
+    // Collect custom fields from Schema Inputs and Custom Key-Value Rows
+    const customFields = {};
+
+    // 1. Schema inputs
+    const schemaInputs = document.querySelectorAll('.schema-col-input');
+    schemaInputs.forEach(input => {
+        const col = input.getAttribute('data-schema-col');
+        if (col) {
+            const val = input.value.trim();
+            if (val) customFields[col] = val;
+        }
+    });
+
+    // 2. Custom field rows
+    const customRows = document.querySelectorAll('.sub-custom-field-row');
+    customRows.forEach(row => {
+        const keyInput = row.querySelector('.custom-field-key');
+        const valInput = row.querySelector('.custom-field-val');
+        if (keyInput && valInput) {
+            const rawKey = keyInput.value.trim();
+            const cleanKey = rawKey.toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+            const val = valInput.value.trim();
+            if (cleanKey && val) {
+                customFields[cleanKey] = val;
+            }
+        }
+    });
+
     const editingId = App.editing.subscriber;
-    const existingSub = editingId ? App.subscribers.find(s => s.id === editingId) : null;
-    let customFields = {};
-    if (existingSub) {
-        try {
-            customFields = typeof existingSub.custom_fields === 'string' ? JSON.parse(existingSub.custom_fields || '{}') : (existingSub.custom_fields || {});
-        } catch (e) {}
-    }
 
     try {
         const res = await fetch(editingId ? `/api/subscribers/${editingId}` : '/api/subscribers', {
@@ -2248,6 +2777,19 @@ async function submitAddSubscriber() {
             closeModal('modal-add-subscriber');
             await fetchSubscribers();
             await fetchDashboardStats();
+
+            // Discover new placeholders into App.customPlaceholders
+            let addedAny = false;
+            Object.keys(customFields).forEach(k => {
+                if (!App.customPlaceholders.includes(k)) {
+                    App.customPlaceholders.push(k);
+                    addedAny = true;
+                }
+            });
+            if (addedAny) {
+                saveCustomPlaceholders();
+                renderAllPlaceholderChips();
+            }
         } else {
             showToast(data.detail || 'Failed to save customer', 'error');
         }

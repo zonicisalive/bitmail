@@ -80,10 +80,17 @@ async def init_db() -> None:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT,
+                schema_fields TEXT DEFAULT '[]',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
         """)
+
+        # Migration: Add schema_fields column if table existed
+        try:
+            await db.execute("ALTER TABLE subscriber_lists ADD COLUMN schema_fields TEXT DEFAULT '[]'")
+        except Exception:
+            pass
 
         # 3. Subscriber List Memberships Table
         await db.execute("""

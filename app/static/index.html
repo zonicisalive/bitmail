@@ -274,7 +274,7 @@
                                         <i data-lucide="folder-plus" class="w-3 h-3"></i> + New Group
                                     </button>
                                 </div>
-                                <select id="broadcast-list-select" onchange="updateBroadcastEmailCount()" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                <select id="broadcast-list-select" onchange="handleBroadcastAudienceChange()" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                                     <option value="all">⭐ All Active Customers</option>
                                 </select>
                             </div>
@@ -362,9 +362,17 @@
                                     </div>
                                     <div class="flex items-center gap-2 text-[11px] text-slate-400">
                                         <span class="text-slate-500">Presets:</span>
-                                        <button type="button" onclick="loadBroadcastTemplatePreset('product')" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer">Announcement</button>
+                                        <button type="button" onclick="loadBroadcastTemplatePreset('product')" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer">Product</button>
                                         <span class="text-slate-600">•</span>
                                         <button type="button" onclick="loadBroadcastTemplatePreset('newsletter')" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer">Newsletter</button>
+                                        <span class="text-slate-600">•</span>
+                                        <button type="button" onclick="loadBroadcastTemplatePreset('invoice')" class="text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer">Invoice Table</button>
+                                        <span class="text-slate-600">•</span>
+                                        <button type="button" onclick="loadBroadcastTemplatePreset('order')" class="text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer">Order Table</button>
+                                        <span class="text-slate-600">|</span>
+                                        <button type="button" onclick="openInsertTableModal('broadcast')" class="px-2 py-0.5 rounded bg-purple-500/10 hover:bg-purple-500/20 text-[11px] font-semibold text-purple-300 border border-purple-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Insert styled responsive HTML data table into email">
+                                            <i data-lucide="table" class="w-3 h-3"></i> Insert Table
+                                        </button>
                                     </div>
                                 </div>
 
@@ -872,9 +880,17 @@
                                         <i data-lucide="plus" class="w-3 h-3"></i> Add Tag
                                     </button>
                                 </div>
-                                <button type="button" onclick="openLivePreviewModal('studio')" class="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 transition-all shadow-sm ml-auto cursor-pointer">
-                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i> Live Preview
-                                </button>
+                                <div class="flex items-center gap-2 ml-auto">
+                                    <select id="studio-table-select" onchange="loadTablePlaceholders(this.value, 'studio')" class="px-2 py-1 rounded-lg bg-slate-900 border border-white/10 text-[11px] text-slate-300 focus:outline-none focus:border-indigo-500">
+                                        <option value="">Table: Standard Tags</option>
+                                    </select>
+                                    <button type="button" onclick="openInsertTableModal('studio')" class="px-2 py-1 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-[11px] font-semibold text-purple-300 border border-purple-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Insert styled responsive HTML table into template">
+                                        <i data-lucide="table" class="w-3 h-3"></i> Insert Table
+                                    </button>
+                                    <button type="button" onclick="openLivePreviewModal('studio')" class="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 transition-all shadow-sm cursor-pointer">
+                                        <i data-lucide="eye" class="w-3.5 h-3.5"></i> Live Preview
+                                    </button>
+                                </div>
                             </div>
 
                             <label class="block text-xs font-medium text-slate-300 mb-1">HTML Code & Content:</label>
@@ -1019,7 +1035,7 @@ curl -X POST http://localhost:8000/api/v1/send \
 
     <!-- Modal 2: Add Single Customer -->
     <div id="modal-add-subscriber" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
-        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
+        <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between">
                 <h3 id="modal-sub-title" class="text-base font-bold text-white">Add Customer Contact</h3>
                 <button onclick="closeModal('modal-add-subscriber')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
@@ -1049,16 +1065,47 @@ curl -X POST http://localhost:8000/api/v1/send \
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Group / List (Optional)</label>
-                    <select id="modal-sub-list-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                        <option value="">No specific group</option>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Group / Table (Optional)</label>
+                    <select id="modal-sub-list-select" onchange="onSubListSelectionChanged()" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">No specific table</option>
                     </select>
+                </div>
+
+                <!-- Dynamic Table Schema Columns (Inputs for Selected Table) -->
+                <div id="modal-sub-table-schema-section" class="hidden space-y-2.5 pt-2 border-t border-white/5">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i> Table Column Inputs:
+                        </label>
+                        <span class="text-[10px] text-slate-400">Values map to email placeholders</span>
+                    </div>
+                    <div id="modal-sub-table-schema-inputs" class="grid grid-cols-2 gap-2.5">
+                        <!-- Populated dynamically based on selected list's schema_fields -->
+                    </div>
+                </div>
+
+                <!-- Custom Merge Attributes & Placeholders Builder -->
+                <div class="pt-2 border-t border-white/5 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <label class="block text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
+                                <i data-lucide="tag" class="w-3.5 h-3.5"></i> Custom Placeholders & Attributes
+                            </label>
+                            <span class="text-[10px] text-slate-400">Name a placeholder key and set its value for this customer</span>
+                        </div>
+                        <button type="button" onclick="addSubCustomFieldRow()" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer">
+                            <i data-lucide="plus" class="w-3 h-3"></i> Add Placeholder
+                        </button>
+                    </div>
+                    <div id="modal-sub-custom-fields-list" class="space-y-2">
+                        <!-- Key-Value rows with live preview tag {{key}} -->
+                    </div>
                 </div>
             </div>
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-add-subscriber')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Customer</button>
+                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Save Customer</button>
             </div>
         </div>
     </div>
@@ -1344,17 +1391,17 @@ curl -X POST http://localhost:8000/api/v1/send \
         </div>
     </div>
 
-    <!-- Modal: Create Customer Group -->
+    <!-- Modal: Create Customer Table / Group -->
     <div id="modal-create-group" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
-        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4">
+        <div class="glass-panel w-full max-w-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between border-b border-white/10 pb-3">
                 <div class="flex items-center gap-2.5">
                     <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                        <i data-lucide="table" class="w-4 h-4"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white">Create Customer Group</h3>
-                        <p class="text-[11px] text-slate-400">Organize contacts into targeted segments and lists</p>
+                        <h3 class="text-sm font-bold text-white">Create Customer Table & Schema</h3>
+                        <p class="text-[11px] text-slate-400">Choose a premade table template or customize placeholder columns for dynamic merge tags</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeModal('modal-create-group')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
@@ -1362,27 +1409,145 @@ curl -X POST http://localhost:8000/api/v1/send \
                 </button>
             </div>
 
+            <!-- Premade Table Templates Selector -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                    <span>1. Choose a Table Template:</span>
+                    <span class="text-[10px] text-purple-400">Click to apply pre-configured columns</span>
+                </label>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    <button type="button" onclick="applyTableTemplate('ecommerce')" id="tpl-card-ecommerce" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">🛒 Orders</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">order_id, product, amount</div>
+                    </button>
+                    <button type="button" onclick="applyTableTemplate('billing')" id="tpl-card-billing" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-purple-300 flex items-center gap-1.5">📄 Invoices</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">invoice_no, due_date, due</div>
+                    </button>
+                    <button type="button" onclick="applyTableTemplate('leads')" id="tpl-card-leads" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">💼 B2B Leads</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">company, role, website</div>
+                    </button>
+                    <button type="button" onclick="applyTableTemplate('events')" id="tpl-card-events" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">🎟️ Events</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">event_name, ticket, date</div>
+                    </button>
+                    <button type="button" onclick="applyTableTemplate('membership')" id="tpl-card-membership" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">👤 SaaS Users</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">account_id, plan, expiry</div>
+                    </button>
+                    <button type="button" onclick="applyTableTemplate('custom')" id="tpl-card-custom" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">⚙️ Blank Table</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">Start from scratch</div>
+                    </button>
+                </div>
+            </div>
+
             <form onsubmit="handleCreateGroupSubmit(event)" class="space-y-4">
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Group / List Name <span class="text-rose-400">*</span></label>
-                    <input type="text" id="new-group-name" required placeholder="e.g. VIP Enterprise Customers" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Table / List Name <span class="text-rose-400">*</span></label>
+                        <input type="text" id="new-group-name" required placeholder="e.g. Billing & Invoices Table" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
+                        <input type="text" id="new-group-desc" placeholder="Audience or billing category..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                    </div>
                 </div>
 
-                <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
-                    <textarea id="new-group-desc" rows="3" placeholder="Target audience notes, campaign category, or segmentation criteria..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"></textarea>
+                <!-- Custom Schema Columns / Placeholders -->
+                <div class="space-y-2 pt-2 border-t border-white/5">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                            <i data-lucide="columns" class="w-3.5 h-3.5"></i> 2. Table Placeholder Columns:
+                        </label>
+                        <span class="text-[10px] text-slate-400">Available as merge tags when sending</span>
+                    </div>
+
+                    <div id="new-table-columns-chips" class="flex flex-wrap gap-1.5 min-h-[38px] p-2 bg-slate-900/90 border border-white/10 rounded-xl items-center">
+                        <!-- Populated dynamically by app.js -->
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="new-table-col-input" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewTableColumnChip();}" placeholder="Type column name (e.g. tracking_num, discount_code) & Enter" class="flex-1 px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-mono">
+                        <button type="button" onclick="addNewTableColumnChip()" class="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold border border-purple-500/40 shrink-0 cursor-pointer flex items-center gap-1">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Column
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500">Every column will be accessible as <code>&#123;&#123;column_name&#125;&#125;</code> in emails sent to this table.</p>
                 </div>
 
                 <div class="pt-3 border-t border-white/5 flex items-center justify-end gap-2.5">
                     <button type="button" onclick="closeModal('modal-create-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
                         Cancel
                     </button>
-                    <button type="submit" id="btn-create-group-submit" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all">
-                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
-                        <span>Create Group</span>
+                    <button type="submit" id="btn-create-group-submit" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all cursor-pointer">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                        <span>Create Table</span>
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Modal: Insert Styled HTML Table into Email Composer -->
+    <div id="modal-insert-table" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
+        <div class="glass-panel w-full max-w-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="table" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Insert Responsive Email Table</h3>
+                        <p class="text-[11px] text-slate-400">Embed clean, client-compatible data tables with dynamic placeholders</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeModal('modal-insert-table')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <!-- Table Preset Options -->
+            <div class="space-y-3">
+                <label class="block text-xs font-semibold text-slate-300">Choose Table Style & Layout:</label>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button type="button" onclick="setInsertTablePreset('invoice')" id="insert-table-card-invoice" class="insert-table-type-btn p-3 rounded-xl bg-slate-900 border border-purple-500/50 text-left transition-all cursor-pointer">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">🧾 Invoice / Billing Table</div>
+                        <div class="text-[10px] text-slate-400 mt-1">Itemized with &#123;&#123;invoice_no&#125;&#125;, &#123;&#123;due_date&#125;&#125;, &#123;&#123;amount_due&#125;&#125;</div>
+                    </button>
+                    <button type="button" onclick="setInsertTablePreset('order')" id="insert-table-card-order" class="insert-table-type-btn p-3 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/30 text-left transition-all cursor-pointer">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">📦 Order Summary Table</div>
+                        <div class="text-[10px] text-slate-400 mt-1">Order receipt with &#123;&#123;order_id&#125;&#125;, &#123;&#123;product_name&#125;&#125;, &#123;&#123;amount&#125;&#125;</div>
+                    </button>
+                    <button type="button" onclick="setInsertTablePreset('specs')" id="insert-table-card-specs" class="insert-table-type-btn p-3 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/30 text-left transition-all cursor-pointer">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">📊 Account Specifications</div>
+                        <div class="text-[10px] text-slate-400 mt-1">Key-value table for &#123;&#123;account_id&#125;&#125;, &#123;&#123;plan&#125;&#125;, &#123;&#123;expiry_date&#125;&#125;</div>
+                    </button>
+                    <button type="button" onclick="setInsertTablePreset('custom')" id="insert-table-card-custom" class="insert-table-type-btn p-3 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/30 text-left transition-all cursor-pointer">
+                        <div class="text-xs font-bold text-white flex items-center gap-1.5">📐 Custom 3-Column Table</div>
+                        <div class="text-[10px] text-slate-400 mt-1">Item, Details, and Notes styled table</div>
+                    </button>
+                </div>
+
+                <!-- Live Preview of Table -->
+                <div class="space-y-1.5 pt-2">
+                    <label class="block text-xs font-semibold text-slate-300">Live Email Preview:</label>
+                    <div id="insert-table-preview-box" class="p-3 bg-white rounded-xl overflow-x-auto text-slate-900 text-xs">
+                        <!-- Rendered table preview -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-white/5 flex items-center justify-end gap-2.5">
+                <button type="button" onclick="closeModal('modal-insert-table')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
+                    Cancel
+                </button>
+                <button type="button" onclick="confirmInsertHtmlTable()" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all cursor-pointer">
+                    <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                    <span>Insert Table into Message</span>
+                </button>
+            </div>
         </div>
     </div>
 
