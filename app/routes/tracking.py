@@ -341,13 +341,14 @@ async def handle_unsubscribe(
         )
 
     display_email = email_target or "your email address"
+    company_name = settings.COMPANY_NAME or "Bitnade"
 
     html_page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsubscribed Successfully | Bitmail</title>
+  <title>Unsubscribed Successfully | {company_name}</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 flex items-center justify-center min-h-screen p-4">
@@ -357,27 +358,226 @@ async def handle_unsubscribe(
     </div>
     <h1 class="text-2xl font-bold text-white mb-2">Unsubscribed Successfully</h1>
     <p class="text-slate-400 text-sm mb-6 leading-relaxed">
-      <strong>{display_email}</strong> has been removed from this mailing list and added to the global suppression register.
+      <strong>{display_email}</strong> has been removed from this mailing list and added to the suppression register.
     </p>
     <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 text-xs text-slate-400 text-left mb-6">
       <div class="flex items-center justify-between mb-1">
         <span class="text-slate-500">Status:</span>
-        <span class="text-emerald-400 font-mono">SUPPRESSED</span>
+        <span class="text-emerald-400 font-mono font-bold">SUPPRESSED</span>
       </div>
       <div class="flex items-center justify-between mb-1">
         <span class="text-slate-500">Effective:</span>
         <span class="text-slate-300 font-mono">{now} UTC</span>
       </div>
       <div class="flex items-center justify-between">
-        <span class="text-slate-500">Relay:</span>
-        <span class="text-slate-300">Bitmail Compliance Vault</span>
+        <span class="text-slate-500">Sender:</span>
+        <span class="text-slate-300">{company_name}</span>
       </div>
     </div>
-    <p class="text-xs text-slate-500">
-      Did you do this by mistake? Contact support to reactivate your subscription.
-    </p>
+
+    <!-- Subscribe Again Action Card -->
+    <div class="pt-5 border-t border-slate-800 text-center space-y-3">
+      <p class="text-xs text-slate-400">
+        Unsubscribed by mistake or want to stay in the loop?
+      </p>
+      <form method="POST" action="/resubscribe/{token}" id="resubscribe-form">
+        <button type="submit" id="btn-resubscribe" class="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 cursor-pointer">
+          <span>Subscribe Again</span>
+          <span>↩</span>
+        </button>
+      </form>
+      <div id="resubscribe-alert" class="hidden p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-medium">
+        ✓ Welcome back! You have been successfully resubscribed.
+      </div>
+    </div>
   </div>
- </body>
+
+  <script>
+    const form = document.getElementById('resubscribe-form');
+    const btn = document.getElementById('btn-resubscribe');
+    const alertBox = document.getElementById('resubscribe-alert');
+
+    if (form) {{
+      form.addEventListener('submit', async (e) => {{
+        e.preventDefault();
+        if (btn) {{
+          btn.disabled = true;
+          btn.innerHTML = '<span>Resubscribing...</span>';
+        }}
+        try {{
+          const res = await fetch('/resubscribe/{token}?format=json', {{
+            method: 'POST',
+            headers: {{ 'Accept': 'application/json' }}
+          }});
+          const data = await res.json();
+          if (res.ok && data.status === 'success') {{
+            if (btn) {{
+              btn.className = 'w-full py-2.5 px-4 rounded-xl bg-emerald-600/90 text-white font-semibold text-xs cursor-default flex items-center justify-center gap-2';
+              btn.innerHTML = '<span>✓ Subscribed Again!</span>';
+            }}
+            if (alertBox) alertBox.classList.remove('hidden');
+          }} else {{
+            form.submit();
+          }}
+        }} catch (err) {{
+          form.submit();
+        }}
+      }});
+    }}
+  </script>
+</body>
 </html>"""
 
     return HTMLResponse(content=html_page, status_code=status.HTTP_200_OK)
+
+
+@router.post("/resubscribe/{token}", response_class=HTMLResponse)
+@router.get("/resubscribe/{token}", response_class=HTMLResponse)
+@router.post("/api/tracking/resubscribe/{token}", response_class=HTMLResponse)
+@router.get("/api/tracking/resubscribe/{token}", response_class=HTMLResponse)
+@router.post("/track/resubscribe/{token}", response_class=HTMLResponse)
+@router.get("/track/resubscribe/{token}", response_class=HTMLResponse)
+async def handle_resubscribe(
+    token: str,
+    request: Request,
+    user_agent: Optional[str] = Header(default=None)
+):
+    """
+    Resubscribe Handler: removes recipient from suppressions & suppression_list,
+    restores subscriber status to 'active', records event, and renders confirmation.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    now = utc_now_iso()
+
+    verified = verify_unsubscribe_token(token)
+    email_target: Optional[str] = None
+    sub_id: Optional[str] = None
+
+    if verified:
+        email_target, sub_id = verified
+
+    if not email_target:
+        query_email = (request.query_params.get("email") or "").strip().lower()
+        query_token = request.query_params.get("token") or ""
+        if query_email and query_token and template_engine.verify_unsubscribe_token(token, query_email, query_token):
+            email_target = query_email
+
+    async with get_db() as db:
+        if not email_target:
+            async with db.execute("SELECT email, id FROM subscribers WHERE id = ?", (token,)) as cursor:
+                sub_row = await cursor.fetchone()
+                if sub_row:
+                    email_target = sub_row["email"]
+                    sub_id = sub_row["id"]
+
+        if not email_target:
+            async with db.execute("SELECT recipient_email FROM sent_emails WHERE id = ?", (token,)) as cursor:
+                mail_row = await cursor.fetchone()
+                if mail_row:
+                    email_target = (mail_row["recipient_email"] or "").strip().lower()
+
+        if not email_target:
+            if "@" in token:
+                email_target = token.strip().lower()
+
+        if email_target:
+            # 1. Remove from suppression records
+            await db.execute("DELETE FROM suppressions WHERE email = ?", (email_target,))
+            await db.execute("DELETE FROM suppression_list WHERE email = ?", (email_target,))
+
+            # 2. Update subscriber status back to active
+            await db.execute("""
+                UPDATE subscribers
+                SET status = 'active', updated_at = ?
+                WHERE email = ? OR id = ?
+            """, (now, email_target, sub_id))
+
+            # 3. Record audit event
+            async with db.execute(
+                "SELECT id, campaign_id FROM sent_emails WHERE recipient_email = ? ORDER BY created_at DESC LIMIT 1",
+                (email_target,)
+            ) as s_cur:
+                s_row = await s_cur.fetchone()
+                if s_row:
+                    email_id = s_row["id"]
+                    camp_id = s_row["campaign_id"]
+                    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+
+                    await db.execute("""
+                        INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
+                        VALUES (?, ?, ?, 'resubscribe', ?, ?, ?, ?)
+                    """, (
+                        event_id,
+                        email_id,
+                        camp_id,
+                        client_ip,
+                        user_agent,
+                        json.dumps({"email": email_target, "ip": client_ip, "action": "resubscribe"}),
+                        now
+                    ))
+
+            await db.commit()
+
+            # Dispatch outbound webhook event
+            await WebhookDispatcher.dispatch_event("subscriber.resubscribed", {
+                "recipient_email": email_target,
+                "reason": "user_resubscribed",
+                "timestamp": now
+            })
+
+    # AJAX / JSON API response
+    if request.headers.get("accept", "").startswith("application/json") or request.query_params.get("format") == "json":
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "success",
+                "resubscribed": True,
+                "email": email_target,
+                "timestamp": now,
+                "message": f"Successfully resubscribed {email_target}."
+            }
+        )
+
+    # Render Resubscribe Success HTML
+    display_email = email_target or "your email address"
+    company_name = settings.COMPANY_NAME or "Bitnade"
+
+    resubscribe_page = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Subscribed Again Successfully | {company_name}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 flex items-center justify-center min-h-screen p-4">
+  <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-2xl">
+    <div class="w-16 h-16 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-5 text-2xl font-bold">
+      🎉
+    </div>
+    <h1 class="text-2xl font-bold text-white mb-2">Welcome Back!</h1>
+    <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+      <strong>{display_email}</strong> has been successfully resubscribed to updates from <strong>{company_name}</strong>.
+    </p>
+    <div class="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 text-xs text-slate-400 text-left mb-6">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">Status:</span>
+        <span class="text-emerald-400 font-mono font-bold">ACTIVE (RESUBSCRIBED)</span>
+      </div>
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-slate-500">Effective:</span>
+        <span class="text-slate-300 font-mono">{now} UTC</span>
+      </div>
+      <div class="flex items-center justify-between">
+        <span class="text-slate-500">List Protection:</span>
+        <span class="text-slate-300">Removed from Suppression List</span>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500">
+      You are all set. You can close this window at any time.
+    </p>
+  </div>
+</body>
+</html>"""
+
+    return HTMLResponse(content=resubscribe_page, status_code=status.HTTP_200_OK)

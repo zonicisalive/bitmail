@@ -157,6 +157,22 @@ class TestRfc8058Unsubscribe(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn("text/html", res.headers.get("content-type", ""))
         self.assertIn("Unsubscribed Successfully", res.text)
+        self.assertIn("Subscribe Again", res.text)
+
+    def test_resubscribe_endpoint_flow(self):
+        # 1. Unsubscribe first
+        res_unsub = self.client.get("/unsubscribe/resub_test@example.com")
+        self.assertEqual(res_unsub.status_code, 200)
+
+        # 2. Resubscribe via JSON
+        res_json = self.client.post("/resubscribe/resub_test@example.com", headers={"Accept": "application/json"})
+        self.assertEqual(res_json.status_code, 200)
+        self.assertTrue(res_json.json()["resubscribed"])
+
+        # 3. Resubscribe via HTML
+        res_html = self.client.get("/resubscribe/resub_test@example.com")
+        self.assertEqual(res_html.status_code, 200)
+        self.assertIn("Welcome Back!", res_html.text)
 
 
 class TestCatchAllDetection(unittest.TestCase):
