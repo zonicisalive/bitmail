@@ -40,7 +40,7 @@ class TestSystemLogBuffer(unittest.TestCase):
                 id=f"log_{i}",
                 timestamp="2026-10-05 12:00:00",
                 level="INFO",
-                logger="nexusmail.test",
+                logger="bitmail.test",
                 source="system",
                 message=f"Message {i}"
             ))
@@ -52,9 +52,9 @@ class TestSystemLogBuffer(unittest.TestCase):
         self.assertEqual(entries[-1]["message"], "Message 3")
 
     def test_buffer_filtering_by_level_and_source(self):
-        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "nexusmail.queue", "queue", "Queue started"))
-        self.buffer.add(LogEntry("2", "2026-10-05 12:00:01", "ERROR", "nexusmail.queue", "queue", "Worker crashed"))
-        self.buffer.add(LogEntry("3", "2026-10-05 12:00:02", "WARNING", "nexusmail.scheduler", "scheduler", "Schedule delayed"))
+        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "bitmail.queue", "queue", "Queue started"))
+        self.buffer.add(LogEntry("2", "2026-10-05 12:00:01", "ERROR", "bitmail.queue", "queue", "Worker crashed"))
+        self.buffer.add(LogEntry("3", "2026-10-05 12:00:02", "WARNING", "bitmail.scheduler", "scheduler", "Schedule delayed"))
         self.buffer.add(LogEntry("4", "2026-10-05 12:00:03", "INFO", "bitmail.auth", "auth", "User login"))
 
         # Filter level=ERROR
@@ -73,10 +73,10 @@ class TestSystemLogBuffer(unittest.TestCase):
         self.assertEqual(searched[0]["source"], "auth")
 
     def test_buffer_stats(self):
-        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "nexusmail", "system", "Info 1"))
-        self.buffer.add(LogEntry("2", "2026-10-05 12:00:01", "WARNING", "nexusmail", "system", "Warn 1"))
-        self.buffer.add(LogEntry("3", "2026-10-05 12:00:02", "ERROR", "nexusmail", "system", "Err 1"))
-        self.buffer.add(LogEntry("4", "2026-10-05 12:00:03", "DEBUG", "nexusmail", "system", "Dbg 1"))
+        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "bitmail", "system", "Info 1"))
+        self.buffer.add(LogEntry("2", "2026-10-05 12:00:01", "WARNING", "bitmail", "system", "Warn 1"))
+        self.buffer.add(LogEntry("3", "2026-10-05 12:00:02", "ERROR", "bitmail", "system", "Err 1"))
+        self.buffer.add(LogEntry("4", "2026-10-05 12:00:03", "DEBUG", "bitmail", "system", "Dbg 1"))
 
         stats = self.buffer.get_stats()
         self.assertEqual(stats["total"], 4)
@@ -86,7 +86,7 @@ class TestSystemLogBuffer(unittest.TestCase):
         self.assertEqual(stats["debug"], 1)
 
     def test_buffer_clear_and_export(self):
-        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "nexusmail.system", "system", "First log"))
+        self.buffer.add(LogEntry("1", "2026-10-05 12:00:00", "INFO", "bitmail.system", "system", "First log"))
         exported = self.buffer.export_text()
         self.assertIn("First log", exported)
         self.assertIn("[INFO   ]", exported)
@@ -104,7 +104,7 @@ class TestSystemLogHandler(unittest.TestCase):
         handler = SystemLogHandler(test_buf)
         handler.setFormatter(logging.Formatter("%(message)s"))
 
-        test_logger = logging.getLogger("nexusmail.queue.test_worker")
+        test_logger = logging.getLogger("bitmail.queue.test_worker")
         test_logger.addHandler(handler)
         test_logger.setLevel(logging.INFO)
 
@@ -116,12 +116,12 @@ class TestSystemLogHandler(unittest.TestCase):
         self.assertEqual(test_entry["level"], "INFO")
 
     def test_resolve_log_source(self):
-        self.assertEqual(resolve_log_source("nexusmail.queue"), "queue")
-        self.assertEqual(resolve_log_source("nexusmail.scheduler"), "scheduler")
+        self.assertEqual(resolve_log_source("bitmail.queue"), "queue")
+        self.assertEqual(resolve_log_source("bitmail.scheduler"), "scheduler")
         self.assertEqual(resolve_log_source("bitmail.auth"), "auth")
-        self.assertEqual(resolve_log_source("nexusmail.smtp"), "smtp")
+        self.assertEqual(resolve_log_source("bitmail.smtp"), "smtp")
         self.assertEqual(resolve_log_source("mass_email.storage"), "storage")
-        self.assertEqual(resolve_log_source("nexusmail.tracking"), "tracking")
+        self.assertEqual(resolve_log_source("bitmail.tracking"), "tracking")
         self.assertEqual(resolve_log_source("other.unknown"), "system")
 
 

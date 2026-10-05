@@ -32,7 +32,7 @@ from app.storage import EmailStorageVault, storage_vault
 from app.template_engine import TemplateEngine, template_engine
 from app.websocket import emit_event
 
-logger = logging.getLogger("nexusmail.queue")
+logger = logging.getLogger("bitmail.queue")
 
 
 class AsyncTokenBucketRateLimiter:

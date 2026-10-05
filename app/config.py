@@ -131,7 +131,7 @@ class Settings(BaseModel):
     def validate_security_config(self) -> None:
         """Enforce strict secret hygiene in production and warn in development."""
         import logging
-        log = logging.getLogger("nexusmail.security")
+        log = logging.getLogger("bitmail.security")
         is_prod = (self.APP_ENV or "").strip().lower() == "production"
 
         INSECURE_SECRETS = (

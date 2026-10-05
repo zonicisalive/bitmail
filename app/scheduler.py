@@ -13,7 +13,7 @@ from app.db import get_db, utc_now_iso
 from app.queue import campaign_queue
 from app.websocket import emit_event
 
-logger = logging.getLogger("nexusmail.scheduler")
+logger = logging.getLogger("bitmail.scheduler")
 
 
 def parse_and_normalize_schedule_time(dt_input: Union[str, datetime]) -> str:

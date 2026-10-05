@@ -1,5 +1,5 @@
 """
-Real-Time WebSocket Hub and Event Dispatcher for NexusMail.
+Real-Time WebSocket Hub and Event Dispatcher for Bitmail.
 Provides persistent bi-directional communication between backend queue workers,
 storage vault events, tracking telemetry, and connected browser clients.
 """
@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, Set
 from fastapi import WebSocket
 
-logger = logging.getLogger("nexusmail.websocket")
+logger = logging.getLogger("bitmail.websocket")
 
 
 class ConnectionManager:

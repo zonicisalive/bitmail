@@ -19,7 +19,7 @@ from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.websocket import ws_manager
 
-logger = logging.getLogger("nexusmail.pages")
+logger = logging.getLogger("bitmail.pages")
 
 router = APIRouter(tags=["Dynamic Web Pages & Realtime"])
 
@@ -265,7 +265,7 @@ async def websocket_live_telemetry(websocket: WebSocket):
         # Send initial live connection handshake
         await websocket.send_text(json.dumps({
             "type": "connection_established",
-            "message": "Connected to NexusMail Live Telemetry Engine",
+            "message": "Connected to Bitmail Live Telemetry Engine",
             "active_nodes": 1
         }))
 

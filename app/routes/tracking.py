@@ -302,7 +302,7 @@ async def handle_unsubscribe(
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Unsubscribed Successfully | NexusMail</title>
+  <title>Unsubscribed Successfully | Bitmail</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 flex items-center justify-center min-h-screen p-4">
@@ -325,7 +325,7 @@ async def handle_unsubscribe(
       </div>
       <div class="flex items-center justify-between">
         <span class="text-slate-500">Relay:</span>
-        <span class="text-slate-300">NexusMail Compliance Vault</span>
+        <span class="text-slate-300">Bitmail Compliance Vault</span>
       </div>
     </div>
     <p class="text-xs text-slate-500">

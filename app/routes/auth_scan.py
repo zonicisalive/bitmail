@@ -26,7 +26,7 @@ from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.websocket import emit_event
 
-logger = logging.getLogger("nexusmail.auth_scan")
+logger = logging.getLogger("bitmail.auth_scan")
 
 router = APIRouter(prefix="/api/auth/scan", tags=["Direct Scan-to-Login"])
 
@@ -51,7 +51,7 @@ def generate_qr_svg(url: str) -> str:
 
 
 class CreateScanSessionRequest(BaseModel):
-    device_info: Optional[str] = Field(default="Desktop Browser (NexusMail)", description="Client device description")
+    device_info: Optional[str] = Field(default="Desktop Browser (Bitmail)", description="Client device description")
 
 
 class ApproveScanSessionRequest(BaseModel):

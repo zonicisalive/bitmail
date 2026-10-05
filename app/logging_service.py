@@ -221,9 +221,9 @@ def setup_logging_interceptor() -> None:
     root_logger.addHandler(handler)
 
     # Ensure key app loggers propagate to root
-    for name in ("nexusmail", "bitmail", "mass_email"):
+    for name in ("bitmail", "mass_email"):
         logger = logging.getLogger(name)
         logger.setLevel(logging.INFO)
 
     _interceptor_installed = True
-    logging.getLogger("nexusmail.system").info("System logging interceptor initialized successfully.")
+    logging.getLogger("bitmail.system").info("System logging interceptor initialized successfully.")

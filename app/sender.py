@@ -190,7 +190,7 @@ def build_mime_message(
     msg["Subject"] = subject
     msg["Date"] = email.utils.formatdate(localtime=True)
 
-    domain = sender_email.split("@")[-1] if "@" in sender_email else "nexusmail.local"
+    domain = sender_email.split("@")[-1] if "@" in sender_email else "bitmail.local"
     unique_tag = email_id or uuid.uuid4().hex[:12]
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     msg_id = f"<{unique_tag}.{timestamp}@{domain}>"
@@ -532,7 +532,7 @@ async def send_single_email(
 
         await db.execute("""
             INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
-            VALUES (?, ?, ?, 'queued', '127.0.0.1', 'NexusMail Dispatcher', ?, ?)
+            VALUES (?, ?, ?, 'queued', '127.0.0.1', 'Bitmail Dispatcher', ?, ?)
         """, (
             f"evt_{uuid.uuid4().hex[:12]}",
             email_id,
@@ -568,7 +568,7 @@ async def send_single_email(
             await db.execute("""
                 INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
                 VALUES 
-                (?, ?, ?, 'sent', '127.0.0.1', 'NexusMail Dispatcher', ?, ?),
+                (?, ?, ?, 'sent', '127.0.0.1', 'Bitmail Dispatcher', ?, ?),
                 (?, ?, ?, 'delivered', '127.0.0.1', 'Remote SMTP Relay', ?, ?)
             """, (
                 f"evt_{uuid.uuid4().hex[:12]}",
@@ -585,7 +585,7 @@ async def send_single_email(
         else:
             await db.execute("""
                 INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
-                VALUES (?, ?, ?, 'failed', '127.0.0.1', 'NexusMail Dispatcher', ?, ?)
+                VALUES (?, ?, ?, 'failed', '127.0.0.1', 'Bitmail Dispatcher', ?, ?)
             """, (
                 f"evt_{uuid.uuid4().hex[:12]}",
                 email_id,

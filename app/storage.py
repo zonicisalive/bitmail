@@ -609,7 +609,7 @@ class EmailStorageVault:
                 logger.warning("Failed to parse headers from .eml file: %s", e)
 
         # Fallback generated headers dict
-        sender_domain = record.sender_email.split("@")[-1] if "@" in record.sender_email else "nexusmail.local"
+        sender_domain = record.sender_email.split("@")[-1] if "@" in record.sender_email else "bitmail.local"
         unsub_token = f"{record.recipient_email}:{record.id}"
         unsub_url = f"{settings.TRACKING_BASE_URL.rstrip('/')}/unsubscribe/{unsub_token}"
         unsub_mailto = f"<mailto:unsubscribe+{record.id}@{sender_domain}?subject=unsubscribe>"

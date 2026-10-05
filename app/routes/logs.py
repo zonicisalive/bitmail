@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from app.logging_service import system_log_buffer
 
 router = APIRouter(prefix="/api/logs", tags=["System & Dispatch Logs"])
-logger = logging.getLogger("nexusmail.logs")
+logger = logging.getLogger("bitmail.logs")
 
 
 class TestLogPayload(BaseModel):
@@ -94,7 +94,7 @@ async def emit_test_log(payload: TestLogPayload):
     Emit a diagnostic log event to verify live capture and WebSocket streaming.
     """
     lvl = payload.level.strip().lower()
-    target_logger = logging.getLogger(f"nexusmail.{payload.source.strip().lower()}")
+    target_logger = logging.getLogger(f"bitmail.{payload.source.strip().lower()}")
 
     if lvl == "error":
         target_logger.error(payload.message)

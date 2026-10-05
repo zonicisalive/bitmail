@@ -497,7 +497,7 @@ async def test_send_campaign(campaign_id: str, payload: TestSendRequest):
         "last_name": "User",
         "name": "Test User",
         "email": payload.test_email,
-        "company": "NexusMail Preview Desk",
+        "company": "Bitmail Preview Desk",
         "plan": "Enterprise Pro",
         **payload.sample_variables
     }
