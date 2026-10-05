@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupNavigation();
     setupEventListeners();
     initCustomPlaceholders();
+    suppressUnwantedAutofill();
     
     // Check initial tab from body attribute or URL
     const initialTab = document.body.getAttribute('data-initial-tab') || 'broadcast';
@@ -117,6 +118,38 @@ document.addEventListener('DOMContentLoaded', async () => {
 function initLucide() {
     if (window.lucide) {
         window.lucide.createIcons();
+    }
+}
+
+function suppressUnwantedAutofill() {
+    try {
+        const inputs = document.querySelectorAll('input:not([name="username"]):not([name="password"]):not([type="password"]):not(#login-input-identity):not(#login-input-password)');
+        inputs.forEach(input => {
+            if (!input.hasAttribute('autocomplete') || input.getAttribute('autocomplete') === 'on') {
+                input.setAttribute('autocomplete', 'off');
+            }
+            input.setAttribute('data-lpignore', 'true');
+            input.setAttribute('data-1p-ignore', 'true');
+            input.setAttribute('data-bwignore', 'true');
+            input.setAttribute('data-form-type', 'other');
+        });
+
+        ['global-search-input', 'subscriber-search-input', 'vault-search-input', 'logs-search-input'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                if (el.getAttribute('type') !== 'search') el.setAttribute('type', 'search');
+                el.setAttribute('autocomplete', 'off');
+                el.setAttribute('autocorrect', 'off');
+                el.setAttribute('autocapitalize', 'off');
+                el.setAttribute('spellcheck', 'false');
+                el.setAttribute('data-lpignore', 'true');
+                el.setAttribute('data-1p-ignore', 'true');
+                el.setAttribute('data-bwignore', 'true');
+                el.setAttribute('data-form-type', 'other');
+            }
+        });
+    } catch (e) {
+        console.warn('Autofill suppression error:', e);
     }
 }
 
@@ -3695,6 +3728,7 @@ function openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.remove('hidden');
     initLucide();
+    suppressUnwantedAutofill();
 }
 
 function closeModal(modalId) {

@@ -162,7 +162,7 @@
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400"></i>
                     </div>
-                    <input type="text" id="global-search-input" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors">
+                    <input type="search" id="global-search-input" name="search_bitmail_global" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
                 </div>
             </div>
 
@@ -724,7 +724,7 @@
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                             <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
                         </div>
-                        <input type="text" id="vault-search-input" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all">
+                        <input type="search" id="vault-search-input" name="search_vault" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
                     </div>
                     <select id="vault-filter-status" onchange="filterVaultEmails()" class="px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
                         <option value="all">All Statuses</option>
@@ -806,7 +806,7 @@
                         <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
                             <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
                         </div>
-                        <input type="text" id="subscriber-search-input" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all">
+                        <input type="search" id="subscriber-search-input" name="search_subscribers" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
                     </div>
                     <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
                         <div class="relative flex-1 sm:flex-none flex items-center gap-1.5">
@@ -1093,7 +1093,7 @@
                             <div class="input-icon-left">
                                 <i data-lucide="search" class="w-4 h-4"></i>
                             </div>
-                            <input type="text" id="logs-search-input" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono">
+                            <input type="search" id="logs-search-input" name="search_logs" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" oninput="handleLogsFilterChange()" placeholder="Search logs, loggers, or event data..." class="w-full pl-9 pr-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden">
                         </div>
                     </div>
 
@@ -1583,7 +1583,7 @@
                             <div class="input-icon-left">
                                 <i data-lucide="user" class="w-4 h-4"></i>
                             </div>
-                            <input id="login-input-identity" type="text" required placeholder="admin@bitmail.com or admin" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                            <input id="login-input-identity" name="username" type="text" autocomplete="username" required placeholder="admin@bitmail.com or admin" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                         </div>
                     </div>
 
@@ -1595,7 +1595,7 @@
                             <div class="input-icon-left">
                                 <i data-lucide="lock" class="w-4 h-4"></i>
                             </div>
-                            <input id="login-input-password" type="password" required placeholder="••••••••" class="w-full pl-9 pr-10 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                            <input id="login-input-password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" class="w-full pl-9 pr-10 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                             <button type="button" onclick="togglePasswordVisibility('login-input-password', this)" class="input-icon-right hover:text-white cursor-pointer" title="Toggle password visibility">
                                 <i data-lucide="eye" class="w-4 h-4"></i>
                             </button>
