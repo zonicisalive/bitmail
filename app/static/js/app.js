@@ -50,8 +50,8 @@ async function safeJson(res) {
 // Global App State
 const App = {
     serverConfig: window.BITMAIL_CONFIG || {
-        defaultSenderEmail: 'contact@bitnade.com',
-        defaultSenderName: 'Bitnade'
+        defaultSenderEmail: 'zonic@bitnade.com',
+        defaultSenderName: 'Zonic'
     },
     currentTab: 'broadcast',
     currentUser: null,
@@ -123,7 +123,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (App.serverConfig && App.serverConfig.defaultSenderName) {
         const sName = document.getElementById('broadcast-sender-name');
-        if (sName && (!sName.value || sName.value === 'Bitmail' || sName.value === 'Bitmail Team')) {
+        if (sName && (!sName.value || sName.value === 'Bitmail' || sName.value === 'Bitmail Team' || sName.value === 'Bitnade')) {
             sName.value = App.serverConfig.defaultSenderName;
         }
     }
@@ -1538,6 +1538,15 @@ function updateSmtpStatusHint() {
             } else {
                 senderEmailInput.value = configuredDefault;
             }
+        }
+    }
+
+    // Auto-sync sender name if currently set to generic Bitnade or Bitmail Team
+    const senderNameInput = document.getElementById('broadcast-sender-name');
+    if (senderNameInput && App.serverConfig?.defaultSenderName) {
+        const curName = senderNameInput.value.trim();
+        if (!curName || curName === 'Bitnade' || curName === 'Bitmail Team' || curName === 'Bitmail') {
+            senderNameInput.value = App.serverConfig.defaultSenderName;
         }
     }
 

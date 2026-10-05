@@ -3054,11 +3054,13 @@
         window.BITMAIL_CONFIG = {
             defaultSenderEmail: "{{ default_sender_email or '' }}",
             defaultSenderName: "{{ default_sender_name or '' }}",
-            companyName: "{{ company_name or '' }}"
+            companyName: "{{ company_name or '' }}",
+            companyAddress: "{{ company_address or '' }}",
+            privacyPolicyUrl: "{{ privacy_policy_url or '' }}"
         };
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.5.2"></script>
+    <script src="/static/js/app.js?v=2.5.3"></script>
 </body>
 </html>

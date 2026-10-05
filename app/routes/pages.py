@@ -66,6 +66,8 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
             "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
             "default_sender_name": settings.DEFAULT_SENDER_NAME,
             "company_name": settings.COMPANY_NAME,
+            "company_address": settings.COMPANY_ADDRESS,
+            "privacy_policy_url": settings.PRIVACY_POLICY_URL,
         }
 
     try:
@@ -147,6 +149,8 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
         "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
         "default_sender_name": settings.DEFAULT_SENDER_NAME,
         "company_name": settings.COMPANY_NAME,
+        "company_address": settings.COMPANY_ADDRESS,
+        "privacy_policy_url": settings.PRIVACY_POLICY_URL,
     }
 
 
@@ -157,6 +161,8 @@ async def get_system_config():
         "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
         "default_sender_name": settings.DEFAULT_SENDER_NAME,
         "company_name": settings.COMPANY_NAME,
+        "company_address": settings.COMPANY_ADDRESS,
+        "privacy_policy_url": settings.PRIVACY_POLICY_URL,
         "app_env": settings.APP_ENV,
     }
 
