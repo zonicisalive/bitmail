@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusMail Enterprise | Production Mass Email Sender & Storage Vault</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS v4 Browser Runtime -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+        @theme {
+            --color-brand-50: #eef2ff;
+            --color-brand-100: #e0e7ff;
+            --color-brand-400: #818cf8;
+            --color-brand-500: #6366f1;
+            --color-brand-600: #4f46e5;
+            --color-brand-700: #4338ca;
+            --color-dark-bg: #0b0f19;
+            --color-dark-surface: #111827;
+            --color-dark-card: #1f2937;
+            --font-sans: 'Plus Jakarta Sans', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+    </style>
+
+    <!-- Local Compiled Tailwind CSS -->
+    <link rel="stylesheet" href="css/tailwind.min.css">
+
+    <!-- Master CSS -->
+    <link rel="stylesheet" href="css/style.css?v=2.4.5">
+
+    <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
+    <script src="js/lucide.min.js"></script>
+    <script src="js/chart.min.js"></script>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex antialiased selection:bg-indigo-500 selection:text-white">
+
+    <!-- ========================================================================== -->
+    <!-- Left Sidebar Navigation                                                    -->
+    <!-- ========================================================================== -->
+    <aside class="w-64 glass-sidebar min-h-screen flex flex-col justify-between shrink-0 fixed top-0 bottom-0 left-0 z-40">
+        <div>
+            <!-- Brand Logo -->
+            <div class="p-6 pb-4 flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-500 flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-black text-xl">
+                    <i data-lucide="send" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-extrabold text-base tracking-tight text-white">Nexus<span class="text-indigo-400">Mail</span></span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">LIVE</span>
+                    </div>
+                    <p class="text-[11px] text-slate-400 font-medium">Enterprise Email Cluster</p>
+                </div>
+            </div>
+
+            <!-- Navigation Links -->
+            <nav class="mt-4 px-3 space-y-1">
+                <!-- Send to Customers (Quick Broadcast) - Primary Action -->
+                <a href="#" data-tab="broadcast" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600/30 to-purple-600/30 border border-indigo-500/40 hover:border-indigo-500/80 transition-all shadow-sm">
+                    <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+                    <span>Send to Customers</span>
+                    <span class="ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">QUICK</span>
+                </a>
+
+                <a href="#" data-tab="dashboard" class="nav-item active flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4 text-indigo-400"></i>
+                    <span>Dashboard & KPIs</span>
+                </a>
+
+                <a href="#" data-tab="campaigns" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="rocket" class="w-4 h-4 text-blue-400"></i>
+                    <span>Mass Campaigns</span>
+                    <span id="nav-campaigns-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">--</span>
+                </a>
+
+                <a href="#" data-tab="vault" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="archive" class="w-4 h-4 text-emerald-400"></i>
+                    <span>Email Storage Vault</span>
+                    <span id="nav-vault-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">--</span>
+                </a>
+
+                <a href="#" data-tab="subscribers" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="users" class="w-4 h-4 text-cyan-400"></i>
+                    <span>Customers & Lists</span>
+                    <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">--</span>
+                </a>
+
+                <a href="#" data-tab="templates" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="palette" class="w-4 h-4 text-pink-400"></i>
+                    <span>Template Studio</span>
+                </a>
+
+                <a href="#" data-tab="smtp" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="server" class="w-4 h-4 text-amber-400"></i>
+                    <span>Mail Servers</span>
+                </a>
+
+                <a href="#" data-tab="api" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="terminal" class="w-4 h-4 text-purple-400"></i>
+                    <span>REST API & Integration</span>
+                </a>
+            </nav>
+        </div>
+
+        <!-- Sidebar Footer Status -->
+        <div class="p-4 border-t border-white/5 space-y-3">
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-white/5 space-y-2">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="text-slate-400 font-medium">Storage Vault</span>
+                    <span class="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 status-dot-pulse"></span> 100% Archiving
+                    </span>
+                </div>
+                <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full w-[100%]"></div>
+                </div>
+                <div class="flex items-center justify-between text-[11px] text-slate-500">
+                    <span id="sidebar-stored-count">0 Stored (.EML)</span>
+                    <span class="text-slate-400">RFC 5322 Compliant</span>
+                </div>
+            </div>
+
+            <!-- Profile snippet -->
+            <div class="flex items-center gap-3 pt-1">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow">
+                    EM
+                </div>
+                <div class="truncate">
+                    <div class="text-xs font-semibold text-white truncate">Enterprise Sender</div>
+                    <div class="text-[11px] text-slate-400 truncate" id="sidebar-active-relay">Active Mail Cluster</div>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========================================================================== -->
+    <!-- Main Content Area                                                          -->
+    <!-- ========================================================================== -->
+    <main class="flex-1 ml-64 flex flex-col min-h-screen">
+
+        <!-- Top Header Bar (Strict Single Row, Ultra-Modern SaaS Hierarchy) -->
+        <header class="h-16 glass-header sticky top-0 z-30 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 flex-nowrap">
+            <!-- Left: Mobile Toggle & Global Search -->
+            <div class="flex items-center gap-3 flex-1 max-w-xs sm:max-w-sm md:max-w-md min-w-0">
+                <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden p-2 rounded-lg bg-slate-800/80 text-slate-300 hover:text-white border border-slate-700/60 shrink-0" title="Toggle Navigation Menu">
+                    <i data-lucide="menu" class="w-4 h-4"></i>
+                </button>
+                <div class="relative w-full min-w-0">
+                    <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                    <input type="text" id="global-search-input" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors">
+                </div>
+            </div>
+
+            <!-- Right: Status, Secondary Actions, Primary CTA, User Profile -->
+            <div class="flex items-center gap-2.5 shrink-0 flex-nowrap">
+                <!-- Live WebSocket Connectivity Indicator -->
+                <div id="ws-status-indicator" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-800/80 border border-white/5 text-slate-400 text-xs font-medium shrink-0" title="Real-time event stream">
+                    <span id="ws-status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0"></span>
+                    <span id="ws-status-label" class="text-[11px] font-medium">Connecting</span>
+                </div>
+
+                <!-- Direct Scan Login Button (Subtle Ghost Style) -->
+                <button onclick="openScanLoginModal()" title="Scan QR to Login / Connect Mobile" class="h-8 px-2.5 rounded-lg bg-[#131c2e] hover:bg-[#1a253c] text-slate-300 hover:text-white border border-[#1f2c42] text-xs font-medium flex items-center gap-1.5 transition-all shrink-0">
+                    <i data-lucide="qr-code" class="w-3.5 h-3.5 text-blue-400"></i>
+                    <span class="hidden sm:inline">Scan Login</span>
+                </button>
+
+                <!-- Primary Action: Direct Send Message -->
+                <button onclick="switchTab('broadcast')" class="btn-dark-green h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-sm shadow-emerald-900/30">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 text-emerald-200"></i>
+                    <span>Send Message</span>
+                </button>
+
+                <!-- User Session / Admin Profile -->
+                <div id="header-user-badge" class="flex items-center gap-2 pl-3 border-l border-[#1f2c42] shrink-0">
+                    <div id="header-user-avatar" class="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white text-[11px] font-bold shadow ring-1 ring-white/10 shrink-0">
+                        AD
+                    </div>
+                    <div class="hidden md:flex flex-col text-left">
+                        <span id="header-user-label" class="text-xs font-semibold text-slate-200 leading-tight">Admin</span>
+                        <span id="header-user-sublabel" class="text-[10px] text-slate-400 leading-tight">Session Active</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Body Container -->
+        <div class="p-8 flex-1">
+
+            <!-- ========================================================================== -->
+            <!-- 0. SEND TO CUSTOMERS (QUICK MASS BROADCAST) PANEL                          -->
+            <!-- ========================================================================== -->
+            <div id="panel-broadcast" class="app-panel space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">Send Message to Customers</h1>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">Direct Dispatch</span>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Paste multiple customer emails or select your saved customer audience to dispatch personalized emails immediately with full Storage Vault archiving.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Left Column: Audience & Configuration (5 cols) -->
+                    <div class="lg:col-span-5 space-y-6">
+                        
+                        <!-- 1. Audience Selector Card -->
+                        <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="users" class="w-4 h-4 text-indigo-400"></i> Step 1: Customer Recipients
+                                </h3>
+                                <span id="broadcast-recipient-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">0 Recipients</span>
+                            </div>
+
+                            <!-- Mode Selector Tabs -->
+                            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/90 rounded-xl border border-white/5 text-xs font-semibold">
+                                <button type="button" id="tab-btn-paste-emails" onclick="setBroadcastAudienceMode('paste')" class="py-2 px-3 rounded-lg text-center bg-indigo-600 text-white transition-all">
+                                    Paste Customer Emails
+                                </button>
+                                <button type="button" id="tab-btn-list-emails" onclick="setBroadcastAudienceMode('list')" class="py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all">
+                                    Saved Customer List
+                                </button>
+                            </div>
+
+                            <!-- Input Mode A: Paste Multiple Emails -->
+                            <div id="broadcast-mode-paste" class="space-y-2">
+                                <label class="block text-xs font-medium text-slate-300">Paste Multiple Customer Emails:</label>
+                                <textarea id="broadcast-raw-emails" rows="6" oninput="updateBroadcastEmailCount()" placeholder="Enter emails separated by commas or line breaks:&#10;customer1@gmail.com&#10;&quot;Sarah Connor&quot; <sarah@cyber.com>&#10;john.doe@company.com, alex@tech.io" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
+                                <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                    <span>Supports: <code>email@domain.com</code> or <code>Name &lt;email&gt;</code></span>
+                                    <button type="button" onclick="loadSampleCustomerEmails()" class="text-indigo-400 hover:text-indigo-300 font-semibold underline">Insert Sample List</button>
+                                </div>
+                            </div>
+
+                            <!-- Input Mode B: Select Saved List -->
+                            <div id="broadcast-mode-list" class="space-y-2 hidden">
+                                <div class="flex items-center justify-between">
+                                    <label class="block text-xs font-medium text-slate-300">Choose Customer Audience:</label>
+                                    <button type="button" onclick="openCreateGroupModal()" class="text-[11px] text-purple-400 hover:text-purple-300 font-semibold flex items-center gap-1 cursor-pointer">
+                                        <i data-lucide="folder-plus" class="w-3 h-3"></i> + New Group
+                                    </button>
+                                </div>
+                                <select id="broadcast-list-select" onchange="updateBroadcastEmailCount()" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    <option value="all">⭐ All Active Customers</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- 2. Sender Profile & Mail Server Relay Card -->
+                        <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="server" class="w-4 h-4 text-amber-400"></i> Step 2: Sender & Mail Server
+                                </h3>
+                                <button type="button" onclick="switchTab('smtp')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
+                                    <i data-lucide="settings" class="w-3.5 h-3.5"></i> Manage SMTP
+                                </button>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Sender Display Name:</label>
+                                        <input type="text" id="broadcast-sender-name" value="Acme Growth Team" placeholder="e.g. Acme Support" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] font-medium text-slate-400 mb-1">Sender Email Address:</label>
+                                        <input type="email" id="broadcast-sender-email" value="support@acme.com" placeholder="e.g. support@acme.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Select Outgoing Mail Server (SMTP Relay):</label>
+                                    <select id="broadcast-smtp-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                        <!-- Loaded dynamically -->
+                                    </select>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3 pt-1">
+                                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                                        <input type="checkbox" id="broadcast-track-opens" checked class="rounded bg-slate-900 border-white/20 text-indigo-600 focus:ring-indigo-500">
+                                        <span>Track Opens (1x1 Beacon)</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                                        <input type="checkbox" id="broadcast-track-clicks" checked class="rounded bg-slate-900 border-white/20 text-indigo-600 focus:ring-indigo-500">
+                                        <span>Track Link Clicks</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Right Column: Message Composer & Live Dispatch (7 cols) -->
+                    <div class="lg:col-span-7 space-y-6">
+                        <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                            <!-- Step 3 Header -->
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                                    <i data-lucide="mail" class="w-4 h-4 text-emerald-400"></i> Step 3: Compose Email Message
+                                </h3>
+                                <button type="button" onclick="openLivePreviewModal('broadcast')" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 transition-all shadow-sm cursor-pointer">
+                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i> Live Preview
+                                </button>
+                            </div>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-300 mb-1">Subject Line:</label>
+                                    <input type="text" id="broadcast-subject" value="Important Update for {{first_name}}" placeholder="e.g. Exclusive announcement for {{first_name}}" class="w-full px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                                </div>
+
+                                <!-- Full-Width Merge Variables & Presets Toolbar -->
+                                <div class="p-2.5 rounded-xl bg-slate-900/80 border border-white/5 flex flex-wrap items-center justify-between gap-2.5">
+                                    <div class="flex items-center gap-1.5 flex-wrap">
+                                        <span class="text-[11px] font-semibold text-slate-400 mr-0.5 flex items-center gap-1">
+                                            <i data-lucide="tag" class="w-3.5 h-3.5 text-indigo-400"></i> Insert Tag:
+                                        </span>
+                                        <div id="broadcast-merge-tags" class="flex items-center gap-1.5 flex-wrap">
+                                            <button type="button" onclick="insertMergeTag('{{first_name}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{first_name}}</button>
+                                            <button type="button" onclick="insertMergeTag('{{email}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{email}}</button>
+                                            <button type="button" onclick="insertMergeTag('{{company}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{company}}</button>
+                                            <button type="button" onclick="insertMergeTag('{{unsubscribe_url}}', 'broadcast')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{unsubscribe}}</button>
+                                        </div>
+                                        <button type="button" onclick="promptAddCustomPlaceholder('broadcast')" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Add a custom placeholder (e.g. phone, city, order_id)">
+                                            <i data-lucide="plus" class="w-3 h-3"></i> Add Tag
+                                        </button>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-[11px] text-slate-400">
+                                        <span class="text-slate-500">Presets:</span>
+                                        <button type="button" onclick="loadBroadcastTemplatePreset('product')" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer">Announcement</button>
+                                        <span class="text-slate-600">•</span>
+                                        <button type="button" onclick="loadBroadcastTemplatePreset('newsletter')" class="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer">Newsletter</button>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Message Body (HTML & Merge Variables Supported):</label>
+                                    <textarea id="broadcast-html" rows="10" placeholder="<h2>Hello {{first_name}},</h2><p>We are excited to share our latest product updates with you.</p><p><a href='https://example.com/learn'>Discover What's New</a></p>" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"><div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+    <h2 style="color: #4f46e5;">Hello {{first_name}},</h2>
+    <p>We're thrilled to connect with you today! Here is an exclusive update from our team.</p>
+    <p style="background: #f8fafc; padding: 16px; border-left: 4px solid #4f46e5; border-radius: 4px;">
+        <strong>New Features Live:</strong> Your account now has access to high-speed email delivery, live open tracking, and comprehensive storage archiving.
+    </p>
+    <p>
+        <a href="https://example.com/dashboard" style="display: inline-block; padding: 10px 20px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Explore Your Account</a>
+    </p>
+    <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+        Best regards,<br>
+        <strong>The Team</strong>
+    </p>
+</div></textarea>
+                                </div>
+
+                                <!-- Sending Controls & Trigger -->
+                                <div class="pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+                                    <div class="flex items-center gap-2 flex-shrink-0">
+                                        <label class="text-xs text-slate-400 whitespace-nowrap">Speed Limit:</label>
+                                        <select id="broadcast-rate-limit" onchange="handleRateLimitChange(this)" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500">
+                                            <option value="10">10 / sec</option>
+                                            <option value="25" selected>25 / sec (Recommended)</option>
+                                            <option value="50">50 / sec</option>
+                                            <option value="100">100 / sec (High Speed)</option>
+                                            <option value="custom">Custom...</option>
+                                        </select>
+                                        <div id="broadcast-rate-limit-custom-wrap" class="hidden flex items-center gap-1.5">
+                                            <input type="number" id="broadcast-rate-limit-custom" min="1" max="1000" placeholder="75" class="w-16 px-2 py-1 bg-slate-900 border border-indigo-500/50 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-400 font-mono text-center" aria-label="Custom speed limit in emails per second">
+                                            <span class="text-xs text-slate-400">/ sec</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                                        <button type="button" onclick="sendBroadcastTestPreview()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer">
+                                            Send Test Preview
+                                        </button>
+                                        <button type="button" onclick="launchQuickBroadcast()" id="btn-launch-broadcast" class="px-5 py-2.5 rounded-xl btn-dark-green text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer">
+                                            <i data-lucide="send" class="w-4 h-4"></i>
+                                            <span>Send to All Now</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Live Dispatch Real-Time Console (Appears on Launch) -->
+                        <div id="broadcast-live-console" class="glass-panel p-6 rounded-2xl border border-emerald-500/30 space-y-4 hidden">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                                    <h4 class="text-sm font-bold text-white">Live Broadcast Execution Monitor</h4>
+                                </div>
+                                <span id="broadcast-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Sending</span>
+                            </div>
+
+                            <!-- Progress Bar -->
+                            <div class="space-y-1.5">
+                                <div class="flex justify-between text-xs font-semibold">
+                                    <span id="broadcast-progress-text" class="text-slate-300">0 / 0 dispatched (0%)</span>
+                                    <span id="broadcast-latency-text" class="text-slate-400">Vault Sync: Active</span>
+                                </div>
+                                <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-white/5">
+                                    <div id="broadcast-progress-bar" class="bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-400 h-full w-0 transition-all duration-300"></div>
+                                </div>
+                            </div>
+
+                            <!-- Real-time Console Log Terminal -->
+                            <div class="bg-slate-950/90 rounded-xl p-3 border border-white/5 max-h-48 overflow-y-auto font-mono text-[11px] text-slate-300 space-y-1" id="broadcast-log-terminal">
+                                <div class="text-slate-500">[System] Initializing async token-bucket rate limiter...</div>
+                            </div>
+
+                            <!-- Bottom Action -->
+                            <div class="flex items-center justify-between pt-2">
+                                <div class="flex items-center gap-2">
+                                    <button type="button" onclick="pauseActiveBroadcast()" id="btn-pause-broadcast" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">Pause</button>
+                                    <button type="button" onclick="cancelActiveBroadcast()" id="btn-cancel-broadcast" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-xs text-rose-300 border border-rose-500/30">Cancel</button>
+                                </div>
+                                <button type="button" onclick="switchTab('vault')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5">
+                                    <i data-lucide="archive" class="w-3.5 h-3.5"></i> View in Storage Vault
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 1. DASHBOARD PANEL                                                         -->
+            <!-- ========================================================================== -->
+            <div id="panel-dashboard" class="app-panel hidden space-y-6">
+                <!-- Welcome Banner -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Delivery Performance & Analytics</h1>
+                        <p class="text-sm text-slate-400 mt-1">Real-time throughput metrics, inbox placement health, and event dispatch feed.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400">Live Auto-Sync:</span>
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-semibold">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot-pulse"></span> Streaming
+                        </span>
+                    </div>
+                </div>
+
+                <!-- 5 KPI Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <!-- Total Sent -->
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-indigo-500/30 transition-all">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="text-xs font-medium uppercase tracking-wider">Total Sent</span>
+                            <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
+                                <i data-lucide="mail" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-bold text-white" id="kpi-total-sent">0</div>
+                            <div class="flex items-center gap-1 mt-1 text-xs text-emerald-400 font-medium">
+                                <i data-lucide="check" class="w-3.5 h-3.5"></i> Dispatched via Relay
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Delivery Rate -->
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-emerald-500/30 transition-all">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="text-xs font-medium uppercase tracking-wider">Delivery Rate</span>
+                            <div class="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-bold text-white" id="kpi-delivery-rate">100%</div>
+                            <div class="flex items-center gap-1 mt-1 text-xs text-emerald-400 font-medium">
+                                <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> Inbox Validated
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Open Rate -->
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-purple-500/30 transition-all">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="text-xs font-medium uppercase tracking-wider">Open Rate</span>
+                            <div class="p-2 rounded-lg bg-purple-500/10 text-purple-400">
+                                <i data-lucide="eye" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-bold text-white" id="kpi-open-rate">0.0%</div>
+                            <div class="flex items-center gap-1 mt-1 text-xs text-purple-400 font-medium">
+                                <i data-lucide="activity" class="w-3.5 h-3.5"></i> 1x1 Pixel Beacon
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Click Rate -->
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-blue-500/30 transition-all">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="text-xs font-medium uppercase tracking-wider">Click Rate</span>
+                            <div class="p-2 rounded-lg bg-blue-500/10 text-blue-400">
+                                <i data-lucide="mouse-pointer" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-bold text-white" id="kpi-click-rate">0.0%</div>
+                            <div class="flex items-center gap-1 mt-1 text-xs text-blue-400 font-medium">
+                                <i data-lucide="link" class="w-3.5 h-3.5"></i> Hyperlink Telemetry
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Storage Vault Retained -->
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 hover:border-cyan-500/30 transition-all">
+                        <div class="flex items-center justify-between text-slate-400">
+                            <span class="text-xs font-medium uppercase tracking-wider">Archived in Vault</span>
+                            <div class="p-2 rounded-lg bg-cyan-500/10 text-cyan-400">
+                                <i data-lucide="archive" class="w-4 h-4"></i>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <div class="text-2xl font-bold text-white" id="kpi-vault-stored">0</div>
+                            <div class="flex items-center gap-1 mt-1 text-xs text-cyan-400 font-medium">
+                                <i data-lucide="database" class="w-3.5 h-3.5"></i> Raw .EML Files
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts & Feed Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <!-- Deliverability Trends Chart (8 cols) -->
+                    <div class="lg:col-span-8 glass-panel p-6 rounded-2xl border border-white/10">
+                        <div class="flex items-center justify-between mb-4">
+                            <div>
+                                <h3 class="text-base font-bold text-white">Deliverability & Dispatch Velocity</h3>
+                                <p class="text-xs text-slate-400 mt-0.5">Sent, Delivered, Opened, and Clicked trends.</p>
+                            </div>
+                            <span class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-white/5">Last 14 Days</span>
+                        </div>
+                        <div class="h-72 w-full">
+                            <canvas id="deliverabilityChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Live Dispatch Feed (4 cols) -->
+                    <div class="lg:col-span-4 glass-panel p-6 rounded-2xl border border-white/10 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between mb-4">
+                                <h3 class="text-base font-bold text-white">Live Activity Stream</h3>
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 status-dot-pulse"></span>
+                            </div>
+                            <div id="dashboard-activity-feed" class="space-y-3 max-h-72 overflow-y-auto pr-1">
+                                <!-- Populated dynamically by app.js -->
+                            </div>
+                        </div>
+                        <div class="pt-4 mt-4 border-t border-white/5">
+                            <button onclick="switchTab('vault')" class="w-full py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-semibold text-slate-300 transition-colors flex items-center justify-center gap-2">
+                                <i data-lucide="archive" class="w-3.5 h-3.5"></i> Explore Full Storage Vault
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 2. MASS CAMPAIGNS PANEL                                                    -->
+            <!-- ========================================================================== -->
+            <div id="panel-campaigns" class="app-panel hidden space-y-6">
+                <!-- Panel Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Mass Broadcast Campaigns</h1>
+                        <p class="text-sm text-slate-400 mt-1">Manage scheduled broadcasts, monitor real-time sending queues, and inspect delivery telemetry.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="openNewCampaignModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Create Campaign
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mass action bar (hidden until rows are selected) -->
+                <div id="bulk-bar-campaigns" class="hidden glass-panel px-4 py-3 rounded-2xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between gap-3">
+                    <span class="text-xs font-semibold text-rose-200">
+                        <span id="bulk-count-campaigns">0</span> selected
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearSelection('campaigns')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Clear</button>
+                        <button onclick="bulkDeleteSelected('campaigns')" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete Selected
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Campaigns Table -->
+                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left custom-table">
+                            <thead>
+                                <tr class="bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                    <th class="py-3 px-4 w-8"><input type="checkbox" id="select-all-campaigns" class="row-select" onchange="toggleSelectAll('campaigns', this.checked)" aria-label="Select all rows"></th>
+                                    <th class="py-3 px-4">Campaign Name & Subject</th>
+                                    <th class="py-3 px-4">Recipients</th>
+                                    <th class="py-3 px-4">Status & Progress</th>
+                                    <th class="py-3 px-4">Delivery</th>
+                                    <th class="py-3 px-4">Opens / Clicks</th>
+                                    <th class="py-3 px-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="campaigns-table-body">
+                                <!-- Populated dynamically by app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 3. EMAIL STORAGE VAULT PANEL                                               -->
+            <!-- ========================================================================== -->
+            <div id="panel-vault" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-2xl font-bold text-white tracking-tight">Email Storage Vault & Archive</h1>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">100% Retained</span>
+                        </div>
+                        <p class="text-sm text-slate-400 mt-1">Every dispatched email is permanently archived as a raw RFC 5322 MIME <code>.eml</code> file and indexed database record.</p>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs font-medium text-slate-400">
+                        <span id="vault-summary-disk">Disk: 0.0 MB</span>
+                    </div>
+                </div>
+
+                <!-- Search & Filters -->
+                <div class="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-3">
+                    <div class="relative flex-1 w-full">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="vault-search-input" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-9 pr-4 py-2 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <select id="vault-filter-status" onchange="filterVaultEmails()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                        <option value="all">All Statuses</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="sent">Sent</option>
+                        <option value="simulated">Simulated (Sandbox)</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                </div>
+
+                <!-- Mass action bar (hidden until rows are selected) -->
+                <div id="bulk-bar-vault" class="hidden glass-panel px-4 py-3 rounded-2xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between gap-3">
+                    <span class="text-xs font-semibold text-rose-200">
+                        <span id="bulk-count-vault">0</span> selected
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearSelection('vault')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Clear</button>
+                        <button onclick="bulkDeleteSelected('vault')" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete Selected
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Storage Table -->
+                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left custom-table">
+                            <thead>
+                                <tr class="bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                    <th class="py-3 px-4 w-8"><input type="checkbox" id="select-all-vault" class="row-select" onchange="toggleSelectAll('vault', this.checked)" aria-label="Select all rows"></th>
+                                    <th class="py-3 px-4">Recipient</th>
+                                    <th class="py-3 px-4">Subject & Campaign</th>
+                                    <th class="py-3 px-4">Status</th>
+                                    <th class="py-3 px-4">Sent Time</th>
+                                    <th class="py-3 px-4">Engagement</th>
+                                    <th class="py-3 px-4 text-right">Inspect & EML</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vault-table-body">
+                                <!-- Populated dynamically by app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 4. CUSTOMERS & LISTS PANEL                                                 -->
+            <!-- ========================================================================== -->
+            <div id="panel-subscribers" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                    <div class="min-w-0">
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Customers & Subscriber Lists</h1>
+                        <p class="text-sm text-slate-400 mt-1">Manage customer contacts, audience lists, custom merge attributes, and bulk imports.</p>
+                    </div>
+                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
+                        <button onclick="openCreateGroupModal()" class="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 border border-purple-500/30 transition-all whitespace-nowrap cursor-pointer">
+                            <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i> + New Group
+                        </button>
+                        <button onclick="openBulkPasteModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all whitespace-nowrap">
+                            <i data-lucide="clipboard" class="w-3.5 h-3.5"></i> Paste Multiple Emails
+                        </button>
+                        <button onclick="openCsvImportModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap">
+                            <i data-lucide="file-up" class="w-3.5 h-3.5 text-indigo-400"></i> Import CSV
+                        </button>
+                        <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap">
+                            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add Single Customer
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search & Filters -->
+                <div class="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-3">
+                    <div class="relative flex-1 w-full">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="subscriber-search-input" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-9 pr-4 py-2 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <select id="subscriber-filter-list" onchange="filterSubscribers()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                        <option value="all">All Groups / Lists</option>
+                    </select>
+                    <select id="subscriber-filter-status" onchange="filterSubscribers()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                        <option value="all">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="unsubscribed">Unsubscribed</option>
+                        <option value="bounced">Bounced</option>
+                    </select>
+                </div>
+
+                <!-- Mass action bar (hidden until rows are selected) -->
+                <div id="bulk-bar-subscribers" class="hidden glass-panel px-4 py-3 rounded-2xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between gap-3">
+                    <span class="text-xs font-semibold text-rose-200">
+                        <span id="bulk-count-subscribers">0</span> selected
+                    </span>
+                    <div class="flex items-center gap-2">
+                        <button onclick="clearSelection('subscribers')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Clear</button>
+                        <button onclick="bulkDeleteSelected('subscribers')" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white flex items-center gap-1.5">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete Selected
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Subscribers Table -->
+                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left custom-table">
+                            <thead>
+                                <tr class="bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                    <th class="py-3 px-4 w-8"><input type="checkbox" id="select-all-subscribers" class="row-select" onchange="toggleSelectAll('subscribers', this.checked)" aria-label="Select all rows"></th>
+                                    <th class="py-3 px-4">Customer Email & Name</th>
+                                    <th class="py-3 px-4">Tags & Attributes</th>
+                                    <th class="py-3 px-4">Status</th>
+                                    <th class="py-3 px-4">Date Added</th>
+                                    <th class="py-3 px-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subscribers-table-body">
+                                <!-- Populated dynamically by app.js -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 5. TEMPLATE STUDIO PANEL                                                   -->
+            <!-- ========================================================================== -->
+            <div id="panel-templates" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Template Studio</h1>
+                        <p class="text-sm text-slate-400 mt-1">Design responsive email templates with dynamic merge tags and live device preview.</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="newStudioTemplate()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors">
+                            <i data-lucide="file-plus" class="w-3.5 h-3.5 text-indigo-400"></i> New Template
+                        </button>
+                        <button onclick="saveStudioTemplate()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                            <i data-lucide="save" class="w-3.5 h-3.5"></i> <span id="studio-save-label">Save Template</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Template Grid -->
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                    <div class="lg:col-span-4 space-y-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Saved Templates</h3>
+                        <div id="bulk-bar-templates" class="hidden px-3 py-2 rounded-xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between gap-2">
+                            <span class="text-[11px] font-semibold text-rose-200"><span id="bulk-count-templates">0</span> selected</span>
+                            <div class="flex items-center gap-1.5">
+                                <button onclick="clearSelection('templates')" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] text-slate-300">Clear</button>
+                                <button onclick="bulkDeleteSelected('templates')" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] font-bold text-white">Delete</button>
+                            </div>
+                        </div>
+                        <div id="template-starter-list" class="space-y-2">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-8 glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Template Name:</label>
+                            <input type="text" id="studio-tpl-name" value="Welcome Onboarding Series" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Subject Line Template:</label>
+                            <input type="text" id="studio-tpl-subject" value="Welcome {{first_name}} to NexusMail!" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <!-- Full-Width Merge Variables & Live Preview Toolbar -->
+                            <div class="p-2.5 rounded-xl bg-slate-900/80 border border-white/5 flex flex-wrap items-center justify-between gap-2.5 mb-2">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="text-[11px] font-semibold text-slate-400 mr-0.5 flex items-center gap-1">
+                                        <i data-lucide="tag" class="w-3.5 h-3.5 text-indigo-400"></i> Insert Tag:
+                                    </span>
+                                    <div id="studio-merge-tags" class="flex items-center gap-1.5 flex-wrap">
+                                        <button type="button" onclick="insertMergeTag('{{first_name}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{first_name}}</button>
+                                        <button type="button" onclick="insertMergeTag('{{email}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{email}}</button>
+                                        <button type="button" onclick="insertMergeTag('{{company}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{company}}</button>
+                                        <button type="button" onclick="insertMergeTag('{{unsubscribe_url}}', 'studio')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer">{{unsubscribe}}</button>
+                                    </div>
+                                    <button type="button" onclick="promptAddCustomPlaceholder('studio')" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer" title="Add a custom placeholder (e.g. phone, city, order_id)">
+                                        <i data-lucide="plus" class="w-3 h-3"></i> Add Tag
+                                    </button>
+                                </div>
+                                <button type="button" onclick="openLivePreviewModal('studio')" class="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 border border-indigo-500/30 transition-all shadow-sm ml-auto cursor-pointer">
+                                    <i data-lucide="eye" class="w-3.5 h-3.5"></i> Live Preview
+                                </button>
+                            </div>
+
+                            <label class="block text-xs font-medium text-slate-300 mb-1">HTML Code & Content:</label>
+                            <textarea id="studio-tpl-html" rows="12" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 6. SMTP & MAIL SERVERS PANEL                                               -->
+            <!-- ========================================================================== -->
+            <div id="panel-smtp" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Mail Servers & SMTP Relay Config</h1>
+                        <p class="text-sm text-slate-400 mt-1">Configure your real SMTP credentials (Gmail, Outlook, SendGrid, Amazon SES, or Custom SMTP server).</p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="openGmailConnectModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-500/25 transition-all">
+                            <i data-lucide="mail" class="w-3.5 h-3.5"></i> Connect Gmail Account
+                        </button>
+                        <button onclick="openAddSmtpModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Custom SMTP
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 1-Click Quick Presets Banner -->
+                <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900/80 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i> Quick Setup Mail Server Presets
+                        </span>
+                        <span class="text-[11px] text-slate-400">Click any provider to auto-fill settings</span>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                        <button type="button" onclick="presetSmtp('gmail')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
+                            <div class="text-xs font-bold text-white">Gmail / Workspace</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">smtp.gmail.com:587</div>
+                        </button>
+                        <button type="button" onclick="presetSmtp('outlook')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
+                            <div class="text-xs font-bold text-white">Microsoft 365</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">smtp.office365.com:587</div>
+                        </button>
+                        <button type="button" onclick="presetSmtp('sendgrid')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
+                            <div class="text-xs font-bold text-white">SendGrid</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">smtp.sendgrid.net:587</div>
+                        </button>
+                        <button type="button" onclick="presetSmtp('ses')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
+                            <div class="text-xs font-bold text-white">Amazon SES</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">email-smtp.us-east-1</div>
+                        </button>
+                        <button type="button" onclick="presetSmtp('brevo')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-white/10 text-left transition-all hover:border-indigo-500/50">
+                            <div class="text-xs font-bold text-white">Brevo (Sendinblue)</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">smtp-relay.brevo.com</div>
+                        </button>
+                        <button type="button" onclick="presetSmtp('sandbox')" class="p-3 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/30 text-left transition-all hover:border-emerald-500">
+                            <div class="text-xs font-bold text-emerald-400">Sandbox Test Mode</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5">Zero-config simulation</div>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SMTP Profiles List -->
+                <div id="smtp-profiles-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- ========================================================================== -->
+            <!-- 7. API & TRANSACTIONAL PANEL                                               -->
+            <!-- ========================================================================== -->
+            <div id="panel-api" class="app-panel hidden space-y-6">
+                <!-- Header -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Transactional REST API Integration</h1>
+                        <p class="text-sm text-slate-400 mt-1">Integrate instant transactional delivery and mass broadcast dispatches into your code.</p>
+                    </div>
+                </div>
+
+                <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
+                    <h3 class="text-sm font-bold text-white">Send Transactional Email via cURL / Python</h3>
+                    <div class="bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-xs text-indigo-300 overflow-x-auto leading-relaxed">
+curl -X POST http://localhost:8000/api/v1/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipient_email": "customer@company.com",
+    "recipient_name": "Customer Name",
+    "subject": "Your Order Confirmation #{{order_id}}",
+    "body_html": "<p>Hello {{name}}, your order <strong>#{{order_id}}</strong> is ready.</p>",
+    "merge_variables": { "order_id": "ORD-12345", "name": "Customer Name" },
+    "track_opens": true,
+    "track_clicks": true
+  }'
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- ========================================================================== -->
+    <!-- MODALS                                                                     -->
+    <!-- ========================================================================== -->
+
+    <!-- Modal 1: Add Multiple Customer Emails (Bulk Paste) -->
+    <div id="modal-bulk-paste" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl bg-amber-500/20 text-amber-300">
+                        <i data-lucide="clipboard" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-white">Add Multiple Customer Emails</h3>
+                </div>
+                <button onclick="closeModal('modal-bulk-paste')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-400">Paste your customer emails below. Supports any delimiter (commas, line breaks, semicolons) and standard formats like <code>name &lt;email&gt;</code>.</p>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Emails List:</label>
+                    <textarea id="modal-bulk-emails-text" rows="8" placeholder="alex@gmail.com&#10;&quot;Sarah Jenkins&quot; <sarah@corp.com>&#10;michael.scott@dundermifflin.com, dwight@beetfarm.org" class="w-full px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Tags (optional):</label>
+                    <input type="text" id="modal-bulk-tags" placeholder="e.g. leads, vip-customers, march-2026" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
+                <button onclick="closeModal('modal-bulk-paste')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                <button onclick="submitBulkCustomerEmails()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Import & Save Customers</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Add Single Customer -->
+    <div id="modal-add-subscriber" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h3 id="modal-sub-title" class="text-base font-bold text-white">Add Customer Contact</h3>
+                <button onclick="closeModal('modal-add-subscriber')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Email Address *</label>
+                    <input type="email" id="modal-sub-email" placeholder="customer@domain.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">First Name</label>
+                        <input type="text" id="modal-sub-first-name" placeholder="First Name" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Last Name</label>
+                        <input type="text" id="modal-sub-last-name" placeholder="Last Name" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Status</label>
+                    <select id="modal-sub-status" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="active">Active</option>
+                        <option value="unsubscribed">Unsubscribed</option>
+                        <option value="bounced">Bounced</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Group / List (Optional)</label>
+                    <select id="modal-sub-list-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">No specific group</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
+                <button onclick="closeModal('modal-add-subscriber')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Customer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2b: CSV Import -->
+    <div id="modal-csv-import" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-white">Import Customers from CSV</h3>
+                <button onclick="closeModal('modal-csv-import')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">CSV File *</label>
+                    <input type="file" id="modal-csv-file" accept=".csv,text/csv" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-xs file:font-semibold">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Target Customer Group / List (Optional)</label>
+                    <select id="modal-csv-list-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">All Customers (No specific group)</option>
+                    </select>
+                </div>
+                <p class="text-[11px] text-slate-500 leading-relaxed">
+                    Email, first name, last name, and arbitrary custom fields (e.g. company, phone, order_id) are automatically detected and saved.
+                    Existing customers matched by email are updated rather than duplicated.
+                </p>
+            </div>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
+                <button onclick="closeModal('modal-csv-import')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                <button onclick="submitCsvImport()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Upload & Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 3: Add / Edit SMTP Relay Server -->
+    <div id="modal-add-smtp" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <h3 id="modal-smtp-title" class="text-base font-bold text-white">Configure Mail Server (SMTP Relay)</h3>
+                <button onclick="closeModal('modal-add-smtp')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Profile Name</label>
+                    <input type="text" id="modal-smtp-name" placeholder="e.g. Gmail Production / SendGrid" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="col-span-2">
+                        <label class="block text-xs font-medium text-slate-300 mb-1">SMTP Host</label>
+                        <input type="text" id="modal-smtp-host" placeholder="smtp.gmail.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Port</label>
+                        <input type="number" id="modal-smtp-port" value="587" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Username / Email</label>
+                        <input type="text" id="modal-smtp-user" placeholder="your-email@gmail.com" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Password / App Password</label>
+                        <input type="password" id="modal-smtp-pass" placeholder="••••••••••••" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-4 pt-1">
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="modal-smtp-tls" checked class="rounded bg-slate-900 text-indigo-600">
+                        <span>Use STARTTLS (Port 587)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="modal-smtp-ssl" class="rounded bg-slate-900 text-indigo-600">
+                        <span>Use SSL (Port 465)</span>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="modal-smtp-default" checked class="rounded bg-slate-900 text-indigo-600">
+                        <span>Set Default</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                <button type="button" onclick="testModalSmtpConnection()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <i data-lucide="activity" class="w-3.5 h-3.5"></i> Test Connection
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="closeModal('modal-add-smtp')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                    <button id="btn-smtp-submit" onclick="submitAddSmtpProfile()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Mail Server</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 4: Stored Email Vault Inspector Drawer -->
+    <div id="modal-email-detail" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-4xl max-h-[90vh] rounded-2xl border border-white/10 p-6 flex flex-col shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between pb-4 border-b border-white/10">
+                <div>
+                    <h3 class="text-base font-bold text-white" id="vault-modal-subject">Email Subject</h3>
+                    <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-3">
+                        <span id="vault-modal-recipient">To: customer@domain.com</span>
+                        <span>•</span>
+                        <span id="vault-modal-sent-at">Sent: --</span>
+                        <span>•</span>
+                        <span id="vault-modal-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300">Delivered</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="vault-modal-download-eml" class="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i> Download .EML
+                    </button>
+                    <button onclick="closeModal('modal-email-detail')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+
+            <!-- Modal Tabs -->
+            <div class="flex items-center gap-4 mt-3 border-b border-white/5 text-xs font-semibold">
+                <button type="button" onclick="setVaultModalTab('preview')" id="tab-btn-vault-preview" class="pb-2 text-indigo-400 border-b-2 border-indigo-500">Live HTML Preview</button>
+                <button type="button" onclick="setVaultModalTab('headers')" id="tab-btn-vault-headers" class="pb-2 text-slate-400 hover:text-slate-200">Raw RFC Headers</button>
+                <button type="button" onclick="setVaultModalTab('metadata')" id="tab-btn-vault-metadata" class="pb-2 text-slate-400 hover:text-slate-200">Merge Variables Context</button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="flex-1 overflow-y-auto mt-4">
+                <div id="vault-content-preview" class="h-96 rounded-xl overflow-hidden border border-white/10 bg-white">
+                    <iframe id="vault-preview-iframe" class="w-full h-full border-0"></iframe>
+                </div>
+                <div id="vault-content-headers" class="hidden bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-xs text-slate-300 whitespace-pre-wrap"></div>
+                <div id="vault-content-metadata" class="hidden bg-slate-950 p-4 rounded-xl border border-white/5 font-mono text-xs text-indigo-300 whitespace-pre-wrap"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 5: Connect Gmail Account Wizard -->
+    <div id="modal-gmail-connect" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+        <div class="glass-panel w-full max-w-lg rounded-2xl border border-red-500/30 p-6 space-y-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl bg-red-500/20 text-red-300">
+                        <i data-lucide="mail" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">Connect Gmail / Google Workspace</h3>
+                        <p class="text-[11px] text-slate-400">Direct SMTP relay integration via Google App Password</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('modal-gmail-connect')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <!-- How to generate Google App Password Tutorial Box -->
+            <div class="p-3.5 rounded-xl bg-slate-900 border border-white/10 text-xs space-y-2 text-slate-300">
+                <div class="font-bold text-amber-300 flex items-center gap-1.5">
+                    <i data-lucide="key" class="w-3.5 h-3.5"></i> How to get your 16-character Google App Password:
+                </div>
+                <ol class="list-decimal pl-4 space-y-1 text-[11px] text-slate-400">
+                    <li>Open your Google Account: <a href="https://myaccount.google.com/apppasswords" target="_blank" class="text-indigo-400 font-semibold underline hover:text-indigo-300">myaccount.google.com/apppasswords ↗</a></li>
+                    <li>Ensure <strong>2-Step Verification</strong> is ON.</li>
+                    <li>Enter App name <code>NexusMail</code> and click <strong>Create</strong>.</li>
+                    <li>Copy the 16-letter password (e.g. <code>abcd efgh ijkl mnop</code>) and paste below.</li>
+                </ol>
+            </div>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Your Gmail or Workspace Email Address *</label>
+                    <input type="email" id="gmail-email-input" placeholder="youremail@gmail.com" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">16-Character Google App Password *</label>
+                    <input type="text" id="gmail-app-password-input" placeholder="abcd efgh ijkl mnop" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-red-500">
+                    <p class="text-[10px] text-slate-500 mt-1">Spaces are automatically removed for you.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Sender Display Name (optional)</label>
+                    <input type="text" id="gmail-sender-name-input" placeholder="e.g. Acme Support / Your Name" class="w-full px-3.5 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-red-500">
+                </div>
+
+                <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+                    <input type="checkbox" id="gmail-set-default" checked class="rounded bg-slate-900 text-red-600 focus:ring-red-500">
+                    <span>Set Gmail as Default Outgoing Mail Relay</span>
+                </label>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-white/5">
+                <button onclick="closeModal('modal-gmail-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
+                <button onclick="submitGmailConnect()" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-xs font-bold text-white shadow-lg shadow-red-500/25 flex items-center gap-1.5 transition-all">
+                    <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+                    <span>Connect & Verify Gmail</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Create Customer Group -->
+    <div id="modal-create-group" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Create Customer Group</h3>
+                        <p class="text-[11px] text-slate-400">Organize contacts into targeted segments and lists</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeModal('modal-create-group')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleCreateGroupSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Group / List Name <span class="text-rose-400">*</span></label>
+                    <input type="text" id="new-group-name" required placeholder="e.g. VIP Enterprise Customers" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
+                    <textarea id="new-group-desc" rows="3" placeholder="Target audience notes, campaign category, or segmentation criteria..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"></textarea>
+                </div>
+
+                <div class="pt-3 border-t border-white/5 flex items-center justify-end gap-2.5">
+                    <button type="button" onclick="closeModal('modal-create-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" id="btn-create-group-submit" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all">
+                        <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i>
+                        <span>Create Group</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Live Email Preview & Responsive Device Inspector -->
+    <div id="modal-live-preview" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden">
+        <div class="glass-panel w-full max-w-4xl h-[90vh] max-h-[90vh] rounded-2xl border border-white/10 flex flex-col shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-4 sm:px-6 py-3.5 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2 truncate">
+                            <span>Live Email Preview</span>
+                            <span id="preview-source-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 uppercase tracking-wider">Broadcast</span>
+                        </h3>
+                        <div class="text-[11px] text-slate-400 truncate" id="preview-meta-line">
+                            Subject: <span id="preview-subject-text" class="text-slate-200 font-semibold">Important Update</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Device Controls & Actions -->
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex items-center bg-slate-900 border border-white/10 rounded-lg p-0.5">
+                        <button type="button" onclick="setPreviewDevice('desktop')" id="preview-btn-desktop" class="px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-white flex items-center gap-1 transition-all" title="Desktop Email View (640px)">
+                            <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
+                            <span class="hidden sm:inline">Desktop</span>
+                        </button>
+                        <button type="button" onclick="setPreviewDevice('mobile')" id="preview-btn-mobile" class="px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-all" title="Mobile Phone View (375px)">
+                            <i data-lucide="smartphone" class="w-3.5 h-3.5"></i>
+                            <span class="hidden sm:inline">Mobile</span>
+                        </button>
+                        <button type="button" onclick="setPreviewDevice('full')" id="preview-btn-full" class="px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-all" title="Full Width View">
+                            <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+
+                    <button type="button" onclick="refreshLivePreview()" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-white/10 transition-colors" title="Refresh Live Preview">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                    </button>
+
+                    <button type="button" onclick="closeModal('modal-live-preview')" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="Close Preview">
+                        <i data-lucide="x" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Subject Preview Banner -->
+            <div class="px-6 py-2 bg-slate-950/70 border-b border-white/5 flex items-center justify-between text-xs text-slate-300 shrink-0">
+                <div class="flex items-center gap-2 truncate">
+                    <span class="text-slate-500 font-medium">To:</span>
+                    <span class="font-mono text-indigo-300 text-[11px] truncate">Alexandra Chen &lt;alexandra.chen@bitnade.com&gt;</span>
+                </div>
+                <div class="text-[11px] text-slate-400 shrink-0 hidden sm:block">
+                    Sample Data Active • <span class="text-emerald-400 font-medium">All Tags Resolved</span>
+                </div>
+            </div>
+
+            <!-- Preview IFrame Frame Container -->
+            <div class="flex-1 overflow-auto bg-slate-950/90 p-4 flex justify-center items-start">
+                <div id="preview-viewport-wrapper" class="w-full max-w-[640px] h-full bg-white rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-200">
+                    <iframe id="live-preview-iframe" class="w-full h-full border-0 bg-white" title="Email Live Preview Frame"></iframe>
+                </div>
+            </div>
+
+            <!-- Preview Footer -->
+            <div class="px-6 py-2.5 bg-slate-900 border-t border-white/5 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+                <div class="truncate">
+                    <span>Active Tags: </span>
+                    <span id="preview-detected-tags" class="text-slate-300 font-mono">first_name, email, company, unsubscribe_url</span>
+                </div>
+                <button type="button" onclick="closeModal('modal-live-preview')" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold border border-white/10 transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
+
+    <!-- Application Core Script -->
+    <script src="js/app.js?v=2.4.4"></script>
+</body>
+</html>

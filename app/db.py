@@ -1,0 +1,412 @@
+"""
+Database module for the Enterprise Mass Email System.
+Provides asynchronous SQLite connection management, schema initialization,
+WAL configuration, performance pragmas, and database helper methods.
+"""
+
+import json
+import os
+import uuid
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+import aiosqlite
+
+from app.config import settings
+
+
+def utc_now_iso() -> str:
+    """Return current UTC timestamp in ISO 8601 format."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+@asynccontextmanager
+async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+    """
+    Asynchronous context manager for SQLite database connection.
+    Configures WAL mode, busy timeout, memory map, and row factory.
+    """
+    settings.ensure_directories()
+    conn = await aiosqlite.connect(str(settings.DATABASE_PATH))
+    conn.row_factory = aiosqlite.Row
+
+    await conn.execute("PRAGMA journal_mode=WAL;")
+    await conn.execute("PRAGMA synchronous=NORMAL;")
+    await conn.execute(f"PRAGMA busy_timeout={settings.SQLITE_BUSY_TIMEOUT_MS};")
+    await conn.execute(f"PRAGMA cache_size={settings.SQLITE_CACHE_SIZE_KB};")
+    await conn.execute(f"PRAGMA mmap_size={settings.SQLITE_MMAP_SIZE_BYTES};")
+    await conn.execute("PRAGMA foreign_keys=ON;")
+
+    try:
+        yield conn
+    finally:
+        await conn.close()
+
+
+async def init_db() -> None:
+    """
+    Initialize SQLite database schema, create tables, views, and indexes.
+    Seeds default configurations if the database is newly initialized.
+    """
+    settings.ensure_directories()
+
+    async with get_db() as db:
+        # 1. Subscribers Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscribers (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                first_name TEXT,
+                last_name TEXT,
+                tags TEXT DEFAULT '[]',
+                custom_fields TEXT DEFAULT '{}',
+                status TEXT DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # Migration: Add tags column if table existed from previous version
+        try:
+            await db.execute("ALTER TABLE subscribers ADD COLUMN tags TEXT DEFAULT '[]'")
+        except Exception:
+            pass
+
+        # 2. Subscriber Lists Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriber_lists (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 3. Subscriber List Memberships Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS subscriber_list_memberships (
+                subscriber_id TEXT NOT NULL,
+                list_id TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                PRIMARY KEY (subscriber_id, list_id),
+                FOREIGN KEY (subscriber_id) REFERENCES subscribers(id) ON DELETE CASCADE,
+                FOREIGN KEY (list_id) REFERENCES subscriber_lists(id) ON DELETE CASCADE
+            );
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS list_subscribers (
+                list_id TEXT NOT NULL REFERENCES subscriber_lists(id) ON DELETE CASCADE,
+                subscriber_id TEXT NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE,
+                status TEXT NOT NULL DEFAULT 'active',
+                subscribed_at TEXT NOT NULL,
+                PRIMARY KEY (list_id, subscriber_id)
+            );
+        """)
+
+        # 8b. Storage Audit Events Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_storage_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                event_timestamp TEXT,
+                event_time TEXT,
+                event_data_json TEXT DEFAULT '{}',
+                details_json TEXT DEFAULT '{}',
+                ip_address TEXT,
+                user_agent TEXT,
+                FOREIGN KEY (email_storage_id) REFERENCES sent_emails(id) ON DELETE CASCADE
+            );
+        """)
+
+        # 4. Templates Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS templates (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                subject TEXT NOT NULL,
+                body_html TEXT NOT NULL,
+                body_text TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 5. SMTP Configurations Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS smtp_configs (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL DEFAULT 587,
+                username TEXT,
+                password TEXT,
+                use_tls INTEGER NOT NULL DEFAULT 1,
+                use_ssl INTEGER NOT NULL DEFAULT 0,
+                rate_limit_per_second INTEGER NOT NULL DEFAULT 25,
+                daily_quota INTEGER NOT NULL DEFAULT 50000,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 6. Campaigns Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS campaigns (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                template_id TEXT REFERENCES templates(id) ON DELETE SET NULL,
+                list_id TEXT REFERENCES subscriber_lists(id) ON DELETE SET NULL,
+                smtp_config_id TEXT REFERENCES smtp_configs(id) ON DELETE SET NULL,
+                smtp_config_json TEXT,
+                template_html TEXT,
+                template_text TEXT,
+                sender_name TEXT NOT NULL,
+                sender_email TEXT NOT NULL,
+                reply_to TEXT,
+                headers TEXT DEFAULT '{}',
+                track_opens INTEGER NOT NULL DEFAULT 1,
+                track_clicks INTEGER NOT NULL DEFAULT 1,
+                custom_html TEXT,
+                custom_text TEXT,
+                status TEXT NOT NULL DEFAULT 'draft',
+                scheduled_at TEXT,
+                started_at TEXT,
+                completed_at TEXT,
+                total_recipients INTEGER NOT NULL DEFAULT 0,
+                sent_count INTEGER NOT NULL DEFAULT 0,
+                delivered_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                open_count INTEGER NOT NULL DEFAULT 0,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                unsubscribe_count INTEGER NOT NULL DEFAULT 0,
+                unsubscribed_count INTEGER NOT NULL DEFAULT 0,
+                bounce_count INTEGER NOT NULL DEFAULT 0,
+                rate_limit_per_sec INTEGER NOT NULL DEFAULT 25,
+                concurrency_limit INTEGER NOT NULL DEFAULT 10,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 7. Sent Emails Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sent_emails (
+                id TEXT PRIMARY KEY,
+                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+                subscriber_id TEXT,
+                recipient_email TEXT NOT NULL COLLATE NOCASE,
+                recipient_name TEXT,
+                sender_email TEXT NOT NULL,
+                sender_name TEXT,
+                subject TEXT NOT NULL,
+                body_html TEXT,
+                body_text TEXT,
+                rendered_html TEXT,
+                headers TEXT DEFAULT '{}',
+                headers_json TEXT DEFAULT '{}',
+                raw_headers_json TEXT DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'queued',
+                error_message TEXT,
+                message_id TEXT,
+                smtp_host TEXT,
+                smtp_port INTEGER,
+                is_sandbox INTEGER DEFAULT 0,
+                delivery_latency_ms REAL,
+                open_count INTEGER NOT NULL DEFAULT 0,
+                click_count INTEGER NOT NULL DEFAULT 0,
+                first_opened_at TEXT,
+                last_opened_at TEXT,
+                opened_at TEXT,
+                clicked_at TEXT,
+                raw_eml_path TEXT,
+                eml_file_path TEXT,
+                eml_size_bytes INTEGER DEFAULT 0,
+                metadata TEXT DEFAULT '{}',
+                metadata_json TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                sent_at TEXT
+            );
+        """)
+
+        # 8. Email Events Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS email_events (
+                id TEXT PRIMARY KEY,
+                sent_email_id TEXT NOT NULL REFERENCES sent_emails(id) ON DELETE CASCADE,
+                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+                event_type TEXT NOT NULL,
+                ip_address TEXT,
+                user_agent TEXT,
+                event_payload TEXT DEFAULT '{}',
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        # 8b. Storage Audit Events Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS audit_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_storage_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                event_timestamp TEXT NOT NULL DEFAULT '',
+                event_time TEXT DEFAULT '',
+                event_data_json TEXT NOT NULL DEFAULT '{}',
+                details_json TEXT DEFAULT '{}',
+                ip_address TEXT,
+                user_agent TEXT,
+                FOREIGN KEY (email_storage_id) REFERENCES sent_emails(id) ON DELETE CASCADE
+            );
+        """)
+
+        # 8c. Campaign Recipients Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS campaign_recipients (
+                id TEXT PRIMARY KEY,
+                campaign_id TEXT NOT NULL,
+                email TEXT NOT NULL,
+                first_name TEXT,
+                last_name TEXT,
+                custom_attributes_json TEXT DEFAULT '{}',
+                status TEXT NOT NULL DEFAULT 'pending',
+                sent_email_id TEXT,
+                error_message TEXT,
+                dispatched_at TEXT,
+                FOREIGN KEY(campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+            );
+        """)
+
+        # 8d. Tracking Opens Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tracking_opens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_storage_id TEXT NOT NULL,
+                ip_address TEXT,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(email_storage_id) REFERENCES sent_emails(id) ON DELETE CASCADE
+            );
+        """)
+
+        # 8e. Tracking Clicks Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS tracking_clicks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email_storage_id TEXT NOT NULL,
+                original_url TEXT NOT NULL,
+                ip_address TEXT,
+                user_agent TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(email_storage_id) REFERENCES sent_emails(id) ON DELETE CASCADE
+            );
+        """)
+
+        # 8f. Unsubscribes Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS unsubscribes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                campaign_id TEXT,
+                email_storage_id TEXT,
+                reason TEXT,
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        # 9. Suppressions Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS suppressions (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+                reason TEXT NOT NULL DEFAULT 'user_unsubscribed',
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS suppression_list (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+                reason TEXT NOT NULL DEFAULT 'user_unsubscribed',
+                created_at TEXT NOT NULL
+            );
+        """)
+
+        # 10. Direct QR Scan Authentication Sessions Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS scan_sessions (
+                id TEXT PRIMARY KEY,
+                token TEXT UNIQUE NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                user_email TEXT,
+                user_name TEXT,
+                device_info TEXT,
+                ip_address TEXT,
+                auth_token TEXT,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # Migration helper to ensure columns exist in existing SQLite databases
+        async def add_column_if_missing(table_name: str, col_name: str, col_type: str):
+            try:
+                async with db.execute(f"PRAGMA table_info({table_name})") as cur:
+                    cols = [row["name"] for row in await cur.fetchall()]
+                    if col_name not in cols:
+                        await db.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type};")
+            except Exception:
+                pass
+
+        await add_column_if_missing("sent_emails", "subscriber_id", "TEXT")
+        await add_column_if_missing("sent_emails", "rendered_html", "TEXT")
+        await add_column_if_missing("sent_emails", "raw_headers_json", "TEXT DEFAULT '{}'")
+        await add_column_if_missing("sent_emails", "headers_json", "TEXT DEFAULT '{}'")
+        await add_column_if_missing("sent_emails", "headers", "TEXT DEFAULT '{}'")
+        await add_column_if_missing("sent_emails", "smtp_host", "TEXT")
+        await add_column_if_missing("sent_emails", "smtp_port", "INTEGER")
+        await add_column_if_missing("sent_emails", "is_sandbox", "INTEGER DEFAULT 0")
+        await add_column_if_missing("sent_emails", "delivery_latency_ms", "REAL")
+        await add_column_if_missing("sent_emails", "opened_at", "TEXT")
+        await add_column_if_missing("sent_emails", "clicked_at", "TEXT")
+        await add_column_if_missing("sent_emails", "eml_file_path", "TEXT")
+        await add_column_if_missing("sent_emails", "eml_size_bytes", "INTEGER DEFAULT 0")
+        await add_column_if_missing("sent_emails", "metadata_json", "TEXT DEFAULT '{}'")
+
+
+        await add_column_if_missing("campaigns", "template_html", "TEXT")
+        await add_column_if_missing("campaigns", "template_text", "TEXT")
+        await add_column_if_missing("campaigns", "smtp_config_json", "TEXT")
+        await add_column_if_missing("campaigns", "unsubscribed_count", "INTEGER DEFAULT 0")
+        await add_column_if_missing("campaigns", "rate_limit_per_sec", "INTEGER DEFAULT 25")
+        await add_column_if_missing("campaigns", "concurrency_limit", "INTEGER DEFAULT 10")
+
+        # Indexes
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_status ON subscribers(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_memberships_list ON subscriber_list_memberships(list_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_memberships_sub ON subscriber_list_memberships(subscriber_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_sent_emails_campaign ON sent_emails(campaign_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_sent_emails_recipient ON sent_emails(recipient_email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_sent_emails_status ON sent_emails(status);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_sent_emails_created ON sent_emails(created_at);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_email ON email_events(sent_email_id);")
+
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_campaign ON email_events(campaign_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_type ON email_events(event_type);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_created ON email_events(created_at);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_suppressions_email ON suppressions(email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_suppression_list_email ON suppression_list(email);")
+
+        await db.commit()

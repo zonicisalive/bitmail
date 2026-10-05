@@ -1,0 +1,3190 @@
+/**
+ * ==========================================================================
+ * Bitmail Enterprise - Production Core Application
+ * High-Throughput Mass Email Sender & Storage Vault
+ * ==========================================================================
+ */
+
+// Safe JSON response parser that handles plain text / non-JSON error responses gracefully
+async function safeJson(res) {
+    const text = await res.text();
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        return { detail: text || res.statusText || 'Server communication error', success: false };
+    }
+}
+
+// Global App State
+const App = {
+    currentTab: 'broadcast',
+    stats: {
+        totalSent: 0,
+        attempted: 0,
+        failed: 0,
+        deliveryRate: 0,
+        openRate: 0,
+        clickRate: 0,
+        activeSubscribers: 0,
+        suppressed: 0,
+        vaultStored: 0,
+        relay: { configured: false }
+    },
+    campaigns: [],
+    vaultEmails: [],
+    subscribers: [],
+    lists: [],
+    templates: [],
+    smtpConfigs: [],
+    activeBroadcast: null,
+    broadcastPollInterval: null,
+    audienceMode: 'paste',
+    chartInstance: null,
+    ws: null,
+    wsReconnectTimeout: null,
+    // Checkbox selections per table, keyed by BULK_KINDS name.
+    selected: {},
+    // Non-null while an edit modal is open; switches submit handlers to PUT.
+    editing: { subscriber: null, smtp: null, template: null },
+    customPlaceholders: [],
+    lastFocusedInput: null,
+    previewSource: 'broadcast'
+};
+
+// ==========================================================================
+// Initialization & Lifecycle
+// ==========================================================================
+document.addEventListener('DOMContentLoaded', async () => {
+    initLucide();
+    setupNavigation();
+    setupEventListeners();
+    initWebSocket();
+    initCustomPlaceholders();
+    
+    // Check initial tab from body attribute or URL
+    const initialTab = document.body.getAttribute('data-initial-tab') || 'broadcast';
+    switchTab(initialTab, false);
+
+    // Load initial live dataset
+    await refreshAllData();
+});
+
+function initLucide() {
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
+}
+
+// ==========================================================================
+// Real-Time WebSocket Dynamic Live Streaming
+// ==========================================================================
+
+// The dashboard badge must report the socket we actually have, not a fixed
+// "Streaming" label that stays green through an outage.
+const STREAM_STATES = {
+    live: ['bg-emerald-400', 'Live', 'text-emerald-400'],
+    reconnecting: ['bg-amber-400', 'Reconnecting', 'text-amber-400'],
+    connecting: ['bg-slate-500', 'Connecting', 'text-slate-400'],
+};
+
+function setStreamState(state) {
+    const [dotClass, text, textClass] = STREAM_STATES[state] || STREAM_STATES.connecting;
+    const dot = document.getElementById('ws-dot') || document.getElementById('ws-status-dot');
+    const lbl = document.getElementById('ws-label') || document.getElementById('ws-status-label');
+    if (dot) dot.className = `w-1.5 h-1.5 rounded-full ${dotClass}${state === 'live' ? ' status-dot-pulse' : ''} shrink-0`;
+    if (lbl) {
+        lbl.textContent = text;
+        lbl.className = `text-[11px] font-medium ${textClass}`;
+    }
+}
+
+function initWebSocket() {
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws/live`;
+
+    const indicator = document.getElementById('ws-status-indicator');
+    const label = document.getElementById('ws-status-label');
+
+    try {
+        App.ws = new WebSocket(wsUrl);
+
+        App.ws.onopen = () => {
+            console.log('[WebSocket] Live stream connected to Bitmail backend');
+            if (indicator) {
+                indicator.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium shrink-0";
+            }
+            const dot = document.getElementById('ws-status-dot');
+            if (dot) dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 status-dot-pulse shrink-0";
+            if (label) {
+                label.innerHTML = 'Live';
+                label.className = "text-[11px] font-medium text-emerald-400";
+            }
+            setStreamState('live');
+        };
+
+        App.ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                handleWebSocketEvent(message);
+            } catch (err) {
+                console.error('[WebSocket] Failed to parse message:', err);
+            }
+        };
+
+        App.ws.onclose = () => {
+            console.warn('[WebSocket] Live stream closed. Reconnecting in 3s...');
+            if (indicator) {
+                indicator.className = "flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium shrink-0";
+            }
+            const dot = document.getElementById('ws-status-dot');
+            if (dot) dot.className = "w-1.5 h-1.5 rounded-full bg-amber-400 status-dot-pulse shrink-0";
+            if (label) {
+                label.innerHTML = 'Reconnecting';
+                label.className = "text-[11px] font-medium text-amber-400";
+            }
+            setStreamState('reconnecting');
+            clearTimeout(App.wsReconnectTimeout);
+            App.wsReconnectTimeout = setTimeout(initWebSocket, 3000);
+        };
+
+        App.ws.onerror = (err) => {
+            console.error('[WebSocket] Error:', err);
+            App.ws.close();
+        };
+
+        // Send periodic heartbeat ping
+        if (!window.__wsPingInterval) {
+            window.__wsPingInterval = setInterval(() => {
+                if (App.ws && App.ws.readyState === WebSocket.OPEN) {
+                    App.ws.send(JSON.stringify({ action: 'ping' }));
+                }
+            }, 25000);
+        }
+
+    } catch (e) {
+        console.error('[WebSocket] Initialization error:', e);
+        clearTimeout(App.wsReconnectTimeout);
+        App.wsReconnectTimeout = setTimeout(initWebSocket, 3000);
+    }
+}
+
+function handleWebSocketEvent(message) {
+    const { type, data } = message;
+
+    if (type === 'email_dispatched') {
+        const isSuccess = data.status !== 'failed';
+        App.stats.attempted = (App.stats.attempted || 0) + 1;
+        if (isSuccess) {
+            App.stats.totalSent = (App.stats.totalSent || 0) + 1;
+        } else {
+            App.stats.failed = (App.stats.failed || 0) + 1;
+        }
+        App.stats.deliveryRate = App.stats.attempted
+            ? Math.round((App.stats.totalSent / App.stats.attempted) * 1000) / 10
+            : 0;
+        App.stats.vaultStored = (App.stats.vaultStored || 0) + 1;
+        updateKpiCounters();
+
+        // Append to live broadcast console if visible
+        const logTerminal = document.getElementById('broadcast-log-terminal');
+        if (logTerminal) {
+            const timeStr = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            if (isSuccess) {
+                logEntry.className = 'text-emerald-400 flex items-center justify-between text-xs py-0.5';
+                logEntry.innerHTML = `<span>[${timeStr}] ✓ Delivered to <strong>${escapeHtml(data.recipient)}</strong> (ID: ${data.storage_id ? data.storage_id.slice(0, 10) : ''}...)</span><span class="text-slate-500">${data.sent_count}/${data.total}</span>`;
+            } else {
+                logEntry.className = 'text-rose-400 flex items-center justify-between text-xs py-0.5 bg-rose-500/10 px-2 rounded';
+                const reason = data.error ? ` (${escapeHtml(String(data.error).slice(0, 90))})` : '';
+                logEntry.innerHTML = `<span>[${timeStr}] ✗ Relay rejected <strong>${escapeHtml(data.recipient)}</strong>${reason}</span><span class="text-rose-300 font-semibold">${data.sent_count}/${data.total}</span>`;
+            }
+            logTerminal.appendChild(logEntry);
+            logTerminal.scrollTop = logTerminal.scrollHeight;
+        }
+
+        // Update progress bar
+        const progressBar = document.getElementById('broadcast-progress-bar');
+        const progressText = document.getElementById('broadcast-progress-text');
+        if (progressBar && data.progress_percent !== undefined) {
+            progressBar.style.width = `${data.progress_percent}%`;
+        }
+        if (progressText) {
+            progressText.innerText = `${data.sent_count} / ${data.total} processed (${data.progress_percent || 0}%)`;
+        }
+
+        // Prepend to dashboard activity feed
+        prependActivityFeedItem({
+            recipient: data.recipient,
+            subject: data.subject || 'Broadcast message',
+            status: data.status || 'delivered',
+        });
+
+    } else if (type === 'email_opened') {
+        showToast(`Opened by ${data.recipient || 'a recipient'}`, 'info');
+        fetchDashboardStats();
+
+    } else if (type === 'email_clicked') {
+        showToast(`Link clicked: ${data.target_url || ''}`, 'info');
+        fetchDashboardStats();
+
+    } else if (type === 'campaign_completed') {
+        showToast(`✓ Broadcast ${data.campaign_id} complete! (${data.sent_count}/${data.total} delivered)`, 'success');
+        const badge = document.getElementById('broadcast-status-badge');
+        if (badge) {
+            badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+            badge.innerText = "Completed";
+        }
+        fetchCampaigns();
+        fetchVaultEmails();
+
+    } else if (type === 'scan_auth_approved') {
+        // Direct QR Scan Approved in Real-Time!
+        showToast(`✓ Authenticated via QR Scan as ${data.email}!`, 'success');
+        
+        // Update header user badge
+        const headerLabel = document.getElementById('header-user-label');
+        if (headerLabel) {
+            headerLabel.innerText = `${data.name || data.email}`;
+        }
+        const avatarEl = document.getElementById('header-user-avatar');
+        if (avatarEl && (data.name || data.email)) {
+            const initial = (data.name || data.email).charAt(0).toUpperCase();
+            avatarEl.innerText = initial;
+            avatarEl.className = "w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[11px] font-bold shadow ring-1 ring-emerald-400/30 shrink-0";
+        }
+        const userSubLabel = document.getElementById('header-user-sublabel');
+        if (userSubLabel) {
+            userSubLabel.innerText = 'Authenticated';
+            userSubLabel.className = 'text-[10px] text-emerald-400 leading-tight';
+        }
+
+        // Auto-update broadcast sender fields
+        const senderNameInput = document.getElementById('broadcast-sender-name');
+        const senderEmailInput = document.getElementById('broadcast-sender-email');
+        if (senderNameInput && data.name) senderNameInput.value = data.name;
+        if (senderEmailInput && data.email) senderEmailInput.value = data.email;
+
+        // Update modal status
+        const statusText = document.getElementById('scan-status-text');
+        if (statusText) {
+            statusText.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(data.email)}!</span>`;
+        }
+
+        // Close modal after brief confirmation
+        setTimeout(() => {
+            closeModal('modal-scan-login');
+        }, 1200);
+    }
+}
+
+function updateKpiCounters() {
+    renderSendHealth();
+    renderEngagementTiles();
+
+    const elNavVault = document.getElementById('nav-vault-badge');
+    const elSidebarVault = document.getElementById('sidebar-stored-count');
+    if (elNavVault) elNavVault.innerText = App.stats.vaultStored;
+    if (elSidebarVault) elSidebarVault.innerText = `${Number(App.stats.vaultStored).toLocaleString()} Stored (.EML)`;
+}
+
+function prependActivityFeedItem(item) {
+    const container = document.getElementById('dashboard-activity-feed');
+    if (!container) return;
+
+    // A live dispatch is 'delivered' or 'failed' - report the one that happened.
+    const failed = item.status === 'failed';
+    const placeholder = container.querySelector('.py-8');
+    if (placeholder) container.innerHTML = '';
+
+    const row = document.createElement('div');
+    row.className = 'animate-fadeIn';
+    row.innerHTML = activityRow({
+        event_type: failed ? 'failed' : 'sent',
+        recipient: item.recipient || item.recipient_email,
+        event: failed ? `Rejected by relay: ${item.subject || ''}`.trim() : item.subject,
+        timestamp: item.timestamp || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    });
+    container.insertBefore(row, container.firstChild);
+    while (container.children.length > 30) {
+        container.removeChild(container.lastChild);
+    }
+    initLucide();
+}
+
+function setupNavigation() {
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            const href = item.getAttribute('href');
+            if (href && href.startsWith('/docs')) return; // Allow Swagger external
+            e.preventDefault();
+            const tab = item.getAttribute('data-tab');
+            if (tab) switchTab(tab, true);
+        });
+    });
+
+    window.addEventListener('popstate', (e) => {
+        if (e.state && e.state.tab) {
+            switchTab(e.state.tab, false);
+        }
+    });
+}
+
+function setupEventListeners() {
+    // Escape closes any open modal
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.fixed.z-50:not(.hidden)').forEach(modal => {
+                modal.classList.add('hidden');
+            });
+        }
+    });
+
+    // Track active/focused editor input for merge tag insertion
+    document.addEventListener('focusin', (e) => {
+        if (e.target && (e.target.id === 'broadcast-html' || e.target.id === 'broadcast-subject' || e.target.id === 'studio-tpl-html' || e.target.id === 'studio-tpl-subject')) {
+            App.lastFocusedInput = e.target;
+        }
+    });
+}
+
+async function refreshAllData() {
+    await Promise.all([
+        fetchDashboardStats(),
+        fetchCampaigns(),
+        fetchVaultEmails(),
+        fetchSubscribers(),
+        fetchTemplates(),
+        fetchSmtpConfigs(),
+        fetchAvailablePlaceholders()
+    ]);
+    updateBroadcastEmailCount();
+}
+
+function toggleMobileSidebar() {
+    const sidebar = document.querySelector('.glass-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.toggle('mobile-open');
+    if (backdrop) backdrop.classList.toggle('hidden');
+}
+
+function closeMobileSidebar() {
+    const sidebar = document.querySelector('.glass-sidebar');
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (backdrop) backdrop.classList.add('hidden');
+}
+
+// ==========================================================================
+// Tab Routing
+// ==========================================================================
+function switchTab(tabId, updateUrl = true) {
+    App.currentTab = tabId;
+    closeMobileSidebar();
+
+    if (updateUrl) {
+        const path = tabId === 'dashboard' ? '/' : `/${tabId === 'templates' ? 'templates-studio' : (tabId === 'subscribers' ? 'customers' : tabId)}`;
+        history.pushState({ tab: tabId }, '', path);
+    }
+
+    // Update active nav styles
+    document.querySelectorAll('.nav-item').forEach(item => {
+        if (item.getAttribute('data-tab') === tabId) {
+            item.classList.add('active', 'text-white', 'bg-white/10');
+            item.classList.remove('text-slate-300');
+        } else {
+            item.classList.remove('active', 'text-white', 'bg-white/10');
+            item.classList.add('text-slate-300');
+        }
+    });
+
+    // Show selected panel
+    document.querySelectorAll('.app-panel').forEach(panel => {
+        panel.classList.add('hidden');
+    });
+
+    const targetPanel = document.getElementById(`panel-${tabId}`);
+    if (targetPanel) {
+        targetPanel.classList.remove('hidden');
+    }
+
+    // Tab-specific refreshes
+    if (tabId === 'dashboard') {
+        renderDeliverabilityChart();
+        fetchDashboardStats();
+    } else if (tabId === 'campaigns') {
+        fetchCampaigns();
+    } else if (tabId === 'vault') {
+        fetchVaultEmails();
+    } else if (tabId === 'subscribers') {
+        fetchSubscribers();
+    } else if (tabId === 'templates') {
+        fetchTemplates();
+    } else if (tabId === 'smtp') {
+        fetchSmtpConfigs();
+    } else if (tabId === 'broadcast') {
+        populateBroadcastDropdowns();
+        updateBroadcastEmailCount();
+    }
+
+    initLucide();
+}
+
+// ==========================================================================
+// 1. Dashboard API & Charting
+// ==========================================================================
+async function fetchDashboardStats() {
+    try {
+        const res = await fetch('/api/dashboard/stats');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Zero is a real answer. Never substitute a flattering default.
+        const num = (v) => Number(v) || 0;
+        // `total_sent` in the API payload is the attempted total (sent + failed +
+        // bounced). Deliveries are `delivered_count`; mixing them showed failed
+        // sends as delivered.
+        App.stats.attempted = num(data.attempted_count ?? data.total_sent);
+        App.stats.totalSent = num(data.delivered_count);
+        App.stats.failed = num(data.failed_count);
+        App.stats.deliveryRate = num(data.delivery_rate);
+        App.stats.openRate = num(data.open_rate);
+        App.stats.clickRate = num(data.click_rate);
+        App.stats.activeSubscribers = num(data.active_subscribers);
+        App.stats.suppressed = num(data.suppressed_count);
+        App.stats.vaultStored = num(data.total_stored_emails);
+        App.stats.relay = data.relay || { configured: false };
+
+        renderSendHealth();
+        renderEngagementTiles();
+        renderRelayBanner(App.stats.relay);
+
+        const sideCount = document.getElementById('sidebar-stored-count');
+        const navVault = document.getElementById('nav-vault-badge');
+        const navSubs = document.getElementById('nav-subs-badge');
+        if (sideCount) sideCount.innerText = `${App.stats.vaultStored.toLocaleString()} Stored (.EML)`;
+        if (navVault) navVault.innerText = App.stats.vaultStored;
+        if (navSubs) navSubs.innerText = App.stats.activeSubscribers;
+
+        await fetchDashboardActivity();
+    } catch (err) {
+        console.warn('Stats fetch error:', err);
+    }
+}
+
+function renderSendHealth() {
+    const { attempted, totalSent, failed, deliveryRate } = App.stats;
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.innerText = value; };
+
+    set('kpi-delivery-rate', `${deliveryRate}%`);
+    set('kpi-attempted', attempted.toLocaleString());
+    set('kpi-total-sent', totalSent.toLocaleString());
+    set('kpi-failed', failed.toLocaleString());
+
+    const failedEl = document.getElementById('kpi-failed');
+    if (failedEl) {
+        failedEl.className = `text-xl font-semibold tabular-nums mt-0.5 ${failed > 0 ? 'text-rose-400' : 'text-slate-500'}`;
+    }
+
+    const deliveredBar = document.getElementById('health-bar-delivered');
+    const failedBar = document.getElementById('health-bar-failed');
+    const label = document.getElementById('health-bar-label');
+    const deliveredPct = attempted ? (totalSent / attempted) * 100 : 0;
+    const failedPct = attempted ? (failed / attempted) * 100 : 0;
+    if (deliveredBar) deliveredBar.style.width = `${deliveredPct}%`;
+    if (failedBar) failedBar.style.width = `${failedPct}%`;
+    if (label) {
+        label.textContent = attempted
+            ? `${totalSent.toLocaleString()} of ${attempted.toLocaleString()} messages accepted by the relay.`
+            : 'No sends recorded yet.';
+    }
+
+    const callout = document.getElementById('failure-callout');
+    const calloutText = document.getElementById('failure-callout-text');
+    if (callout && calloutText) {
+        callout.classList.toggle('hidden', failed === 0);
+        if (failed > 0) {
+            calloutText.textContent = `${failed.toLocaleString()} ${failed === 1 ? 'message' : 'messages'} were rejected by the relay. Each stored record carries the SMTP error.`;
+        }
+    }
+}
+
+function renderEngagementTiles() {
+    const { attempted, openRate, clickRate, activeSubscribers, suppressed, vaultStored } = App.stats;
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.innerText = value; };
+
+    set('kpi-open-rate', `${openRate}%`);
+    set('kpi-click-rate', `${clickRate}%`);
+    set('kpi-reachable', activeSubscribers.toLocaleString());
+    set('kpi-vault-stored', vaultStored.toLocaleString());
+
+    const opened = Math.round((openRate / 100) * attempted);
+    const clicked = Math.round((clickRate / 100) * attempted);
+    set('kpi-open-sub', attempted ? `${opened.toLocaleString()} of ${attempted.toLocaleString()} opened` : 'Awaiting first send');
+    set('kpi-click-sub', attempted ? `${clicked.toLocaleString()} of ${attempted.toLocaleString()} clicked` : 'Awaiting first send');
+    set('kpi-reachable-sub', suppressed ? `${suppressed.toLocaleString()} suppressed and skipped` : 'None suppressed');
+}
+
+function renderRelayBanner(relay) {
+    const banner = document.getElementById('relay-banner');
+    const title = document.getElementById('relay-banner-title');
+    const body = document.getElementById('relay-banner-body');
+    if (!banner || !title || !body) return;
+
+    const base = 'rounded-xl border px-4 py-3 flex items-start gap-3 text-sm ';
+    if (!relay || !relay.configured) {
+        banner.className = base + 'border-rose-500/30 bg-rose-500/5 text-rose-200';
+        title.textContent = 'No SMTP relay configured';
+        body.textContent = 'Campaigns cannot leave the building until you add a relay. Nothing is sent and nothing is faked.';
+    } else if (relay.is_sandbox) {
+        banner.className = base + 'border-amber-500/30 bg-amber-500/5 text-amber-200';
+        title.textContent = 'Dry-run relay active';
+        body.textContent = `"${relay.name}" renders and archives every message but transmits nothing. Point a real relay at your leads when you are ready.`;
+    } else {
+        banner.className = base + 'border-white/10 bg-slate-900/60 text-slate-300';
+        title.textContent = `Sending through ${relay.name}`;
+        body.textContent = `${relay.host}:${relay.port} — live delivery to real inboxes.`;
+    }
+    banner.classList.remove('hidden');
+    initLucide();
+}
+
+// The activity API returns event/recipient/timestamp with event types
+// 'open' and 'click' - matching those names is what makes the feed readable.
+const ACTIVITY_STYLES = {
+    open:        { icon: 'eye',              tone: 'text-purple-400 bg-purple-500/10' },
+    click:       { icon: 'mouse-pointer-click', tone: 'text-sky-400 bg-sky-500/10' },
+    sent:        { icon: 'send',             tone: 'text-emerald-400 bg-emerald-500/10' },
+    delivered:   { icon: 'check',            tone: 'text-emerald-400 bg-emerald-500/10' },
+    queued:      { icon: 'clock',            tone: 'text-slate-400 bg-slate-500/10' },
+    failed:      { icon: 'alert-triangle',   tone: 'text-rose-400 bg-rose-500/10' },
+    bounce:      { icon: 'undo-2',           tone: 'text-amber-400 bg-amber-500/10' },
+    unsubscribe: { icon: 'user-minus',       tone: 'text-amber-400 bg-amber-500/10' },
+};
+
+function activityRow(act) {
+    const style = ACTIVITY_STYLES[act.event_type] || ACTIVITY_STYLES.queued;
+    const who = act.recipient || act.campaign_name || 'Unknown recipient';
+    const what = act.event || act.event_type || '';
+    return `
+        <div class="flex items-start gap-3 p-2.5 rounded-lg bg-slate-900/60 border border-white/5">
+            <div class="p-1.5 rounded-md ${style.tone} shrink-0">
+                <i data-lucide="${style.icon}" class="w-3.5 h-3.5"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold text-white truncate">${escapeHtml(who)}</p>
+                <p class="text-[11px] text-slate-400 truncate">${escapeHtml(what)}</p>
+            </div>
+            <span class="text-[10px] text-slate-500 shrink-0 tabular-nums pt-0.5">${formatTimeAgo(act.timestamp)}</span>
+        </div>
+    `;
+}
+
+async function fetchDashboardActivity() {
+    try {
+        const res = await fetch('/api/dashboard/activity?limit=30');
+        if (!res.ok) return;
+        const activities = await res.json();
+
+        const feedEl = document.getElementById('dashboard-activity-feed');
+        const countEl = document.getElementById('activity-count');
+        if (!feedEl) return;
+
+        if (!activities || activities.length === 0) {
+            if (countEl) countEl.textContent = '';
+            feedEl.innerHTML = `
+                <div class="py-8 text-center">
+                    <p class="text-sm text-slate-400">Nothing has happened yet</p>
+                    <p class="text-xs text-slate-500 mt-1">Sends, opens, and clicks appear here the moment they occur.</p>
+                </div>`;
+            return;
+        }
+
+        if (countEl) countEl.textContent = `${activities.length} recent`;
+        feedEl.innerHTML = activities.map(activityRow).join('');
+        initLucide();
+    } catch (err) {
+        console.warn('Activity feed error:', err);
+    }
+}
+
+async function renderDeliverabilityChart() {
+    const canvas = document.getElementById('deliverabilityChart');
+    if (!canvas) return;
+
+    try {
+        const res = await fetch('/api/dashboard/chart');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // An empty account shows an empty state, never an invented curve.
+        const emptyEl = document.getElementById('chart-empty');
+        if (emptyEl) emptyEl.classList.toggle('hidden', data.has_data !== false);
+        canvas.style.visibility = data.has_data === false ? 'hidden' : 'visible';
+
+        if (App.chartInstance) App.chartInstance.destroy();
+
+        const series = data.datasets || {};
+        const line = (label, key, color, fill) => ({
+            label,
+            data: series[key] || [],
+            borderColor: color,
+            backgroundColor: fill || 'transparent',
+            fill: Boolean(fill),
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            pointHoverBorderWidth: 2,
+            pointHoverBackgroundColor: '#0f172a',
+            pointHoverBorderColor: color,
+        });
+
+        App.chartInstance = new Chart(canvas.getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: data.labels || [],
+                datasets: [
+                    line('Delivered', 'delivered', '#2ea043', 'rgba(46, 160, 67, 0.10)'),
+                    line('Opened', 'opened', '#a371f7'),
+                    line('Clicked', 'clicked', '#388bfd'),
+                    line('Failed', 'failed', '#f85149'),
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        align: 'end',
+                        labels: {
+                            color: '#8b949e',
+                            boxWidth: 8,
+                            boxHeight: 8,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 16,
+                            font: { family: 'Plus Jakarta Sans', size: 11 },
+                        },
+                    },
+                    tooltip: {
+                        backgroundColor: '#111824',
+                        borderColor: '#28374d',
+                        borderWidth: 1,
+                        titleColor: '#f0f6fc',
+                        bodyColor: '#c9d1d9',
+                        padding: 10,
+                        cornerRadius: 8,
+                        displayColors: true,
+                        usePointStyle: true,
+                    },
+                },
+                scales: {
+                    x: {
+                        border: { display: false },
+                        grid: { display: false },
+                        ticks: { color: '#6e7681', font: { size: 10 }, maxRotation: 0, autoSkipPadding: 16 },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        border: { display: false },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#6e7681', font: { size: 10 }, precision: 0 },
+                    },
+                },
+            },
+        });
+    } catch (err) {
+        console.warn('Chart render error:', err);
+    }
+}
+
+// ==========================================================================
+// 2. Quick Mass Broadcast / Send to Customers
+// ==========================================================================
+function setBroadcastAudienceMode(mode) {
+    App.audienceMode = mode;
+    const btnPaste = document.getElementById('tab-btn-paste-emails');
+    const btnList = document.getElementById('tab-btn-list-emails');
+    const modePaste = document.getElementById('broadcast-mode-paste');
+    const modeList = document.getElementById('broadcast-mode-list');
+
+    if (mode === 'paste') {
+        btnPaste.classList.add('bg-indigo-600', 'text-white');
+        btnPaste.classList.remove('text-slate-400');
+        btnList.classList.remove('bg-indigo-600', 'text-white');
+        btnList.classList.add('text-slate-400');
+        modePaste.classList.remove('hidden');
+        modeList.classList.add('hidden');
+    } else {
+        btnList.classList.add('bg-indigo-600', 'text-white');
+        btnList.classList.remove('text-slate-400');
+        btnPaste.classList.remove('bg-indigo-600', 'text-white');
+        btnPaste.classList.add('text-slate-400');
+        modeList.classList.remove('hidden');
+        modePaste.classList.add('hidden');
+    }
+    updateBroadcastEmailCount();
+}
+
+function parseEmailsFromString(text) {
+    if (!text) return [];
+    const normalized = text.replace(/[\r\n;]+/g, ',');
+    const tokens = normalized.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    const valid = [];
+    const seen = new Set();
+    const emailRegex = /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/;
+
+    for (let token of tokens) {
+        let email = token;
+        let name = '';
+        if (token.includes('<') && token.includes('>')) {
+            const parts = token.split('<');
+            name = parts[0].replace(/"/g, '').trim();
+            email = parts[1].split('>')[0].trim();
+        }
+        email = email.toLowerCase().replace(/"/g, '').trim();
+        if (emailRegex.test(email) && !seen.has(email)) {
+            seen.add(email);
+            valid.push({ email, name: name || email.split('@')[0] });
+        }
+    }
+    return valid;
+}
+
+function updateBroadcastEmailCount() {
+    const badge = document.getElementById('broadcast-recipient-count-badge');
+    if (!badge) return;
+
+    if (App.audienceMode === 'paste') {
+        const text = document.getElementById('broadcast-raw-emails')?.value || '';
+        const parsed = parseEmailsFromString(text);
+        badge.innerText = `${parsed.length} Customer${parsed.length === 1 ? '' : 's'}`;
+        badge.className = parsed.length > 0 
+            ? 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+            : 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+    } else {
+        const select = document.getElementById('broadcast-list-select');
+        const selectedVal = select?.value || 'all';
+        if (selectedVal === 'all') {
+            badge.innerText = `${App.subscribers.length} Customers (All)`;
+        } else {
+            const targetList = App.lists.find(l => l.id === selectedVal);
+            badge.innerText = `${targetList ? targetList.subscriber_count : 0} Customers`;
+        }
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+    }
+}
+
+function loadSampleCustomerEmails() {
+    const textarea = document.getElementById('broadcast-raw-emails');
+    if (!textarea) return;
+    textarea.value = `alexandra.chen@techcorp.io\n"Michael Scott" <michael@dundermifflin.com>\nsarah.connor@cyberdyne.org\njohn.doe@startup.ai, clara.oswald@spacefleet.org\nvip.client@globex.com`;
+    updateBroadcastEmailCount();
+    showToast('Loaded 6 sample customer emails', 'info');
+}
+
+function initCustomPlaceholders() {
+    try {
+        const stored = localStorage.getItem('bitmail_custom_placeholders');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed)) {
+                parsed.forEach(tag => {
+                    const clean = String(tag).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                    if (clean && !App.customPlaceholders.includes(clean)) {
+                        App.customPlaceholders.push(clean);
+                    }
+                });
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to load custom placeholders from localStorage', e);
+    }
+    renderAllPlaceholderChips();
+}
+
+function saveCustomPlaceholders() {
+    try {
+        localStorage.setItem('bitmail_custom_placeholders', JSON.stringify(App.customPlaceholders));
+    } catch (e) {
+        console.warn('Failed to save custom placeholders', e);
+    }
+}
+
+async function fetchAvailablePlaceholders() {
+    try {
+        const res = await fetch('/api/subscribers/placeholders');
+        if (!res.ok) return;
+        const data = await safeJson(res);
+        let changed = false;
+        if (data && Array.isArray(data.custom_fields)) {
+            data.custom_fields.forEach(tag => {
+                const clean = String(tag).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                if (clean && !App.customPlaceholders.includes(clean)) {
+                    App.customPlaceholders.push(clean);
+                    changed = true;
+                }
+            });
+        }
+        if (changed) {
+            saveCustomPlaceholders();
+            renderAllPlaceholderChips();
+        }
+    } catch (err) {
+        console.warn('Placeholder discovery error:', err);
+    }
+}
+
+function renderAllPlaceholderChips() {
+    renderPlaceholderChips('broadcast-merge-tags', 'broadcast');
+    renderPlaceholderChips('studio-merge-tags', 'studio');
+    initLucide();
+}
+
+function renderPlaceholderChips(containerId, context) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const standardTags = [
+        { key: 'first_name', label: '{{first_name}}' },
+        { key: 'email', label: '{{email}}' },
+        { key: 'company', label: '{{company}}' },
+        { key: 'unsubscribe_url', label: '{{unsubscribe}}' }
+    ];
+
+    let html = '';
+    standardTags.forEach(t => {
+        html += `<button type="button" onclick="insertMergeTag('{{${t.key}}}', '${context}')" class="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[11px] font-mono text-indigo-300 border border-white/5 transition-colors cursor-pointer" title="Insert {{${t.key}}}">${t.label}</button>`;
+    });
+
+    if (App.customPlaceholders && App.customPlaceholders.length > 0) {
+        App.customPlaceholders.forEach(tag => {
+            html += `<span class="inline-flex items-center rounded bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 text-[11px] font-mono group shadow-xs">
+                <button type="button" onclick="insertMergeTag('{{${tag}}}', '${context}')" class="px-2 py-0.5 hover:text-white transition-colors cursor-pointer" title="Insert {{${tag}}}">{{${tag}}}</button>
+                <button type="button" onclick="removeCustomPlaceholder('${tag}', event)" class="pr-1.5 pl-0.5 py-0.5 text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Remove custom placeholder">&times;</button>
+            </span>`;
+        });
+    }
+
+    container.innerHTML = html;
+}
+
+function insertMergeTag(tag, context = 'broadcast') {
+    let target = null;
+
+    if (App.lastFocusedInput && (
+        (context === 'studio' && (App.lastFocusedInput.id === 'studio-tpl-html' || App.lastFocusedInput.id === 'studio-tpl-subject')) ||
+        (context === 'broadcast' && (App.lastFocusedInput.id === 'broadcast-html' || App.lastFocusedInput.id === 'broadcast-subject'))
+    )) {
+        target = App.lastFocusedInput;
+    } else {
+        target = context === 'studio' ? document.getElementById('studio-tpl-html') : document.getElementById('broadcast-html');
+    }
+
+    if (!target) return;
+
+    const start = target.selectionStart ?? target.value.length;
+    const end = target.selectionEnd ?? target.value.length;
+    const val = target.value;
+    target.value = val.substring(0, start) + tag + val.substring(end);
+    target.focus();
+    const newPos = start + tag.length;
+    target.setSelectionRange(newPos, newPos);
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function insertBroadcastTag(tag) {
+    insertMergeTag(tag, 'broadcast');
+}
+
+async function promptAddCustomPlaceholder(context = 'broadcast') {
+    const raw = prompt('Enter a new placeholder tag name (e.g. phone, address, points, order_id):');
+    if (!raw) return;
+
+    const clean = raw.trim().toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+    if (!clean) {
+        showToast('Invalid placeholder name.', 'warning');
+        return;
+    }
+
+    const standard = ['first_name', 'last_name', 'email', 'company', 'unsubscribe', 'unsubscribe_url'];
+    if (standard.includes(clean)) {
+        insertMergeTag(`{{${clean}}}`, context);
+        showToast(`Inserted standard placeholder {{${clean}}}`, 'info');
+        return;
+    }
+
+    if (!App.customPlaceholders.includes(clean)) {
+        App.customPlaceholders.push(clean);
+        saveCustomPlaceholders();
+        renderAllPlaceholderChips();
+        showToast(`Created custom placeholder {{${clean}}}!`, 'success');
+    }
+
+    insertMergeTag(`{{${clean}}}`, context);
+}
+
+function removeCustomPlaceholder(tag, event) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    App.customPlaceholders = App.customPlaceholders.filter(t => t !== tag);
+    saveCustomPlaceholders();
+    renderAllPlaceholderChips();
+    showToast(`Removed custom tag {{${tag}}}`, 'info');
+}
+
+
+function loadBroadcastTemplatePreset(type) {
+    const textarea = document.getElementById('broadcast-html');
+    const subjectInput = document.getElementById('broadcast-subject');
+    if (!textarea) return;
+
+    if (type === 'product') {
+        if (subjectInput) subjectInput.value = 'Exciting Product Update for {{first_name}}! 🚀';
+        textarea.value = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+    <h2 style="color: #4f46e5;">Hello {{first_name}},</h2>
+    <p>We are excited to announce major improvements to your account platform.</p>
+    <div style="background: #f8fafc; padding: 18px; border-radius: 8px; border-left: 4px solid #4f46e5; margin: 16px 0;">
+        <h4 style="margin: 0 0 8px 0; color: #0f172a;">What's New:</h4>
+        <ul style="margin: 0; padding-left: 20px; color: #334155;">
+            <li>High-throughput concurrent email dispatching</li>
+            <li>Real-time Open and Link Click tracking telemetry</li>
+            <li>Dedicated Email Storage Vault with full .EML forensic archiving</li>
+        </ul>
+    </div>
+    <p><a href="https://example.com/login" style="display: inline-block; padding: 12px 24px; background: #4f46e5; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: bold;">Log in to Your Dashboard</a></p>
+    <p style="color: #64748b; font-size: 12px; margin-top: 24px;">Sent with Bitmail.</p>
+</div>`;
+    } else if (type === 'newsletter') {
+        if (subjectInput) subjectInput.value = 'Weekly Insights Digest #42 for {{company}}';
+        textarea.value = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b;">
+    <h1 style="color: #1e1b4b; font-size: 22px;">Weekly Industry Digest</h1>
+    <p style="color: #64748b;">Curated strategies for {{first_name}} at {{company}}</p>
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+    <h3 style="color: #4f46e5;">Top Story: Scaling Infrastructure to 10M Messages/Day</h3>
+    <p style="color: #334155; line-height: 1.6;">Discover how asynchronous queue workers and token-bucket governors prevent ISP throttling and maintain 99.8% inbox deliverability rates.</p>
+    <p><a href="https://example.com/article" style="color: #4f46e5; font-weight: bold;">Read Full Analysis →</a></p>
+</div>`;
+    }
+    showToast('Loaded template preset into composer', 'info');
+}
+
+function populateBroadcastDropdowns() {
+    // Populate Quick Broadcast List Dropdown
+    const listSelect = document.getElementById('broadcast-list-select');
+    if (listSelect) {
+        listSelect.innerHTML = `<option value="all">⭐ All Active Customers (${App.subscribers.length})</option>` +
+            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.subscriber_count} contacts)</option>`).join('');
+    }
+
+    // Populate CSV Import Target Group Dropdown
+    const csvListSelect = document.getElementById('modal-csv-list-select');
+    if (csvListSelect) {
+        csvListSelect.innerHTML = `<option value="">All Customers (No specific group)</option>` +
+            App.lists.map(l => `<option value="${l.id}">Group: ${escapeHtml(l.name)} (${l.subscriber_count} contacts)</option>`).join('');
+    }
+
+    // Populate Add/Edit Customer Group Dropdown
+    const subListSelect = document.getElementById('modal-sub-list-select');
+    if (subListSelect) {
+        subListSelect.innerHTML = `<option value="">No specific group</option>` +
+            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
+    }
+
+    // Populate Customer Table Filter Dropdown
+    const filterListSelect = document.getElementById('subscriber-filter-list');
+    if (filterListSelect) {
+        const curVal = filterListSelect.value || 'all';
+        filterListSelect.innerHTML = `<option value="all">All Groups / Lists</option>` +
+            App.lists.map(l => `<option value="${l.id}" ${curVal === l.id ? 'selected' : ''}>📁 ${escapeHtml(l.name)} (${l.subscriber_count})</option>`).join('');
+    }
+
+
+    // Populate SMTP Relay Dropdown
+    const smtpSelect = document.getElementById('broadcast-smtp-select');
+    if (smtpSelect) {
+        if (App.smtpConfigs.length === 0) {
+            smtpSelect.innerHTML = `<option value="">Default Mail Cluster (Active Relay)</option>`;
+        } else {
+            smtpSelect.innerHTML = App.smtpConfigs.map(s => {
+                const label = `${escapeHtml(s.name)} (${s.host}:${s.port}) ${s.is_default ? '⭐ Default' : ''} ${s.is_sandbox ? '[Sandbox]' : ''}`;
+                return `<option value="${s.id}" ${s.is_default ? 'selected' : ''}>${label}</option>`;
+            }).join('');
+        }
+    }
+    updateSmtpStatusHint();
+}
+
+function updateSmtpStatusHint() {
+    const hintEl = document.getElementById('broadcast-smtp-hint');
+    if (!hintEl) return;
+
+    const smtpSelect = document.getElementById('broadcast-smtp-select');
+    const selectedId = smtpSelect?.value;
+    const selectedConfig = App.smtpConfigs.find(s => s.id === selectedId) || App.smtpConfigs.find(s => s.is_default) || App.smtpConfigs[0];
+
+    const host = selectedConfig ? (selectedConfig.host || '').toLowerCase() : 'sandbox';
+    const isSandbox = selectedConfig ? (selectedConfig.is_sandbox || host === 'sandbox' || host === '127.0.0.1' || host === 'localhost') : true;
+
+    if (isSandbox) {
+        hintEl.className = "mt-2 p-2.5 rounded-xl text-[11px] bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-between transition-all";
+        hintEl.innerHTML = `
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 text-amber-400"></i>
+                <span><strong>Sandbox Simulator:</strong> Emails are saved in Storage Vault only (no external dispatch).</span>
+            </div>
+            <button type="button" onclick="openGmailConnectModal()" class="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] shrink-0 flex items-center gap-1 shadow">
+                <i data-lucide="mail" class="w-3 h-3"></i> Connect Gmail →
+            </button>
+        `;
+    } else {
+        hintEl.className = "mt-2 p-2.5 rounded-xl text-[11px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-between transition-all";
+        hintEl.innerHTML = `
+            <div class="flex items-center gap-1.5">
+                <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-emerald-400"></i>
+                <span><strong>Live Delivery Active:</strong> Dispatches directly to real recipient inboxes via <code>${selectedConfig.host}:${selectedConfig.port}</code> and archives in Vault.</span>
+            </div>
+        `;
+    }
+    initLucide();
+}
+
+async function sendBroadcastTestPreview() {
+    const testEmail = await promptDialog(
+        'Enter the recipient address for the test preview send.',
+        'my-test-email@company.com',
+        { title: 'Send test preview', confirmText: 'Send test' }
+    );
+    if (testEmail === null) return;
+    if (!testEmail.includes('@')) {
+        showToast('That does not look like a valid email address.', 'warning');
+        return;
+    }
+
+    const subject = document.getElementById('broadcast-subject')?.value || 'Test Preview';
+    const html = document.getElementById('broadcast-html')?.value || '<p>Test Message</p>';
+    const senderName = document.getElementById('broadcast-sender-name')?.value || 'Bitmail';
+    const senderEmail = document.getElementById('broadcast-sender-email')?.value || 'team@bitmail.io';
+    const smtpId = document.getElementById('broadcast-smtp-select')?.value || null;
+
+    showToast(`Dispatching test preview to ${testEmail}...`, 'info');
+
+    try {
+        const res = await fetch('/api/v1/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                recipient_email: testEmail,
+                recipient_name: 'Test Reviewer',
+                subject: subject,
+                body_html: html,
+                sender_name: senderName,
+                sender_email: senderEmail,
+                smtp_config_id: smtpId,
+                merge_variables: {
+                    first_name: 'Test',
+                    last_name: 'User',
+                    email: testEmail,
+                    company: 'Acme Testing Corp'
+                },
+                track_opens: true,
+                track_clicks: true
+            })
+        });
+
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast(`✓ Test preview sent successfully! Storage ID: ${data.sent_email_id}`, 'success');
+            await fetchVaultEmails();
+            await fetchDashboardStats();
+        } else {
+            showToast(`Test failed: ${data.detail || data.error || data.message || 'Check SMTP server settings'}`, 'error');
+        }
+    } catch (err) {
+        showToast(`Test send error: ${err.message}`, 'error');
+    }
+}
+
+function openLivePreviewModal(source = 'broadcast') {
+    App.previewSource = source;
+    const badge = document.getElementById('preview-source-badge');
+    if (badge) {
+        badge.textContent = source === 'studio' ? 'Template Studio' : 'Quick Broadcast';
+    }
+    openModal('modal-live-preview');
+    refreshLivePreview();
+}
+
+function setPreviewDevice(device) {
+    const wrapper = document.getElementById('preview-viewport-wrapper');
+    const btnDesk = document.getElementById('preview-btn-desktop');
+    const btnMob = document.getElementById('preview-btn-mobile');
+    const btnFull = document.getElementById('preview-btn-full');
+
+    const inactiveClass = 'px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-all';
+    const activeClass = 'px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-white flex items-center gap-1 transition-all';
+
+    if (btnDesk) btnDesk.className = device === 'desktop' ? activeClass : inactiveClass;
+    if (btnMob) btnMob.className = device === 'mobile' ? activeClass : inactiveClass;
+    if (btnFull) btnFull.className = device === 'full' ? activeClass : inactiveClass;
+
+    if (!wrapper) return;
+
+    if (device === 'mobile') {
+        wrapper.className = 'w-[375px] max-w-[375px] h-full bg-white rounded-3xl shadow-2xl border-4 border-slate-700 overflow-hidden transition-all duration-200';
+    } else if (device === 'full') {
+        wrapper.className = 'w-full max-w-none h-full bg-white rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-200';
+    } else {
+        wrapper.className = 'w-full max-w-[640px] h-full bg-white rounded-xl shadow-2xl border border-slate-700/50 overflow-hidden transition-all duration-200';
+    }
+}
+
+async function refreshLivePreview() {
+    const isStudio = App.previewSource === 'studio';
+    const subjectEl = isStudio ? document.getElementById('studio-tpl-subject') : document.getElementById('broadcast-subject');
+    const htmlEl = isStudio ? document.getElementById('studio-tpl-html') : document.getElementById('broadcast-html');
+
+    const rawSubject = subjectEl?.value || (isStudio ? 'Welcome {{first_name}} to Bitmail!' : 'Important Update for {{first_name}}');
+    const rawHtml = htmlEl?.value || '<div style="font-family: Arial, sans-serif; padding: 20px;"><h3>Hello {{first_name}}</h3><p>Previewing your email message.</p></div>';
+
+    // Rich sample variables for preview interpolation
+    const sampleContext = {
+        first_name: 'Alexandra',
+        last_name: 'Chen',
+        name: 'Alexandra Chen',
+        email: 'alexandra.chen@bitnade.com',
+        company: 'Bitnade Technologies',
+        unsubscribe: 'https://bitnade.com/unsubscribe?token=sample_demo_token',
+        unsubscribe_url: 'https://bitnade.com/unsubscribe?token=sample_demo_token'
+    };
+
+    // Auto-populate values for discovered or user-defined custom placeholders
+    if (App.customPlaceholders && Array.isArray(App.customPlaceholders)) {
+        App.customPlaceholders.forEach(tag => {
+            const formatted = tag.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            sampleContext[tag] = `[${formatted}]`;
+        });
+    }
+
+    try {
+        const res = await fetch('/api/templates/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subject_template: rawSubject,
+                body_template: rawHtml,
+                context: sampleContext
+            })
+        });
+
+        const data = await safeJson(res);
+        const subjText = document.getElementById('preview-subject-text');
+        if (subjText) {
+            subjText.textContent = data.rendered_subject || rawSubject;
+        }
+
+        const tagsEl = document.getElementById('preview-detected-tags');
+        if (tagsEl) {
+            if (data.detected_tags && data.detected_tags.length > 0) {
+                tagsEl.textContent = data.detected_tags.map(t => `{{${t}}}`).join(', ');
+            } else {
+                tagsEl.textContent = 'None detected';
+            }
+        }
+
+        const iframe = document.getElementById('live-preview-iframe');
+        if (iframe) {
+            iframe.srcdoc = data.rendered_body || rawHtml;
+        }
+    } catch (err) {
+        console.warn('Live preview render error:', err);
+        const subjText = document.getElementById('preview-subject-text');
+        if (subjText) subjText.textContent = rawSubject;
+        const iframe = document.getElementById('live-preview-iframe');
+        if (iframe) iframe.srcdoc = rawHtml;
+    }
+}
+
+function handleRateLimitChange(selectEl) {
+    const wrap = document.getElementById('broadcast-rate-limit-custom-wrap');
+    const input = document.getElementById('broadcast-rate-limit-custom');
+    if (!wrap) return;
+    if (selectEl && selectEl.value === 'custom') {
+        wrap.classList.remove('hidden');
+        wrap.classList.add('flex');
+        if (input) {
+            input.focus();
+            if (!input.value) input.value = '75';
+        }
+    } else {
+        wrap.classList.add('hidden');
+        wrap.classList.remove('flex');
+    }
+}
+
+function getSelectedRateLimit() {
+    const select = document.getElementById('broadcast-rate-limit');
+    if (!select) return 25;
+    if (select.value === 'custom') {
+        const customInput = document.getElementById('broadcast-rate-limit-custom');
+        const val = parseInt(customInput?.value || '25', 10);
+        return Math.max(1, Math.min(1000, isNaN(val) ? 25 : val));
+    }
+    const val = parseInt(select.value || '25', 10);
+    return isNaN(val) ? 25 : val;
+}
+
+async function launchQuickBroadcast() {
+    const subject = document.getElementById('broadcast-subject')?.value?.trim();
+    const html = document.getElementById('broadcast-html')?.value?.trim();
+    const senderName = document.getElementById('broadcast-sender-name')?.value?.trim() || 'Bitmail Team';
+    const senderEmail = document.getElementById('broadcast-sender-email')?.value?.trim() || 'team@bitmail.io';
+    const smtpId = document.getElementById('broadcast-smtp-select')?.value || null;
+    const rateLimit = getSelectedRateLimit();
+    const trackOpens = document.getElementById('broadcast-track-opens')?.checked ?? true;
+    const trackClicks = document.getElementById('broadcast-track-clicks')?.checked ?? true;
+
+    if (!subject) {
+        showToast('Please enter an email subject line.', 'warning');
+        return;
+    }
+    if (!html) {
+        showToast('Please enter message HTML content.', 'warning');
+        return;
+    }
+
+    let payload = {
+        subject: subject,
+        body_html: html,
+        sender_name: senderName,
+        sender_email: senderEmail,
+        smtp_config_id: smtpId,
+        rate_limit_per_second: rateLimit,
+        track_opens: trackOpens,
+        track_clicks: trackClicks
+    };
+
+    if (App.audienceMode === 'paste') {
+        const rawText = document.getElementById('broadcast-raw-emails')?.value || '';
+        const parsed = parseEmailsFromString(rawText);
+        if (parsed.length === 0) {
+            showToast('Please paste at least one valid customer email address.', 'warning');
+            return;
+        }
+        payload.recipients_text = rawText;
+    } else {
+        const listSelect = document.getElementById('broadcast-list-select');
+        payload.list_id = listSelect?.value || 'all';
+    }
+
+    // Confirmation prompt
+    const confirmed = await confirmDialog(
+        `Launch broadcast "${subject}" to your target customer recipients?`,
+        {
+            title: 'Confirm broadcast launch',
+            detail: 'Every message is delivered with rate limiting and archived in the Storage Vault.',
+            confirmText: 'Launch broadcast'
+        }
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('btn-launch-broadcast');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/campaigns/quick-broadcast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await safeJson(res);
+        if (!res.ok || !data.success) {
+            showToast(`Broadcast failed: ${data.detail || data.message || 'Unknown error'}`, 'error');
+            if (btn) btn.disabled = false;
+            return;
+        }
+
+        showToast(`🚀 Broadcast launched to ${data.total_recipients} customers!`, 'success');
+        
+        // Open live monitoring console
+        startLiveBroadcastMonitoring(data.campaign_id, data.total_recipients);
+    } catch (err) {
+        showToast(`Broadcast exception: ${err.message}`, 'error');
+        if (btn) btn.disabled = false;
+    }
+}
+
+function startLiveBroadcastMonitoring(campaignId, totalRecipients) {
+    const consoleEl = document.getElementById('broadcast-live-console');
+    const logEl = document.getElementById('broadcast-log-terminal');
+    const progBar = document.getElementById('broadcast-progress-bar');
+    const progText = document.getElementById('broadcast-progress-text');
+    const statusBadge = document.getElementById('broadcast-status-badge');
+
+    if (consoleEl) consoleEl.classList.remove('hidden');
+    if (logEl) logEl.innerHTML = `<div class="text-emerald-400">[${new Date().toLocaleTimeString()}] Broadcast ${campaignId} initialized for ${totalRecipients} customer recipients.</div>`;
+
+    App.activeBroadcast = { campaignId, totalRecipients };
+
+    if (App.broadcastPollInterval) clearInterval(App.broadcastPollInterval);
+
+    App.broadcastPollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/campaigns/${campaignId}`);
+            if (!res.ok) return;
+            const camp = await res.json();
+
+            const sent = camp.sent_count || 0;
+            const total = camp.total_recipients || totalRecipients || 1;
+            const pct = Math.min(100, Math.round((sent / total) * 100));
+
+            if (progBar) progBar.style.width = `${pct}%`;
+            if (progText) progText.innerText = `${sent} / ${total} dispatched (${pct}%)`;
+
+            if (logEl) {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'text-slate-300';
+                logEntry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span> Dispatched batch progress: ${sent}/${total} • Stored in Vault`;
+                logEl.appendChild(logEntry);
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+
+            if (camp.status === 'completed' || camp.status === 'cancelled' || sent >= total) {
+                clearInterval(App.broadcastPollInterval);
+                if (statusBadge) {
+                    statusBadge.innerText = camp.status === 'cancelled' ? 'Cancelled' : 'Completed';
+                    statusBadge.className = camp.status === 'cancelled' 
+                        ? 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        : 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                }
+                const btn = document.getElementById('btn-launch-broadcast');
+                if (btn) btn.disabled = false;
+                showToast(`✓ Broadcast ${campaignId} execution finished! All messages archived.`, 'success');
+                await refreshAllData();
+            }
+        } catch (err) {
+            console.warn('Poll broadcast error:', err);
+        }
+    }, 1000);
+}
+
+async function pauseActiveBroadcast() {
+    if (!App.activeBroadcast) return;
+    try {
+        await fetch(`/api/campaigns/${App.activeBroadcast.campaignId}/pause`, { method: 'POST' });
+        showToast('Broadcast execution paused', 'info');
+    } catch (err) {
+        showToast('Pause error: ' + err.message, 'error');
+    }
+}
+
+async function cancelActiveBroadcast() {
+    if (!App.activeBroadcast) return;
+    const confirmed = await confirmDialog('Cancel the remaining dispatch queue?', {
+        title: 'Cancel broadcast',
+        detail: 'Messages already sent cannot be recalled.',
+        confirmText: 'Cancel dispatch',
+        cancelText: 'Keep sending',
+        danger: true
+    });
+    if (!confirmed) return;
+    try {
+        await fetch(`/api/campaigns/${App.activeBroadcast.campaignId}/cancel`, { method: 'POST' });
+        showToast('Broadcast dispatch cancelled', 'warning');
+    } catch (err) {
+        showToast('Cancel error: ' + err.message, 'error');
+    }
+}
+
+// ==========================================================================
+// 3. Email Storage Vault
+// ==========================================================================
+async function fetchVaultEmails(query = '') {
+    try {
+        const url = query ? `/api/storage/emails?search=${encodeURIComponent(query)}&limit=100` : '/api/storage/emails?limit=100';
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        App.vaultEmails = data.emails || data.items || (Array.isArray(data) ? data : []);
+
+        filterVaultEmails();
+        
+        // Update summary disk
+        const sumRes = await fetch('/api/storage/summary');
+        if (sumRes.ok) {
+            const summary = await sumRes.json();
+            const diskEl = document.getElementById('vault-summary-disk');
+            if (diskEl) diskEl.innerText = `Archived: ${summary.total_archived || App.vaultEmails.length} emails (${summary.disk_size_human || '0.1 MB'})`;
+        }
+    } catch (err) {
+        console.warn('Vault fetch error:', err);
+    }
+}
+
+function renderVaultTable(rows = App.vaultEmails) {
+    const tbody = document.getElementById('vault-table-body');
+    if (!tbody) return;
+
+    pruneSelection('vault');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-xs text-slate-500">No emails stored in Vault yet. Dispatched emails will be archived here automatically.</td></tr>`;
+        renderBulkBar('vault');
+        return;
+    }
+
+    tbody.innerHTML = rows.map(item => {
+        const statusClass = item.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+            item.status === 'simulated' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' :
+            item.status === 'sent' ? 'bg-blue-500/20 text-blue-300 border-blue-500/30' :
+            'bg-rose-500/20 text-rose-300 border-rose-500/30';
+
+        return `
+            <tr class="hover:bg-slate-900/50 transition-colors border-b border-white/5 text-xs">
+                ${selectionCheckboxCell('vault', item.id)}
+                <td class="py-3 px-4">
+                    <div class="font-semibold text-white">${escapeHtml(item.recipient || item.recipient_email)}</div>
+                    <div class="text-[11px] text-slate-400">${escapeHtml(item.recipient_name || item.recipientName || 'Customer')}</div>
+                </td>
+                <td class="py-3 px-4">
+                    <div class="font-medium text-slate-200 truncate max-w-xs">${escapeHtml(item.subject)}</div>
+                    <div class="text-[11px] text-indigo-400 truncate">${escapeHtml(item.campaign_name || item.campaignName || 'Direct / Broadcast')}</div>
+                </td>
+                <td class="py-3 px-4">
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">${item.status}</span>
+                </td>
+                <td class="py-3 px-4 text-slate-400 font-mono text-[11px]">
+                    ${formatDate(item.sent_at || item.sentAt || item.created_at)}
+                </td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-2 text-[11px]">
+                        <span class="${(item.open_count || 0) > 0 ? 'text-purple-300 font-semibold' : 'text-slate-500'}">Opens: ${item.open_count || 0}</span>
+                        <span class="text-slate-600">•</span>
+                        <span class="${(item.click_count || 0) > 0 ? 'text-blue-300 font-semibold' : 'text-slate-500'}">Clicks: ${item.click_count || 0}</span>
+                    </div>
+                </td>
+                <td class="py-3 px-4 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        <button onclick="inspectVaultEmail('${item.id}')" class="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[11px] font-semibold transition-colors">
+                            Inspect
+                        </button>
+                        <a href="/api/storage/emails/${item.id}/eml" download="${item.id}.eml" class="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/5 transition-colors" title="Download RFC .EML file">
+                            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        </a>
+                        <button onclick="deleteVaultEmail('${item.id}')" class="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors" title="Delete archived email">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    renderBulkBar('vault');
+    initLucide();
+}
+
+async function deleteVaultEmail(emailId) {
+    const item = App.vaultEmails.find(e => e.id === emailId);
+    await deleteOne('vault', emailId,
+        `Delete the archived email to ${item ? (item.recipient || item.recipient_email) : 'this recipient'}? The stored .eml file is removed from disk too.`);
+}
+
+function filterVaultEmails() {
+    const q = document.getElementById('vault-search-input')?.value || '';
+    const status = document.getElementById('vault-filter-status')?.value || 'all';
+    
+    let filtered = App.vaultEmails;
+    if (status !== 'all') {
+        filtered = filtered.filter(e => (e.status || '').toLowerCase() === status.toLowerCase());
+    }
+    if (q) {
+        const lower = q.toLowerCase();
+        filtered = filtered.filter(e => 
+            (e.recipient_email || e.recipient || '').toLowerCase().includes(lower) ||
+            (e.subject || '').toLowerCase().includes(lower) ||
+            (e.id || '').toLowerCase().includes(lower)
+        );
+    }
+    
+    const tbody = document.getElementById('vault-table-body');
+    if (!tbody) return;
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-xs text-slate-500">No matching emails found in Vault.</td></tr>`;
+        renderBulkBar('vault');
+        return;
+    }
+    renderVaultTable(filtered);
+}
+
+async function inspectVaultEmail(storageId) {
+    try {
+        const res = await fetch(`/api/storage/emails/${storageId}`);
+        if (!res.ok) return;
+        const email = await res.json();
+
+        const subjEl = document.getElementById('vault-modal-subject');
+        const recipEl = document.getElementById('vault-modal-recipient');
+        const sentEl = document.getElementById('vault-modal-sent-at');
+        const badgeEl = document.getElementById('vault-modal-status-badge');
+        const iframe = document.getElementById('vault-preview-iframe');
+        const headersEl = document.getElementById('vault-content-headers');
+        const metaEl = document.getElementById('vault-content-metadata');
+        const downloadBtn = document.getElementById('vault-modal-download-eml');
+
+        if (subjEl) subjEl.innerText = email.subject || 'No Subject';
+        if (recipEl) recipEl.innerText = `To: ${email.recipient_name ? email.recipient_name + ' <' + email.recipient_email + '>' : email.recipient_email}`;
+        if (sentEl) sentEl.innerText = `Sent: ${formatDate(email.sent_at || email.created_at)}`;
+        if (badgeEl) {
+            badgeEl.innerText = email.status;
+            badgeEl.className = 'px-2 py-0.5 rounded text-[10px] font-bold ' + (email.status === 'delivered' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300');
+        }
+
+        if (iframe) iframe.src = `/api/storage/emails/${storageId}/rendered`;
+        if (headersEl) headersEl.innerText = JSON.stringify(email.headers || {}, null, 2);
+        if (metaEl) metaEl.innerText = JSON.stringify(email.metadata || email.variables || {}, null, 2);
+
+        if (downloadBtn) {
+            downloadBtn.onclick = () => {
+                window.location.href = `/api/storage/emails/${storageId}/eml`;
+            };
+        }
+
+        setVaultModalTab('preview');
+        openModal('modal-email-detail');
+        initLucide();
+    } catch (err) {
+        showToast('Failed to inspect email: ' + err.message, 'error');
+    }
+}
+
+function setVaultModalTab(tab) {
+    const btnPrev = document.getElementById('tab-btn-vault-preview');
+    const btnHead = document.getElementById('tab-btn-vault-headers');
+    const btnMeta = document.getElementById('tab-btn-vault-metadata');
+
+    const conPrev = document.getElementById('vault-content-preview');
+    const conHead = document.getElementById('vault-content-headers');
+    const conMeta = document.getElementById('vault-content-metadata');
+
+    [btnPrev, btnHead, btnMeta].forEach(b => {
+        b?.classList.remove('text-indigo-400', 'border-b-2', 'border-indigo-500');
+        b?.classList.add('text-slate-400');
+    });
+
+    [conPrev, conHead, conMeta].forEach(c => c?.classList.add('hidden'));
+
+    if (tab === 'preview') {
+        btnPrev?.classList.add('text-indigo-400', 'border-b-2', 'border-indigo-500');
+        conPrev?.classList.remove('hidden');
+    } else if (tab === 'headers') {
+        btnHead?.classList.add('text-indigo-400', 'border-b-2', 'border-indigo-500');
+        conHead?.classList.remove('hidden');
+    } else if (tab === 'metadata') {
+        btnMeta?.classList.add('text-indigo-400', 'border-b-2', 'border-indigo-500');
+        conMeta?.classList.remove('hidden');
+    }
+}
+
+// ==========================================================================
+// 4. Customers & Subscriber Management
+// ==========================================================================
+async function fetchSubscribers() {
+    try {
+        const res = await fetch('/api/subscribers?limit=200');
+        if (!res.ok) return;
+        const data = await res.json();
+        App.subscribers = Array.isArray(data) ? data : (data.items || data.subscribers || []);
+
+        const listsRes = await fetch('/api/lists');
+        if (listsRes.ok) {
+            App.lists = await listsRes.json();
+        }
+
+        filterSubscribers();
+        populateBroadcastDropdowns();
+    } catch (err) {
+        console.warn('Subscribers fetch error:', err);
+    }
+}
+
+function renderSubscribersTable(rows = App.subscribers) {
+    const tbody = document.getElementById('subscribers-table-body');
+    if (!tbody) return;
+
+    pruneSelection('subscribers');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-xs text-slate-500">No customer contacts in database yet. Click "Paste Multiple Emails" or "Add Customer" to add some!</td></tr>`;
+        renderBulkBar('subscribers');
+        return;
+    }
+
+    tbody.innerHTML = rows.map(sub => {
+        let tagsArr = [];
+        try {
+            if (typeof sub.tags === 'string') tagsArr = JSON.parse(sub.tags);
+            else if (Array.isArray(sub.tags)) tagsArr = sub.tags;
+        } catch (e) {}
+
+        const fullName = `${sub.first_name || ''} ${sub.last_name || ''}`.trim() || sub.email.split('@')[0];
+        const statusClass = sub.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+
+        // Render Group / List memberships
+        const groupBadges = (sub.lists || []).map(lid => {
+            const listObj = App.lists.find(l => l.id === lid);
+            return listObj ? `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25 text-[10px] font-semibold flex items-center gap-1" title="Customer Group / List">📁 ${escapeHtml(listObj.name)}</span>` : '';
+        }).filter(Boolean).join('');
+
+        // Render Custom Attributes / Placeholders
+        let customBadges = '';
+        try {
+            const cf = typeof sub.custom_fields === 'string' ? JSON.parse(sub.custom_fields || '{}') : (sub.custom_fields || {});
+            customBadges = Object.entries(cf).map(([k, v]) =>
+                `<span class="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-500/25 text-[10px] font-mono" title="Custom Attribute">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>`
+            ).join('');
+        } catch (e) {}
+
+        const tagsBadges = tagsArr.map(t => `<span class="px-2 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 border border-white/5">${escapeHtml(t)}</span>`).join('');
+        const attributesContent = (groupBadges || customBadges || tagsBadges) ? `${groupBadges}${customBadges}${tagsBadges}` : `<span class="text-slate-600 text-[11px]">—</span>`;
+
+        return `
+            <tr class="hover:bg-slate-900/50 transition-colors border-b border-white/5 text-xs">
+                ${selectionCheckboxCell('subscribers', sub.id)}
+                <td class="py-3 px-4">
+                    <div class="font-bold text-white">${escapeHtml(sub.email)}</div>
+                    <div class="text-[11px] text-slate-400">${escapeHtml(fullName)}</div>
+                </td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        ${attributesContent}
+                    </div>
+                </td>
+                <td class="py-3 px-4">
+                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">${sub.status || 'active'}</span>
+                </td>
+                <td class="py-3 px-4 text-slate-400 text-[11px]">
+                    ${formatDate(sub.created_at)}
+                </td>
+                <td class="py-3 px-4 text-right">
+                    <div class="flex items-center justify-end gap-1.5">
+                        <button onclick="openEditSubscriberModal('${sub.id}')" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 transition-colors" title="Edit customer">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteSubscriber('${sub.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors" title="Delete customer">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    renderBulkBar('subscribers');
+    initLucide();
+}
+
+function openBulkPasteModal() {
+    openModal('modal-bulk-paste');
+}
+
+async function submitBulkCustomerEmails() {
+    const rawText = document.getElementById('modal-bulk-emails-text')?.value || '';
+    const tagsInput = document.getElementById('modal-bulk-tags')?.value || '';
+
+    if (!rawText.trim()) {
+        showToast('Please paste at least one customer email address.', 'warning');
+        return;
+    }
+
+    const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+
+    try {
+        const res = await fetch('/api/subscribers/bulk-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ raw_text: rawText, tags: tags })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`✓ ${data.message}`, 'success');
+            closeModal('modal-bulk-paste');
+            document.getElementById('modal-bulk-emails-text').value = '';
+            await fetchSubscribers();
+            await fetchDashboardStats();
+        } else {
+            showToast(data.message || 'Failed to import emails', 'error');
+        }
+    } catch (err) {
+        showToast('Import error: ' + err.message, 'error');
+    }
+}
+
+function openCsvImportModal() {
+    const fileEl = document.getElementById('modal-csv-file');
+    if (fileEl) fileEl.value = '';
+    openModal('modal-csv-import');
+}
+
+async function submitCsvImport() {
+    const fileEl = document.getElementById('modal-csv-file');
+    const file = fileEl?.files?.[0];
+    if (!file) {
+        showToast('Choose a CSV file first.', 'warning');
+        return;
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('update_duplicates', 'true');
+
+    const listSelect = document.getElementById('modal-csv-list-select');
+    if (listSelect && listSelect.value) {
+        form.append('list_id', listSelect.value);
+    }
+
+    showToast(`Importing ${file.name}...`, 'info');
+
+    try {
+        const res = await fetch('/api/subscribers/import-csv', { method: 'POST', body: form });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'CSV import failed', 'error');
+            return;
+        }
+        showToast(`Imported ${data.added_count} new, updated ${data.updated_count}, skipped ${data.failed_count}.`,
+            data.failed_count ? 'warning' : 'success');
+
+        // Automatically detect, register, and display custom placeholder tags from CSV multi-column import
+        if (data.custom_fields_detected && Array.isArray(data.custom_fields_detected) && data.custom_fields_detected.length > 0) {
+            let newlyAdded = 0;
+            data.custom_fields_detected.forEach(tag => {
+                const cleanTag = String(tag).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                if (cleanTag && !App.customPlaceholders.includes(cleanTag)) {
+                    App.customPlaceholders.push(cleanTag);
+                    newlyAdded++;
+                }
+            });
+            if (newlyAdded > 0) {
+                saveCustomPlaceholders();
+                renderAllPlaceholderChips();
+                showToast(`✓ Discovered ${newlyAdded} new placeholder(s): ${data.custom_fields_detected.map(t => '{{' + t + '}}').join(', ')}`, 'info');
+            }
+        }
+
+        closeModal('modal-csv-import');
+        await fetchSubscribers();
+        await fetchDashboardStats();
+    } catch (err) {
+        showToast('CSV import error: ' + err.message, 'error');
+    }
+}
+
+function openCreateGroupModal() {
+    const input = document.getElementById('new-group-name');
+    const desc = document.getElementById('new-group-desc');
+    if (input) input.value = '';
+    if (desc) desc.value = '';
+    openModal('modal-create-group');
+    if (input) setTimeout(() => input.focus(), 60);
+}
+
+async function handleCreateGroupSubmit(e) {
+    if (e) e.preventDefault();
+    const name = document.getElementById('new-group-name')?.value?.trim();
+    const desc = document.getElementById('new-group-desc')?.value?.trim();
+    if (!name) {
+        showToast('Please enter a group name.', 'warning');
+        return;
+    }
+    const btn = document.getElementById('btn-create-group-submit');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch('/api/subscribers/lists', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description: desc || '' })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(`Failed to create group: ${data.detail || 'Unknown error'}`, 'error');
+            return;
+        }
+        showToast(`Customer group "${name}" created successfully!`, 'success');
+        closeModal('modal-create-group');
+        
+        // Refresh lists and dropdowns across UI
+        const listsRes = await fetch('/api/subscribers/lists');
+        if (listsRes.ok) {
+            App.lists = await listsRes.json();
+            populateBroadcastDropdowns();
+        }
+        await fetchSubscribers();
+    } catch (err) {
+        showToast(`Error creating group: ${err.message}`, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function openAddSubscriberModal() {
+    App.editing.subscriber = null;
+    setText('modal-sub-title', 'Add Customer Contact');
+    setText('modal-sub-submit', 'Save Customer');
+    setText('btn-sub-submit', 'Save Customer');
+    setValue('modal-sub-email', '');
+    setValue('modal-sub-first-name', '');
+    setValue('modal-sub-last-name', '');
+    setValue('modal-sub-status', 'active');
+    setValue('modal-sub-list-select', '');
+    openModal('modal-add-subscriber');
+}
+
+function openEditSubscriberModal(subId) {
+    const sub = App.subscribers.find(s => s.id === subId);
+    if (!sub) {
+        showToast('Customer record is no longer loaded. Refresh and try again.', 'warning');
+        return;
+    }
+    App.editing.subscriber = subId;
+    setText('modal-sub-title', 'Edit Customer Contact');
+    setText('modal-sub-submit', 'Save Changes');
+    setText('btn-sub-submit', 'Save Changes');
+    setValue('modal-sub-email', sub.email || '');
+    setValue('modal-sub-first-name', sub.first_name || '');
+    setValue('modal-sub-last-name', sub.last_name || '');
+    setValue('modal-sub-status', sub.status || 'active');
+    setValue('modal-sub-list-select', (sub.lists && sub.lists[0]) || '');
+    openModal('modal-add-subscriber');
+}
+
+async function submitAddSubscriber() {
+    const email = document.getElementById('modal-sub-email')?.value?.trim();
+    const first = document.getElementById('modal-sub-first-name')?.value?.trim();
+    const last = document.getElementById('modal-sub-last-name')?.value?.trim();
+    const status = document.getElementById('modal-sub-status')?.value || 'active';
+    const listSelect = document.getElementById('modal-sub-list-select');
+    const selectedList = listSelect ? listSelect.value : null;
+
+    if (!email || !email.includes('@')) {
+        showToast('Please enter a valid email address.', 'warning');
+        return;
+    }
+
+    const editingId = App.editing.subscriber;
+    const existingSub = editingId ? App.subscribers.find(s => s.id === editingId) : null;
+    let customFields = {};
+    if (existingSub) {
+        try {
+            customFields = typeof existingSub.custom_fields === 'string' ? JSON.parse(existingSub.custom_fields || '{}') : (existingSub.custom_fields || {});
+        } catch (e) {}
+    }
+
+    try {
+        const res = await fetch(editingId ? `/api/subscribers/${editingId}` : '/api/subscribers', {
+            method: editingId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                first_name: first || null,
+                last_name: last || null,
+                status: status,
+                custom_fields: customFields,
+                list_ids: selectedList ? [selectedList] : []
+            })
+        });
+
+        const data = await safeJson(res);
+        if (res.ok) {
+            showToast(editingId ? `Customer ${email} updated.` : `Customer ${email} added successfully.`, 'success');
+            App.editing.subscriber = null;
+            closeModal('modal-add-subscriber');
+            await fetchSubscribers();
+            await fetchDashboardStats();
+        } else {
+            showToast(data.detail || 'Failed to save customer', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function deleteSubscriber(subId) {
+    const sub = App.subscribers.find(s => s.id === subId);
+    await deleteOne('subscribers', subId,
+        `Remove ${sub ? sub.email : 'this customer contact'} from your customer database?`);
+}
+
+function filterSubscribers() {
+    const q = document.getElementById('subscriber-search-input')?.value?.toLowerCase() || '';
+    const status = document.getElementById('subscriber-filter-status')?.value || 'all';
+    const listFilter = document.getElementById('subscriber-filter-list')?.value || 'all';
+
+    let filtered = App.subscribers;
+    if (status !== 'all') {
+        filtered = filtered.filter(s => (s.status || 'active').toLowerCase() === status.toLowerCase());
+    }
+    if (listFilter !== 'all') {
+        filtered = filtered.filter(s => Array.isArray(s.lists) && s.lists.includes(listFilter));
+    }
+    if (q) {
+        filtered = filtered.filter(s => {
+            const email = (s.email || '').toLowerCase();
+            const fn = (s.first_name || '').toLowerCase();
+            const ln = (s.last_name || '').toLowerCase();
+            const tags = String(s.tags || '').toLowerCase();
+            const custom = String(typeof s.custom_fields === 'object' ? JSON.stringify(s.custom_fields) : (s.custom_fields || '')).toLowerCase();
+            return email.includes(q) || fn.includes(q) || ln.includes(q) || tags.includes(q) || custom.includes(q);
+        });
+    }
+
+    const tbody = document.getElementById('subscribers-table-body');
+    if (!tbody) return;
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-xs text-slate-500">No customers match the filter.</td></tr>`;
+        renderBulkBar('subscribers');
+        return;
+    }
+    renderSubscribersTable(filtered);
+}
+
+// ==========================================================================
+// 5. Campaigns Management
+// ==========================================================================
+async function fetchCampaigns() {
+    try {
+        const res = await fetch('/api/campaigns');
+        if (!res.ok) return;
+        App.campaigns = await res.json();
+
+        const badge = document.getElementById('nav-campaigns-badge');
+        if (badge) badge.innerText = App.campaigns.length;
+
+        renderCampaignsTable();
+    } catch (err) {
+        console.warn('Campaigns fetch error:', err);
+    }
+}
+
+function renderCampaignsTable(rows = App.campaigns) {
+    const tbody = document.getElementById('campaigns-table-body');
+    if (!tbody) return;
+
+    pruneSelection('campaigns');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-8 text-xs text-slate-500">No mass campaigns yet. Click "Send to Customers" or "Create Campaign" to create one.</td></tr>`;
+        renderBulkBar('campaigns');
+        return;
+    }
+
+    tbody.innerHTML = rows.map(camp => {
+        const sent = camp.sent_count || 0;
+        const total = camp.total_recipients || 1;
+        const pct = Math.min(100, Math.round((sent / total) * 100));
+
+        const statusClass = camp.status === 'completed' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' :
+            camp.status === 'sending' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+            'bg-slate-500/20 text-slate-300 border-white/10';
+
+        return `
+            <tr class="hover:bg-slate-900/50 transition-colors border-b border-white/5 text-xs">
+                ${selectionCheckboxCell('campaigns', camp.id)}
+                <td class="py-3 px-4">
+                    <div class="font-bold text-white">${escapeHtml(camp.name || camp.subject)}</div>
+                    <div class="text-[11px] text-slate-400 truncate max-w-xs">${escapeHtml(camp.subject)}</div>
+                </td>
+                <td class="py-3 px-4 font-semibold text-slate-300">
+                    ${camp.total_recipients} Customers
+                </td>
+                <td class="py-3 px-4">
+                    <div class="flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">${camp.status}</span>
+                        <span class="text-[11px] text-slate-400 font-mono">${pct}%</span>
+                    </div>
+                    <div class="w-24 bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                        <div class="bg-indigo-500 h-full" style="width: ${pct}%"></div>
+                    </div>
+                </td>
+                <td class="py-3 px-4 text-[11px] text-slate-300">
+                    ${camp.delivered_count || camp.sent_count || 0} / ${camp.total_recipients}
+                </td>
+                <td class="py-3 px-4 text-[11px]">
+                    <span class="text-purple-300 font-medium">Opens: ${camp.open_count || 0}</span> • 
+                    <span class="text-blue-300 font-medium">Clicks: ${camp.click_count || 0}</span>
+                </td>
+                <td class="py-3 px-4 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        ${camp.status === 'draft' ? `
+                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px]">Launch</button>
+                        ` : ''}
+                        <button onclick="switchTab('vault')" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/5 text-[11px]">Vault</button>
+                        <button onclick="openEditCampaignModal('${camp.id}')" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20" title="Rename / edit campaign">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        </button>
+                        <button onclick="deleteCampaign('${camp.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20" title="Delete campaign">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    renderBulkBar('campaigns');
+    initLucide();
+}
+
+async function deleteCampaign(campId) {
+    const camp = App.campaigns.find(c => c.id === campId);
+    const running = camp && ['sending', 'queued', 'paused'].includes(camp.status);
+    await deleteOne('campaigns', campId,
+        `Delete campaign "${camp ? (camp.name || camp.subject) : campId}"?${running ? ' Its running dispatch queue will be cancelled first.' : ''}`);
+}
+
+// Campaign edit is deliberately limited to the two fields that are safe to
+// change after creation. Recipients and body are locked in at launch time.
+async function openEditCampaignModal(campId) {
+    const camp = App.campaigns.find(c => c.id === campId);
+    if (!camp) {
+        showToast('Campaign is no longer loaded. Refresh and try again.', 'warning');
+        return;
+    }
+
+    const name = await promptDialog('Campaign name', camp.name || '', { title: 'Edit campaign' });
+    if (name === null) return;
+    const subject = await promptDialog('Subject line', camp.subject || '', { title: 'Edit campaign' });
+    if (subject === null) return;
+
+    if (!name.trim() || !subject.trim()) {
+        showToast('Name and subject cannot be empty.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/campaigns/${campId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name.trim(), subject: subject.trim() })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to update campaign', 'error');
+            return;
+        }
+        showToast('Campaign updated.', 'success');
+        await fetchCampaigns();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+// The broadcast composer IS the campaign builder; the header button used to
+// call a function that never existed, so it did nothing at all.
+function openNewCampaignModal() {
+    switchTab('broadcast');
+    document.getElementById('broadcast-subject')?.focus();
+}
+
+async function launchCampaignDirect(campId) {
+    try {
+        const res = await fetch(`/api/campaigns/${campId}/launch`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('Campaign launched successfully!', 'success');
+            await fetchCampaigns();
+        } else {
+            showToast(data.message || 'Launch error', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+// ==========================================================================
+// 6. Templates
+// ==========================================================================
+async function fetchTemplates() {
+    try {
+        const res = await fetch('/api/templates');
+        if (!res.ok) return;
+        App.templates = await res.json();
+        renderTemplatePresets();
+    } catch (err) {
+        console.warn('Templates fetch error:', err);
+    }
+}
+
+function renderTemplatePresets() {
+    const listEl = document.getElementById('template-starter-list');
+    if (!listEl) return;
+
+    if (App.templates.length === 0) {
+        listEl.innerHTML = `<div class="p-3 text-[11px] text-slate-500">No saved templates yet. Compose one and hit Save.</div>`;
+        renderBulkBar('templates');
+        return;
+    }
+
+    pruneSelection('templates');
+
+    listEl.innerHTML = App.templates.map(tpl => `
+        <div class="group p-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 border ${App.editing.template === tpl.id ? 'border-indigo-500/60' : 'border-white/5'} hover:border-indigo-500/40 transition-all flex items-start gap-2">
+            <input type="checkbox" class="row-select mt-1" data-kind="templates" data-id="${tpl.id}"
+                   ${isSelected('templates', tpl.id) ? 'checked' : ''}
+                   onchange="toggleRowSelection('templates', '${tpl.id}', this.checked)"
+                   aria-label="Select template">
+            <div onclick="selectStudioTemplate('${tpl.id}')" class="flex-1 min-w-0 cursor-pointer">
+                <div class="text-xs font-bold text-white truncate">${escapeHtml(tpl.name)}</div>
+                <div class="text-[11px] text-slate-400 truncate mt-0.5">${escapeHtml(tpl.subject || '')}</div>
+            </div>
+            <button onclick="deleteTemplate('${tpl.id}')" class="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete template">
+                <i data-lucide="trash-2" class="w-3 h-3"></i>
+            </button>
+        </div>
+    `).join('');
+
+    renderBulkBar('templates');
+    initLucide();
+}
+
+async function deleteTemplate(tplId) {
+    const tpl = App.templates.find(t => t.id === tplId);
+    const removed = await deleteOne('templates', tplId, `Delete template "${tpl ? tpl.name : tplId}"?`);
+    if (removed && App.editing.template === tplId) newStudioTemplate();
+}
+
+// Clears the studio back to "new template" mode so the next save creates a
+// record instead of overwriting whichever template was last clicked.
+function newStudioTemplate() {
+    App.editing.template = null;
+    setValue('studio-tpl-name', '');
+    setValue('studio-tpl-subject', '');
+    setValue('studio-tpl-html', '');
+    setText('studio-save-label', 'Save Template');
+    renderTemplatePresets();
+}
+
+function selectStudioTemplate(tplId) {
+    const tpl = App.templates.find(t => t.id === tplId);
+    if (!tpl) return;
+
+    App.editing.template = tplId;
+    setValue('studio-tpl-name', tpl.name);
+    setValue('studio-tpl-subject', tpl.subject || '');
+    setValue('studio-tpl-html', tpl.body_html || '');
+    setText('studio-save-label', 'Update Template');
+    renderTemplatePresets();
+
+    showToast(`Editing template "${tpl.name}"`, 'info');
+}
+
+async function saveStudioTemplate() {
+    const name = document.getElementById('studio-tpl-name')?.value?.trim();
+    const subject = document.getElementById('studio-tpl-subject')?.value?.trim();
+    const html = document.getElementById('studio-tpl-html')?.value?.trim();
+
+    if (!name || !html) {
+        showToast('Please provide a template name and HTML content.', 'warning');
+        return;
+    }
+
+    // A template loaded into the studio is updated in place; previously every
+    // save created a duplicate record.
+    const editingId = App.editing.template;
+
+    try {
+        const res = await fetch(editingId ? `/api/templates/${editingId}` : '/api/templates', {
+            method: editingId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, subject, body_html: html })
+        });
+
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Failed to save template', 'error');
+            return;
+        }
+        if (!editingId && data.id) App.editing.template = data.id;
+        showToast(editingId ? `Template "${name}" updated!` : `Template "${name}" saved!`, 'success');
+        setText('studio-save-label', 'Update Template');
+        await fetchTemplates();
+    } catch (err) {
+        showToast('Failed to save template: ' + err.message, 'error');
+    }
+}
+
+// ==========================================================================
+// 7. Mail Server & SMTP Management
+// ==========================================================================
+async function fetchSmtpConfigs() {
+    try {
+        const res = await fetch('/api/smtp');
+        if (!res.ok) return;
+        App.smtpConfigs = await res.json();
+
+        renderSmtpProfiles();
+        populateBroadcastDropdowns();
+
+        const defaultRelay = App.smtpConfigs.find(s => s.is_default) || App.smtpConfigs[0];
+        const sideRelay = document.getElementById('sidebar-active-relay');
+        if (sideRelay && defaultRelay) {
+            sideRelay.innerText = `${defaultRelay.name} (${defaultRelay.host})`;
+        }
+    } catch (err) {
+        console.warn('SMTP fetch error:', err);
+    }
+}
+
+function renderSmtpProfiles() {
+    const listEl = document.getElementById('smtp-profiles-list');
+    if (!listEl) return;
+
+    if (App.smtpConfigs.length === 0) {
+        listEl.innerHTML = `<div class="col-span-3 text-center py-8 text-xs text-slate-500">No mail servers configured. Click "+ Add Mail Server" or a quick preset above.</div>`;
+        return;
+    }
+
+    listEl.innerHTML = App.smtpConfigs.map(smtp => `
+        <div class="glass-panel p-5 rounded-2xl border ${smtp.is_default ? 'border-amber-500/40 bg-amber-950/10' : 'border-white/10'} space-y-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 rounded-xl ${smtp.is_sandbox ? 'bg-emerald-500/20 text-emerald-300' : 'bg-indigo-500/20 text-indigo-300'}">
+                        <i data-lucide="${smtp.is_sandbox ? 'shield' : 'server'}" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h4 class="text-xs font-bold text-white truncate">${escapeHtml(smtp.name)}</h4>
+                        <p class="text-[11px] text-slate-400 font-mono">${escapeHtml(smtp.host)}:${smtp.port}</p>
+                    </div>
+                </div>
+                ${smtp.is_default ? '<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">DEFAULT</span>' : ''}
+            </div>
+
+            <div class="text-[11px] text-slate-400 space-y-1">
+                <div>Security: <span class="text-slate-200 font-semibold">${smtp.use_tls ? 'STARTTLS (587)' : (smtp.use_ssl ? 'SSL (465)' : 'Plain')}</span></div>
+                <div>User: <span class="text-slate-200 font-mono">${escapeHtml(smtp.username || 'None')}</span></div>
+            </div>
+
+            <div class="flex items-center justify-between pt-2 border-t border-white/5">
+                <button onclick="testConfiguredSmtp('${smtp.id}')" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">
+                    Test Probe
+                </button>
+                <div class="flex items-center gap-1">
+                    ${!smtp.is_default ? `<button onclick="setDefaultSmtp('${smtp.id}')" class="px-2.5 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold">Make Default</button>` : ''}
+                    <button onclick="openEditSmtpModal('${smtp.id}')" class="p-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300" title="Edit mail server"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+                    <button onclick="deleteSmtp('${smtp.id}')" class="p-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400" title="Delete mail server"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    initLucide();
+}
+
+function openAddSmtpModal() {
+    App.editing.smtp = null;
+    setText('modal-smtp-title', 'Configure Mail Server (SMTP Relay)');
+    setText('modal-smtp-submit', 'Save Mail Server');
+    setText('btn-smtp-submit', 'Save Mail Server');
+    setValue('modal-smtp-name', '');
+    setValue('modal-smtp-host', '');
+    setValue('modal-smtp-port', '587');
+    setValue('modal-smtp-user', '');
+    setValue('modal-smtp-pass', '');
+    const tls = document.getElementById('modal-smtp-tls');
+    const ssl = document.getElementById('modal-smtp-ssl');
+    const def = document.getElementById('modal-smtp-default');
+    if (tls) tls.checked = true;
+    if (ssl) ssl.checked = false;
+    if (def) def.checked = true;
+    openModal('modal-add-smtp');
+}
+
+function openEditSmtpModal(smtpId) {
+    const cfg = App.smtpConfigs.find(c => c.id === smtpId);
+    if (!cfg) {
+        showToast('Mail server profile is no longer loaded. Refresh and try again.', 'warning');
+        return;
+    }
+    App.editing.smtp = smtpId;
+    setText('modal-smtp-title', `Edit Mail Server - ${cfg.name}`);
+    setText('modal-smtp-submit', 'Save Changes');
+    setText('btn-smtp-submit', 'Save Changes');
+    setValue('modal-smtp-name', cfg.name || '');
+    setValue('modal-smtp-host', cfg.host || '');
+    setValue('modal-smtp-port', cfg.port || 587);
+    setValue('modal-smtp-user', cfg.username || '');
+    // The API never returns stored secrets; blank means "keep the existing one".
+    setValue('modal-smtp-pass', '');
+    const passEl = document.getElementById('modal-smtp-pass');
+    if (passEl) passEl.placeholder = cfg.has_password ? 'Unchanged - type to replace' : 'No password set';
+    const tls = document.getElementById('modal-smtp-tls');
+    const ssl = document.getElementById('modal-smtp-ssl');
+    const def = document.getElementById('modal-smtp-default');
+    if (tls) tls.checked = !!cfg.use_tls;
+    if (ssl) ssl.checked = !!cfg.use_ssl;
+    if (def) def.checked = !!cfg.is_default;
+    openModal('modal-add-smtp');
+}
+
+function openGmailConnectModal() {
+    openModal('modal-gmail-connect');
+}
+
+async function submitGmailConnect() {
+    const email = document.getElementById('gmail-email-input')?.value?.trim();
+    const appPassword = document.getElementById('gmail-app-password-input')?.value?.trim();
+    const senderName = document.getElementById('gmail-sender-name-input')?.value?.trim() || 'Bitmail Sender';
+    const isDefault = document.getElementById('gmail-set-default')?.checked ?? true;
+
+    if (!email || !email.includes('@')) {
+        showToast('Please enter your valid Gmail or Google Workspace email address.', 'warning');
+        return;
+    }
+    if (!appPassword || appPassword.length < 8) {
+        showToast('Please enter your 16-character Google App Password.', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btn-submit-gmail-connect');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Verifying with Google...</span>`;
+    }
+
+    showToast('Performing live handshake with smtp.gmail.com:587...', 'info');
+
+    try {
+        const res = await fetch('/api/smtp/gmail-connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: email,
+                app_password: appPassword,
+                sender_name: senderName,
+                is_default: isDefault
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`✓ Gmail Connected: ${data.message}`, 'success');
+            closeModal('modal-gmail-connect');
+            
+            // Auto-populate broadcast sender
+            const senderNameInput = document.getElementById('broadcast-sender-name');
+            const senderEmailInput = document.getElementById('broadcast-sender-email');
+            if (senderNameInput && senderName) senderNameInput.value = senderName;
+            if (senderEmailInput && email) senderEmailInput.value = email;
+
+            await fetchSmtpConfigs();
+            populateBroadcastDropdowns();
+        } else {
+            showToast(data.detail || data.message || 'Gmail verification failed', 'error');
+        }
+    } catch (err) {
+        showToast('Connection error: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="shield-check" class="w-3.5 h-3.5"></i><span>Connect & Verify Gmail</span>`;
+            initLucide();
+        }
+    }
+}
+
+function openBrevoConnectModal() {
+    openModal('modal-brevo-connect');
+}
+
+async function submitBrevoConnect() {
+    const email = document.getElementById('brevo-email-input')?.value?.trim();
+    const key = document.getElementById('brevo-key-input')?.value?.trim();
+    const isDefault = document.getElementById('brevo-set-default')?.checked ?? true;
+
+    if (!email || !email.includes('@')) {
+        showToast('Please enter your Brevo account login email address.', 'warning');
+        return;
+    }
+    if (!key || key.length < 8) {
+        showToast('Please enter your Brevo SMTP Master Key.', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('btn-submit-brevo-connect');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span>Verifying with Brevo...</span>`;
+    }
+
+    showToast('Performing live handshake with smtp-relay.brevo.com:587...', 'info');
+
+    try {
+        const res = await fetch('/api/smtp/brevo-connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                login_email: email,
+                smtp_key: key,
+                is_default: isDefault
+            })
+        });
+
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast(`✓ Brevo Connected: ${data.message}`, 'success');
+            closeModal('modal-brevo-connect');
+
+            // Auto-populate broadcast sender
+            const senderEmailInput = document.getElementById('broadcast-sender-email');
+            if (senderEmailInput && email) senderEmailInput.value = email;
+
+            await fetchSmtpConfigs();
+            populateBroadcastDropdowns();
+        } else {
+            showToast(data.detail || data.message || 'Brevo verification failed', 'error');
+        }
+    } catch (err) {
+        showToast('Connection error: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<i data-lucide="shield-check" class="w-3.5 h-3.5"></i><span>Connect & Verify Brevo</span>`;
+            initLucide();
+        }
+    }
+}
+
+function presetSmtp(type) {
+    if (type === 'gmail') {
+        openGmailConnectModal();
+        return;
+    }
+    if (type === 'brevo') {
+        openBrevoConnectModal();
+        return;
+    }
+
+    openModal('modal-add-smtp');
+    const nameEl = document.getElementById('modal-smtp-name');
+    const hostEl = document.getElementById('modal-smtp-host');
+    const portEl = document.getElementById('modal-smtp-port');
+    const userEl = document.getElementById('modal-smtp-user');
+    const tlsEl = document.getElementById('modal-smtp-tls');
+    const sslEl = document.getElementById('modal-smtp-ssl');
+
+    if (type === 'outlook') {
+        nameEl.value = 'Microsoft 365 / Outlook';
+        hostEl.value = 'smtp.office365.com';
+        portEl.value = 587;
+        tlsEl.checked = true;
+        sslEl.checked = false;
+    } else if (type === 'sendgrid') {
+        nameEl.value = 'SendGrid SMTP';
+        hostEl.value = 'smtp.sendgrid.net';
+        portEl.value = 587;
+        userEl.value = 'apikey';
+        tlsEl.checked = true;
+        sslEl.checked = false;
+    } else if (type === 'ses') {
+        nameEl.value = 'Amazon SES Relay';
+        hostEl.value = 'email-smtp.us-east-1.amazonaws.com';
+        portEl.value = 587;
+        tlsEl.checked = true;
+        sslEl.checked = false;
+    } else if (type === 'brevo') {
+        nameEl.value = 'Brevo (Sendinblue)';
+        hostEl.value = 'smtp-relay.brevo.com';
+        portEl.value = 587;
+        tlsEl.checked = true;
+        sslEl.checked = false;
+    } else if (type === 'sandbox') {
+        nameEl.value = 'Local Sandbox Test Mode';
+        hostEl.value = 'sandbox';
+        portEl.value = 1025;
+        tlsEl.checked = false;
+        sslEl.checked = false;
+        showToast('Sandbox mode active: messages simulated & archived with zero external auth', 'info');
+    }
+}
+
+async function submitAddSmtpProfile() {
+    const name = document.getElementById('modal-smtp-name')?.value?.trim();
+    const host = document.getElementById('modal-smtp-host')?.value?.trim();
+    const port = parseInt(document.getElementById('modal-smtp-port')?.value || '587', 10);
+    const user = document.getElementById('modal-smtp-user')?.value?.trim();
+    const pass = document.getElementById('modal-smtp-pass')?.value || '';
+    const tls = document.getElementById('modal-smtp-tls')?.checked ?? true;
+    const ssl = document.getElementById('modal-smtp-ssl')?.checked ?? false;
+    const isDefault = document.getElementById('modal-smtp-default')?.checked ?? false;
+
+    if (!name || !host) {
+        showToast('Please provide a profile name and SMTP host.', 'warning');
+        return;
+    }
+
+    const editingId = App.editing.smtp;
+    const payload = {
+        name: name,
+        host: host,
+        port: port,
+        username: user || null,
+        use_tls: tls,
+        use_ssl: ssl,
+        is_default: isDefault,
+        is_sandbox: host.toLowerCase() === 'sandbox' || host === '127.0.0.1'
+    };
+    // On edit an empty password field means "leave the stored secret alone".
+    if (pass || !editingId) payload.password = pass || null;
+
+    try {
+        const res = await fetch(editingId ? `/api/smtp/${editingId}` : '/api/smtp', {
+            method: editingId ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await safeJson(res);
+        if (res.ok) {
+            showToast(editingId ? `Mail server "${name}" updated.` : `Mail server profile "${name}" created!`, 'success');
+            App.editing.smtp = null;
+            closeModal('modal-add-smtp');
+            await fetchSmtpConfigs();
+        } else {
+            showToast(data.detail || 'Failed to save SMTP profile', 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function testModalSmtpConnection() {
+    const host = document.getElementById('modal-smtp-host')?.value?.trim() || '127.0.0.1';
+    const port = parseInt(document.getElementById('modal-smtp-port')?.value || '587', 10);
+    const user = document.getElementById('modal-smtp-user')?.value?.trim();
+    const pass = document.getElementById('modal-smtp-pass')?.value || '';
+    const tls = document.getElementById('modal-smtp-tls')?.checked ?? true;
+    const ssl = document.getElementById('modal-smtp-ssl')?.checked ?? false;
+
+    showToast(`Testing connectivity to ${host}:${port}...`, 'info');
+
+    try {
+        const res = await fetch('/api/smtp/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                host: host,
+                port: port,
+                username: user || null,
+                password: pass || null,
+                use_tls: tls,
+                use_ssl: ssl,
+                test_recipient: 'probe-test@example.com'
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`✓ Connection Verified: ${data.message} (${data.latency_ms}ms)`, 'success');
+        } else {
+            showToast(`Connection failed: ${data.message || 'Check host, port, or app password'}`, 'error');
+        }
+    } catch (err) {
+        showToast('Test probe exception: ' + err.message, 'error');
+    }
+}
+
+async function testConfiguredSmtp(smtpId) {
+    showToast('Running SMTP diagnostic handshake...', 'info');
+    try {
+        const res = await fetch('/api/smtp/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ smtp_config_id: smtpId, test_recipient: 'probe@example.com' })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast(`✓ Server Verified: ${data.message} (${data.latency_ms}ms)`, 'success');
+        } else {
+            showToast(`Failed: ${data.message}`, 'error');
+        }
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function setDefaultSmtp(smtpId) {
+    try {
+        await fetch(`/api/smtp/${smtpId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_default: true })
+        });
+        showToast('Default mail server updated.', 'success');
+        await fetchSmtpConfigs();
+    } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+    }
+}
+
+async function deleteSmtp(smtpId) {
+    const cfg = App.smtpConfigs.find(c => c.id === smtpId);
+    await deleteOne('smtp', smtpId,
+        `Delete mail server "${cfg ? cfg.name : smtpId}"? Campaigns still pointing at it will fall back to the default relay.`);
+}
+
+// ==========================================================================
+// Modal Utilities & Helpers
+// ==========================================================================
+function openModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove('hidden');
+    initLucide();
+}
+
+function closeModal(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.add('hidden');
+}
+
+// ==========================================================================
+// Custom Confirmation / Prompt Dialogs
+// window.confirm() and window.prompt() are suppressed by ad blockers, by
+// Chrome's "prevent this page from creating additional dialogs" checkbox, and
+// inside sandboxed iframes. When that happened a destructive action silently
+// became a no-op, which is why deletes appeared broken. These dialogs are our
+// own DOM, so they always run. Native <dialog> gives Esc, focus trapping and a
+// top-layer backdrop for free.
+// ==========================================================================
+let _uiDialogEl = null;
+
+function uiDialog(opts) {
+    const {
+        title = 'Please confirm',
+        message = '',
+        detail = '',
+        confirmText = 'Confirm',
+        cancelText = 'Cancel',
+        danger = false,
+        input = null
+    } = opts || {};
+
+    if (!_uiDialogEl) {
+        _uiDialogEl = document.createElement('dialog');
+        _uiDialogEl.id = 'ui-dialog-element';
+        _uiDialogEl.className = 'ui-dialog';
+        // Clicking the backdrop counts as cancel.
+        _uiDialogEl.addEventListener('click', (e) => {
+            if (e.target === _uiDialogEl) {
+                _uiDialogEl.returnValue = '';
+                _uiDialogEl.close();
+            }
+        });
+        document.body.appendChild(_uiDialogEl);
+    }
+
+    const dlg = _uiDialogEl;
+    dlg.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;max-width:100vw;max-height:100vh;margin:0;padding:1rem;border:none;background:transparent;display:flex;align-items:center;justify-content:center;z-index:99999;box-sizing:border-box;';
+
+    // A second dialog while one is open would overwrite its markup and resolve
+    // both promises from one answer - e.g. a double-clicked delete button
+    // firing two DELETE requests. Ignore the newcomer instead.
+    if (dlg.open) return Promise.resolve(input ? null : false);
+
+    const confirmClass = danger
+        ? 'bg-rose-600 hover:bg-rose-500 text-white'
+        : 'bg-indigo-600 hover:bg-indigo-500 text-white';
+
+    const inputHtml = input ? `
+        <input id="ui-dialog-input" type="${input.type || 'text'}"
+               value="${escapeHtml(input.value || '')}"
+               placeholder="${escapeHtml(input.placeholder || '')}"
+               class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+    ` : '';
+
+    dlg.innerHTML = `
+        <form method="dialog" class="glass-panel rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl bg-slate-950/95 max-w-md w-full" style="margin:auto;max-width:28rem;width:calc(100% - 2rem);">
+            <div class="flex items-start gap-3">
+                <div class="p-2 rounded-xl ${danger ? 'bg-rose-500/15 text-rose-400' : 'bg-indigo-500/15 text-indigo-300'} shrink-0">
+                    <i data-lucide="${danger ? 'alert-triangle' : 'help-circle'}" class="w-4 h-4"></i>
+                </div>
+                <div class="space-y-1 min-w-0">
+                    <h3 class="text-sm font-bold text-white">${escapeHtml(title)}</h3>
+                    <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(message)}</p>
+                    ${detail ? `<p class="text-[11px] text-slate-500 leading-relaxed">${escapeHtml(detail)}</p>` : ''}
+                </div>
+            </div>
+            ${inputHtml}
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
+                <button type="button" data-ui-dialog-cancel class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">${escapeHtml(cancelText)}</button>
+                <button type="submit" value="confirm" data-autofocus class="px-5 py-2 rounded-xl text-xs font-bold ${confirmClass}">${escapeHtml(confirmText)}</button>
+            </div>
+        </form>
+    `;
+
+    dlg.querySelector('[data-ui-dialog-cancel]')?.addEventListener('click', () => {
+        dlg.returnValue = '';
+        dlg.close();
+    });
+
+    initLucide();
+    dlg.returnValue = '';
+    dlg.showModal();
+
+    const field = dlg.querySelector('#ui-dialog-input');
+    if (field) {
+        field.focus();
+        field.select();
+    } else {
+        dlg.querySelector('[data-autofocus]')?.focus();
+    }
+
+    return new Promise((resolve) => {
+        dlg.addEventListener('close', function onClose() {
+            dlg.removeEventListener('close', onClose);
+            dlg.style.display = 'none';
+            const confirmed = dlg.returnValue === 'confirm';
+            if (!input) return resolve(confirmed);
+            resolve(confirmed ? (dlg.querySelector('#ui-dialog-input')?.value ?? '') : null);
+        });
+    });
+}
+
+// Drop-in replacements. confirmDialog resolves true/false, promptDialog
+// resolves the typed string or null when cancelled - same contract as the
+// natives they replace, minus the blocking and the blockability.
+function confirmDialog(message, opts = {}) {
+    return uiDialog({ message, ...opts });
+}
+
+function promptDialog(message, defaultValue = '', opts = {}) {
+    return uiDialog({
+        title: 'Input required',
+        message,
+        confirmText: 'Continue',
+        input: { value: defaultValue },
+        ...opts
+    });
+}
+
+// ==========================================================================
+// Multi-Select & Mass Actions
+// One engine drives every table that supports selection, so the select-all
+// checkbox, the action bar and the bulk request stay consistent.
+// ==========================================================================
+const BULK_KINDS = {
+    subscribers: {
+        resource: 'subscribers',
+        noun: 'customer contact',
+        items: () => App.subscribers,
+        refresh: () => fetchSubscribers()
+    },
+    vault: {
+        resource: 'emails',
+        noun: 'archived email',
+        items: () => App.vaultEmails,
+        refresh: () => fetchVaultEmails()
+    },
+    campaigns: {
+        resource: 'campaigns',
+        noun: 'campaign',
+        items: () => App.campaigns,
+        refresh: () => fetchCampaigns()
+    },
+    smtp: {
+        resource: 'smtp',
+        noun: 'mail server profile',
+        items: () => App.smtpConfigs,
+        refresh: () => fetchSmtpConfigs()
+    },
+    templates: {
+        resource: 'templates',
+        noun: 'template',
+        items: () => App.templates,
+        refresh: () => fetchTemplates()
+    }
+};
+
+function selectionSet(kind) {
+    if (!App.selected[kind]) App.selected[kind] = new Set();
+    return App.selected[kind];
+}
+
+function isSelected(kind, id) {
+    return selectionSet(kind).has(id);
+}
+
+function toggleRowSelection(kind, id, checked) {
+    const set = selectionSet(kind);
+    if (checked) set.add(id); else set.delete(id);
+    renderBulkBar(kind);
+}
+
+// Select-all applies to the rows currently rendered, not the whole dataset -
+// selecting rows hidden by a filter is how people delete the wrong records.
+function toggleSelectAll(kind, checked) {
+    const set = selectionSet(kind);
+    document.querySelectorAll(`.row-select[data-kind="${kind}"]`).forEach(cb => {
+        cb.checked = checked;
+        if (checked) set.add(cb.dataset.id); else set.delete(cb.dataset.id);
+    });
+    renderBulkBar(kind);
+}
+
+function clearSelection(kind) {
+    selectionSet(kind).clear();
+    const master = document.getElementById(`select-all-${kind}`);
+    if (master) {
+        master.checked = false;
+        master.indeterminate = false;
+    }
+    document.querySelectorAll(`.row-select[data-kind="${kind}"]`).forEach(cb => { cb.checked = false; });
+    renderBulkBar(kind);
+}
+
+// Drops ids that no longer exist (deleted elsewhere, or filtered out of the
+// dataset) so the counter can never promise more than we can actually delete.
+function pruneSelection(kind) {
+    const cfg = BULK_KINDS[kind];
+    if (!cfg) return;
+    const live = new Set((cfg.items() || []).map(i => i.id));
+    const set = selectionSet(kind);
+    set.forEach(id => { if (!live.has(id)) set.delete(id); });
+}
+
+function renderBulkBar(kind) {
+    const bar = document.getElementById(`bulk-bar-${kind}`);
+    const count = selectionSet(kind).size;
+    if (bar) {
+        bar.classList.toggle('hidden', count === 0);
+        const label = document.getElementById(`bulk-count-${kind}`);
+        if (label) label.innerText = String(count);
+    }
+
+    const master = document.getElementById(`select-all-${kind}`);
+    if (master) {
+        const boxes = document.querySelectorAll(`.row-select[data-kind="${kind}"]`);
+        const checked = document.querySelectorAll(`.row-select[data-kind="${kind}"]:checked`).length;
+        master.checked = boxes.length > 0 && checked === boxes.length;
+        master.indeterminate = checked > 0 && checked < boxes.length;
+    }
+}
+
+function selectionCheckboxCell(kind, id) {
+    return `<td class="py-3 px-4 w-8">
+        <input type="checkbox" class="row-select" data-kind="${kind}" data-id="${id}"
+               ${isSelected(kind, id) ? 'checked' : ''}
+               onchange="toggleRowSelection('${kind}', '${id}', this.checked)"
+               aria-label="Select row">
+    </td>`;
+}
+
+async function bulkDeleteSelected(kind) {
+    const cfg = BULK_KINDS[kind];
+    if (!cfg) return;
+
+    const ids = [...selectionSet(kind)];
+    if (ids.length === 0) {
+        showToast('Nothing selected.', 'warning');
+        return;
+    }
+
+    const plural = ids.length === 1 ? cfg.noun : `${cfg.noun}s`;
+    const ok = await confirmDialog(`Permanently delete ${ids.length} ${plural}?`, {
+        title: 'Confirm mass delete',
+        detail: 'This cannot be undone.',
+        confirmText: `Delete ${ids.length}`,
+        danger: true
+    });
+    if (!ok) return;
+
+    try {
+        const res = await fetch('/api/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resource: cfg.resource, ids })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Mass delete failed', 'error');
+            return;
+        }
+        showToast(data.message || `Deleted ${data.deleted} records.`,
+            data.failed_count ? 'warning' : 'success');
+        if (data.failed_count) {
+            console.warn('[bulk-delete] failures:', data.failed);
+        }
+        clearSelection(kind);
+        await cfg.refresh();
+        await fetchDashboardStats();
+    } catch (err) {
+        showToast('Mass delete error: ' + err.message, 'error');
+    }
+}
+
+// Single-record delete goes through the same confirm + error surfacing path.
+async function deleteOne(kind, id, message) {
+    const cfg = BULK_KINDS[kind];
+    if (!cfg) return false;
+
+    const ok = await confirmDialog(message || `Delete this ${cfg.noun}?`, {
+        title: 'Confirm delete',
+        detail: 'This cannot be undone.',
+        confirmText: 'Delete',
+        danger: true
+    });
+    if (!ok) return false;
+
+    try {
+        const res = await fetch(`${DELETE_ENDPOINTS[kind]}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || `Failed to delete ${cfg.noun}`, 'error');
+            return false;
+        }
+        selectionSet(kind).delete(id);
+        showToast(data.message || `${cfg.noun} deleted.`, 'success');
+        await cfg.refresh();
+        await fetchDashboardStats();
+        return true;
+    } catch (err) {
+        showToast('Delete error: ' + err.message, 'error');
+        return false;
+    }
+}
+
+const DELETE_ENDPOINTS = {
+    subscribers: '/api/subscribers',
+    vault: '/api/storage/emails',
+    campaigns: '/api/campaigns',
+    smtp: '/api/smtp',
+    templates: '/api/templates'
+};
+
+function handleGlobalSearch(e) {
+    if (e.key === 'Enter') {
+        const q = e.target.value.trim();
+        if (!q) return;
+        switchTab('vault');
+        const vaultInput = document.getElementById('vault-search-input');
+        if (vaultInput) {
+            vaultInput.value = q;
+            filterVaultEmails();
+        }
+    }
+}
+
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    const bgClass = type === 'success' ? 'bg-emerald-950/90 border-emerald-500/40 text-emerald-200' :
+        type === 'error' ? 'bg-rose-950/90 border-rose-500/40 text-rose-200' :
+        type === 'warning' ? 'bg-amber-950/90 border-amber-500/40 text-amber-200' :
+        'bg-slate-900/90 border-indigo-500/40 text-indigo-200';
+
+    toast.className = `p-3.5 px-4 rounded-xl border backdrop-blur-md shadow-2xl text-xs font-semibold flex items-center gap-2 transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto ${bgClass}`;
+    toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+
+    container.appendChild(toast);
+
+    // Animate in
+    requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+    });
+
+    // Auto remove
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-4');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+function setValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value ?? '';
+}
+
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.innerText = value;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatDate(isoStr) {
+    if (!isoStr) return '--';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+        return isoStr;
+    }
+}
+
+function formatTimeAgo(isoStr) {
+    if (!isoStr) return '';
+    try {
+        const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+        return `${Math.floor(diff / 86400)}d ago`;
+    } catch (e) {
+        return '';
+    }
+}
+
+// ==========================================================================
+// Direct Scan-to-Login & Mobile Device Linking Controllers
+// ==========================================================================
+let currentScanSession = null;
+let scanCountdownInterval = null;
+let scanStatusPollInterval = null;
+
+async function openScanLoginModal() {
+    openModal('modal-scan-login');
+
+    const wrapper = document.getElementById('scan-qr-svg-wrapper');
+    const statusText = document.getElementById('scan-status-text');
+    const timerText = document.getElementById('scan-timer-text');
+    const openLinkBtn = document.getElementById('scan-open-link-btn');
+
+    if (wrapper) {
+        wrapper.innerHTML = `
+            <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating Live QR...
+            </div>
+        `;
+    }
+    if (statusText) statusText.innerText = 'Initializing scan session...';
+
+    clearInterval(scanCountdownInterval);
+    clearInterval(scanStatusPollInterval);
+
+    try {
+        const res = await fetch('/api/auth/scan/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_info: 'Desktop Chrome / Linux' })
+        });
+
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            currentScanSession = data;
+            
+            // Insert SVG QR Code
+            if (wrapper) {
+                wrapper.innerHTML = data.qr_svg;
+                // Add styling to svg
+                const svgEl = wrapper.querySelector('svg');
+                if (svgEl) {
+                    svgEl.setAttribute('width', '100%');
+                    svgEl.setAttribute('height', '100%');
+                }
+            }
+
+            if (statusText) statusText.innerText = 'Waiting for phone scan...';
+            if (openLinkBtn) openLinkBtn.href = data.scan_url;
+
+            // Start 5-minute countdown
+            let secondsLeft = data.expires_in_seconds || 300;
+            const updateTimerDisplay = () => {
+                const m = Math.floor(secondsLeft / 60);
+                const s = secondsLeft % 60;
+                if (timerText) timerText.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+            updateTimerDisplay();
+
+            scanCountdownInterval = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    clearInterval(scanCountdownInterval);
+                    clearInterval(scanStatusPollInterval);
+                    if (statusText) statusText.innerHTML = '<span class="text-rose-400">QR Expired. Click to refresh.</span>';
+                    if (timerText) timerText.innerText = '00:00';
+                } else {
+                    updateTimerDisplay();
+                }
+            }, 1000);
+
+            // Fallback polling every 3s in addition to instant WebSocket event
+            scanStatusPollInterval = setInterval(async () => {
+                if (document.getElementById('modal-scan-login')?.classList.contains('hidden')) {
+                    clearInterval(scanStatusPollInterval);
+                    return;
+                }
+                try {
+                    const statusRes = await fetch(`/api/auth/scan/session/${data.session_id}/status`);
+                    if (statusRes.ok) {
+                        const sData = await statusRes.json();
+                        if (sData.is_approved) {
+                            clearInterval(scanStatusPollInterval);
+                            clearInterval(scanCountdownInterval);
+                            handleWebSocketEvent({
+                                type: 'scan_auth_approved',
+                                data: {
+                                    session_id: sData.session_id,
+                                    email: sData.user_email,
+                                    name: sData.user_name,
+                                    auth_token: sData.auth_token
+                                }
+                            });
+                        }
+                    }
+                } catch (e) {
+                    console.debug('Poll check error:', e);
+                }
+            }, 3000);
+
+        } else {
+            showToast('Failed to create scan session: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Error generating scan QR: ' + err.message, 'error');
+    }
+}
+
+async function simulateScanApproval() {
+    if (!currentScanSession || !currentScanSession.session_id) {
+        showToast('Please open the scan modal first.', 'warning');
+        return;
+    }
+
+    const testEmail = await promptDialog(
+        'Enter the email address to simulate instant phone authorization for.',
+        'admin@bitnade.com',
+        { title: 'Simulate scan approval', confirmText: 'Approve' }
+    );
+    if (!testEmail || !testEmail.includes('@')) return;
+
+    showToast(`Simulating instant phone scan approval for ${testEmail}...`, 'info');
+
+    try {
+        const res = await fetch(`/api/auth/scan/simulate-approval/${currentScanSession.session_id}?email=${encodeURIComponent(testEmail)}`, {
+            method: 'POST'
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast(`✓ Phone scan simulated successfully! Authenticated as ${testEmail}`, 'success');
+        } else {
+            showToast('Simulation failed: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Simulation error: ' + err.message, 'error');
+    }
+}

@@ -1,0 +1,21 @@
+# Web framework
+fastapi>=0.115
+uvicorn>=0.30
+websockets>=13.0                # WebSocket live stream protocol support
+python-multipart>=0.0.9      # multipart/form-data for CSV upload
+jinja2>=3.1                  # server-rendered pages + template interpolation
+
+# Persistence
+aiosqlite>=0.20
+aiofiles>=23.2
+
+# Mail delivery
+aiosmtplib>=3.0
+dnspython>=2.6               # MX lookup for direct-MX delivery
+beautifulsoup4>=4.12         # link rewriting / html-to-text
+
+# Scan-to-login QR codes
+qrcode>=7.4
+
+# Tests
+httpx>=0.27                  # required by fastapi.testclient

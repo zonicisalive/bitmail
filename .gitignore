@@ -1,0 +1,62 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Dependencies
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+node_modules/
+
+# Databases & Local State
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/email_system.db
+data/mass_email.db
+
+# Storage & Archive Vaults (Preserve directory structure via .gitkeep)
+storage/eml/*
+storage/*.eml
+storage/*.json
+data/eml_archive/*
+data/eml_archive/*.eml
+
+# Secrets, Credentials, OAuth tokens, and Keys
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+*.crt
+token.json
+credentials.json
+client_secret*.json
+
+# Logs & Temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Editor & OS Metadata
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
