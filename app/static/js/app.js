@@ -998,9 +998,15 @@ function populateBroadcastDropdowns() {
     const filterListSelect = document.getElementById('subscriber-filter-list');
     if (filterListSelect) {
         const curVal = filterListSelect.value || 'all';
-        filterListSelect.innerHTML = `<option value="all">All Groups / Lists</option>` +
+        filterListSelect.innerHTML = `<option value="all">📁 All Groups / Lists</option>` +
             App.lists.map(l => `<option value="${l.id}" ${curVal === l.id ? 'selected' : ''}>📁 ${escapeHtml(l.name)} (${l.subscriber_count})</option>`).join('');
     }
+
+    // Update Manage Groups counts in Customers tab header and modal badge
+    const btnCount = document.getElementById('manage-groups-btn-count');
+    if (btnCount) btnCount.textContent = App.lists.length;
+    const badgeCount = document.getElementById('manage-groups-count-badge');
+    if (badgeCount) badgeCount.textContent = `${App.lists.length} Group${App.lists.length === 1 ? '' : 's'}`;
 
 
     // Populate SMTP Relay Dropdown
@@ -1806,7 +1812,7 @@ async function handleCreateGroupSubmit(e) {
     if (btn) btn.disabled = true;
 
     try {
-        const res = await fetch('/api/subscribers/lists', {
+        const res = await fetch('/api/lists', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, description: desc || '' })
@@ -1820,16 +1826,190 @@ async function handleCreateGroupSubmit(e) {
         closeModal('modal-create-group');
         
         // Refresh lists and dropdowns across UI
-        const listsRes = await fetch('/api/subscribers/lists');
+        const listsRes = await fetch('/api/lists');
         if (listsRes.ok) {
             App.lists = await listsRes.json();
             populateBroadcastDropdowns();
+            renderManageGroupsList();
         }
         await fetchSubscribers();
     } catch (err) {
         showToast(`Error creating group: ${err.message}`, 'error');
     } finally {
         if (btn) btn.disabled = false;
+    }
+}
+
+async function openManageGroupsModal() {
+    try {
+        const res = await fetch('/api/lists');
+        if (res.ok) {
+            App.lists = await res.json();
+            populateBroadcastDropdowns();
+        }
+    } catch (e) {
+        console.error('Failed to fetch lists:', e);
+    }
+    renderManageGroupsList();
+    openModal('modal-manage-groups');
+}
+
+function renderManageGroupsList() {
+    const container = document.getElementById('manage-groups-list');
+    if (!container) return;
+
+    const countBadge = document.getElementById('manage-groups-count-badge');
+    if (countBadge) {
+        countBadge.textContent = `${App.lists.length} Group${App.lists.length === 1 ? '' : 's'}`;
+    }
+
+    if (!App.lists || App.lists.length === 0) {
+        container.innerHTML = `
+            <div class="py-12 text-center text-slate-500">
+                <i data-lucide="folders" class="w-12 h-12 mx-auto text-slate-600 mb-3 opacity-60"></i>
+                <p class="text-sm font-medium text-slate-300">No customer groups yet</p>
+                <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Create targeted customer lists to organize audience segments and run dedicated campaigns.</p>
+                <button type="button" onclick="openCreateGroupModal()" class="mt-4 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Create First Group
+                </button>
+            </div>
+        `;
+        if (window.lucide) lucide.createIcons();
+        return;
+    }
+
+    container.innerHTML = App.lists.map(list => {
+        const count = list.subscriber_count || 0;
+        const safeName = escapeHtml(list.name || 'Unnamed Group');
+        const safeDesc = escapeHtml(list.description || 'No description provided');
+        const listId = list.id;
+
+        return `
+            <div class="p-4 rounded-xl bg-slate-900/80 border border-white/5 hover:border-purple-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-start gap-3 min-w-0">
+                    <div class="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                        <i data-lucide="folder" class="w-4 h-4"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h4 class="text-sm font-semibold text-white truncate">${safeName}</h4>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
+                                ${count} contact${count === 1 ? '' : 's'}
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-0.5 line-clamp-1">${safeDesc}</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                    <button type="button" onclick="viewGroupCustomers('${listId}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-white/5 transition-all flex items-center gap-1 cursor-pointer" title="View contacts in this group">
+                        <i data-lucide="users" class="w-3.5 h-3.5 text-cyan-400"></i> View
+                    </button>
+                    <button type="button" onclick="openEditGroupModal('${listId}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-white/5 transition-all flex items-center gap-1 cursor-pointer" title="Rename or edit description">
+                        <i data-lucide="edit-3" class="w-3.5 h-3.5 text-amber-400"></i> Rename
+                    </button>
+                    <button type="button" onclick="deleteCustomerGroup('${listId}', '${safeName.replace(/'/g, "\\'")}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer" title="Delete group">
+                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    if (window.lucide) lucide.createIcons();
+}
+
+function viewGroupCustomers(listId) {
+    closeModal('modal-manage-groups');
+    switchTab('subscribers');
+    const filterSelect = document.getElementById('subscriber-filter-list');
+    if (filterSelect) {
+        filterSelect.value = listId;
+        filterSubscribers();
+    }
+}
+
+function openEditGroupModal(listId) {
+    const group = App.lists.find(l => l.id === listId);
+    if (!group) return;
+
+    const idInput = document.getElementById('edit-group-id');
+    const nameInput = document.getElementById('edit-group-name');
+    const descInput = document.getElementById('edit-group-desc');
+
+    if (idInput) idInput.value = group.id;
+    if (nameInput) nameInput.value = group.name || '';
+    if (descInput) descInput.value = group.description || '';
+
+    openModal('modal-edit-group');
+    if (nameInput) setTimeout(() => nameInput.focus(), 60);
+}
+
+async function handleEditGroupSubmit(e) {
+    if (e) e.preventDefault();
+    const id = document.getElementById('edit-group-id')?.value;
+    const name = document.getElementById('edit-group-name')?.value?.trim();
+    const desc = document.getElementById('edit-group-desc')?.value?.trim();
+
+    if (!id || !name) {
+        showToast('Please enter a group name.', 'warning');
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/lists/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description: desc || '' })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(`Failed to update group: ${data.detail || 'Unknown error'}`, 'error');
+            return;
+        }
+
+        showToast(`Group "${name}" updated successfully!`, 'success');
+        closeModal('modal-edit-group');
+
+        // Refresh lists
+        const listsRes = await fetch('/api/lists');
+        if (listsRes.ok) {
+            App.lists = await listsRes.json();
+            populateBroadcastDropdowns();
+            renderManageGroupsList();
+        }
+        await fetchSubscribers();
+    } catch (err) {
+        showToast(`Error updating group: ${err.message}`, 'error');
+    }
+}
+
+async function deleteCustomerGroup(listId, groupName) {
+    if (!confirm(`Are you sure you want to delete the group "${groupName}"?\n\nCustomer contacts in this group will NOT be deleted; they will simply no longer belong to this group.`)) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/lists/${listId}`, {
+            method: 'DELETE'
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(`Failed to delete group: ${data.detail || 'Unknown error'}`, 'error');
+            return;
+        }
+
+        showToast(`Group "${groupName}" deleted successfully!`, 'success');
+
+        // Refresh lists
+        const listsRes = await fetch('/api/lists');
+        if (listsRes.ok) {
+            App.lists = await listsRes.json();
+            populateBroadcastDropdowns();
+            renderManageGroupsList();
+        }
+        await fetchSubscribers();
+    } catch (err) {
+        showToast(`Error deleting group: ${err.message}`, 'error');
     }
 }
 

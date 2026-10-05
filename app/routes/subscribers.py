@@ -547,6 +547,7 @@ async def delete_subscriber(subscriber_id: str):
 # ======================================================================
 
 @router.get("/api/lists", response_model=List[SubscriberListResponse])
+@router.get("/api/subscribers/lists", response_model=List[SubscriberListResponse], include_in_schema=False)
 async def list_subscriber_lists():
     """
     List all subscriber lists with live member counts.
@@ -583,6 +584,7 @@ async def list_subscriber_lists():
 
 
 @router.post("/api/lists", response_model=SubscriberListResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/api/subscribers/lists", response_model=SubscriberListResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_subscriber_list(payload: SubscriberListCreate):
     """
     Create a new subscriber list.
@@ -665,6 +667,7 @@ async def get_subscriber_list(list_id: str):
 
 
 @router.put("/api/lists/{list_id}", response_model=SubscriberListResponse)
+@router.put("/api/subscribers/lists/{list_id}", response_model=SubscriberListResponse, include_in_schema=False)
 async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
     """
     Update subscriber list name or description.
@@ -705,6 +708,7 @@ async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
 
 
 @router.delete("/api/lists/{list_id}")
+@router.delete("/api/subscribers/lists/{list_id}", include_in_schema=False)
 async def delete_subscriber_list(list_id: str):
     """
     Delete a subscriber list and clear its memberships.

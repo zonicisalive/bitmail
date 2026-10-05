@@ -152,7 +152,9 @@
                     <i data-lucide="menu" class="w-4 h-4"></i>
                 </button>
                 <div class="relative w-full min-w-0">
-                    <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400"></i>
+                    </div>
                     <input type="text" id="global-search-input" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors">
                 </div>
             </div>
@@ -642,11 +644,13 @@
 
                 <!-- Search & Filters -->
                 <div class="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-3">
-                    <div class="relative flex-1 w-full">
-                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-                        <input type="text" id="vault-search-input" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-9 pr-4 py-2 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    <div class="relative flex-1 w-full min-w-[240px]">
+                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <input type="text" id="vault-search-input" onkeyup="filterVaultEmails()" placeholder="Search by recipient email, customer name, subject, message ID..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all">
                     </div>
-                    <select id="vault-filter-status" onchange="filterVaultEmails()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
+                    <select id="vault-filter-status" onchange="filterVaultEmails()" class="px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
                         <option value="all">All Statuses</option>
                         <option value="delivered">Delivered</option>
                         <option value="sent">Sent</option>
@@ -702,8 +706,11 @@
                         <p class="text-sm text-slate-400 mt-1">Manage customer contacts, audience lists, custom merge attributes, and bulk imports.</p>
                     </div>
                     <div class="flex items-center flex-wrap gap-2.5 shrink-0">
-                        <button onclick="openCreateGroupModal()" class="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 border border-purple-500/30 transition-all whitespace-nowrap cursor-pointer">
-                            <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i> + New Group
+                        <button onclick="openManageGroupsModal()" class="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 border border-purple-500/30 transition-all whitespace-nowrap cursor-pointer">
+                            <i data-lucide="folders" class="w-3.5 h-3.5"></i> Manage Groups (<span id="manage-groups-btn-count">0</span>)
+                        </button>
+                        <button onclick="openCreateGroupModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
+                            <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-purple-400"></i> + New Group
                         </button>
                         <button onclick="openBulkPasteModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all whitespace-nowrap">
                             <i data-lucide="clipboard" class="w-3.5 h-3.5"></i> Paste Multiple Emails
@@ -718,20 +725,31 @@
                 </div>
 
                 <!-- Search & Filters -->
-                <div class="glass-panel p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-center gap-3">
-                    <div class="relative flex-1 w-full">
-                        <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-                        <input type="text" id="subscriber-search-input" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-9 pr-4 py-2 bg-slate-900/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                <div class="glass-panel p-3 sm:p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-stretch md:items-center gap-3">
+                    <div class="relative flex-1 min-w-[240px]">
+                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                        </div>
+                        <input type="text" id="subscriber-search-input" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all">
                     </div>
-                    <select id="subscriber-filter-list" onchange="filterSubscribers()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
-                        <option value="all">All Groups / Lists</option>
-                    </select>
-                    <select id="subscriber-filter-status" onchange="filterSubscribers()" class="px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
-                        <option value="all">All Statuses</option>
-                        <option value="active">Active</option>
-                        <option value="unsubscribed">Unsubscribed</option>
-                        <option value="bounced">Bounced</option>
-                    </select>
+                    <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
+                        <div class="relative flex-1 sm:flex-none flex items-center gap-1.5">
+                            <select id="subscriber-filter-list" onchange="filterSubscribers()" class="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                                <option value="all">📁 All Groups / Lists</option>
+                            </select>
+                            <button type="button" onclick="openManageGroupsModal()" class="p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/40 text-slate-400 hover:text-purple-300 transition-colors cursor-pointer shrink-0" title="Manage Customer Groups">
+                                <i data-lucide="settings" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="relative flex-1 sm:flex-none">
+                            <select id="subscriber-filter-status" onchange="filterSubscribers()" class="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
+                                <option value="all">⚡ All Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="unsubscribed">Unsubscribed</option>
+                                <option value="bounced">Bounced</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Mass action bar (hidden until rows are selected) -->
@@ -1215,6 +1233,91 @@ curl -X POST http://localhost:8000/api/v1/send \
                     <span>Connect & Verify Gmail</span>
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal: Manage Customer Groups -->
+    <div id="modal-manage-groups" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
+        <div class="glass-panel w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <!-- Header -->
+            <div class="p-5 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="folders" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                            <span>Manage Customer Groups</span>
+                            <span id="manage-groups-count-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-300">0 Groups</span>
+                        </h3>
+                        <p class="text-[11px] text-slate-400">View, organize, rename, and delete customer audience lists</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="openCreateGroupModal()" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-all cursor-pointer">
+                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> New Group
+                    </button>
+                    <button type="button" onclick="closeModal('modal-manage-groups')" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Groups List Container -->
+            <div class="p-5 overflow-y-auto space-y-3 flex-1" id="manage-groups-list">
+                <!-- Populated dynamically by app.js -->
+            </div>
+
+            <!-- Footer -->
+            <div class="p-4 bg-slate-900/60 border-t border-white/5 flex items-center justify-between text-xs text-slate-400 shrink-0">
+                <span>Deleting a group will not delete your customer contacts.</span>
+                <button type="button" onclick="closeModal('modal-manage-groups')" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors cursor-pointer">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Edit Customer Group -->
+    <div id="modal-edit-group" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
+        <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                        <i data-lucide="edit-3" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Edit Customer Group</h3>
+                        <p class="text-[11px] text-slate-400">Update group name and description</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeModal('modal-edit-group')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleEditGroupSubmit(event)" class="space-y-4">
+                <input type="hidden" id="edit-group-id">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Group / List Name <span class="text-rose-400">*</span></label>
+                    <input type="text" id="edit-group-name" required placeholder="Group Name" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
+                    <textarea id="edit-group-desc" rows="3" placeholder="Description..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"></textarea>
+                </div>
+
+                <div class="pt-3 border-t border-white/5 flex items-center justify-end gap-2.5">
+                    <button type="button" onclick="closeModal('modal-edit-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" id="btn-edit-group-submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-500/25 flex items-center gap-1.5 transition-all">
+                        <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                        <span>Save Changes</span>
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 
