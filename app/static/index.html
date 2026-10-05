@@ -32,7 +32,7 @@
     <link rel="stylesheet" href="/static/css/tailwind.min.css">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.4.5">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.4.6">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
     <script src="/static/js/lucide.min.js"></script>
@@ -170,7 +170,7 @@
     <main class="flex-1 lg:ml-64 flex flex-col min-h-screen min-w-0 max-w-full">
 
         <!-- Top Header Bar (Strict Single Row, Ultra-Modern SaaS Hierarchy) -->
-        <header class="h-16 glass-header sticky top-0 z-30 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 flex-nowrap">
+        <header class="h-16 glass-header sticky top-0 z-35 px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 flex-nowrap overflow-visible">
             <!-- Left: Mobile Toggle & Global Search -->
             <div class="flex items-center gap-3 flex-1 max-w-xs sm:max-w-sm md:max-w-md min-w-0">
                 <button type="button" onclick="toggleMobileSidebar()" class="lg:hidden p-2 rounded-lg bg-slate-800/80 text-slate-300 hover:text-white border border-slate-700/60 shrink-0" title="Toggle Navigation Menu">
@@ -217,7 +217,7 @@
                         <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
                     </button>
                     <!-- Dropdown Menu -->
-                    <div id="user-dropdown-menu" class="hidden absolute right-0 mt-2 w-56 rounded-xl bg-slate-900 border border-[#1f2c42] shadow-2xl p-2 z-50 text-xs space-y-1">
+                    <div id="user-dropdown-menu" class="hidden absolute right-0 top-full mt-2 w-56 rounded-xl bg-slate-900 border border-[#1f2c42] shadow-2xl p-2 z-50 text-xs space-y-1">
                         <div class="p-2 border-b border-[#1f2c42]/80 mb-1">
                             <div id="dropdown-user-name" class="font-bold text-white text-xs truncate">Administrator</div>
                             <div id="dropdown-user-email" class="text-[11px] text-slate-400 truncate">admin@bitmail.com</div>

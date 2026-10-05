@@ -145,7 +145,7 @@ main {
     background-color: var(--bg-page) !important;
     width: calc(100% - 16rem) !important;
     max-width: calc(100% - 16rem) !important;
-    overflow-x: hidden !important;
+    overflow-x: clip !important;
     transition: margin-left 0.25s ease, width 0.25s ease !important;
 }
 
@@ -159,8 +159,13 @@ main {
     align-items: center !important;
     justify-content: space-between !important;
     flex-wrap: nowrap !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     box-sizing: border-box !important;
+    z-index: 35 !important;
+}
+
+#user-dropdown-menu {
+    z-index: 100 !important;
 }
 
 /* Responsive Layout Flexibility on Smaller/Split Screens */
