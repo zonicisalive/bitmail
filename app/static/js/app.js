@@ -1507,6 +1507,21 @@ function updateSmtpStatusHint() {
     const host = selectedConfig ? (selectedConfig.host || '').toLowerCase() : 'sandbox';
     const isSandbox = selectedConfig ? (selectedConfig.is_sandbox || host === 'sandbox' || host === '127.0.0.1' || host === 'localhost') : true;
 
+    // Auto-sync sender email if currently set to legacy ops@bitmail.io or empty
+    const senderEmailInput = document.getElementById('broadcast-sender-email');
+    if (senderEmailInput && selectedConfig) {
+        const curVal = senderEmailInput.value.trim();
+        if (!curVal || curVal === 'ops@bitmail.io' || curVal === 'team@bitmail.io') {
+            if (selectedConfig.sender_email) {
+                senderEmailInput.value = selectedConfig.sender_email;
+            } else if (selectedConfig.username && selectedConfig.username.includes('@')) {
+                senderEmailInput.value = selectedConfig.username;
+            } else {
+                senderEmailInput.value = 'contact@bitnade.com';
+            }
+        }
+    }
+
     if (isSandbox) {
         hintEl.className = "mt-2 p-2.5 rounded-xl text-[11px] bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-between transition-all";
         hintEl.innerHTML = `
