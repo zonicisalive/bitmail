@@ -52,6 +52,7 @@ async def send_transactional_email(payload: TransactionalSendRequest):
         "storage_id": result["sent_email_id"],
         "subject": payload.subject,
         "status": result["status"],
+        "error": result.get("error"),
         "sent_count": 1,
         "total": 1,
         "progress_percent": 100

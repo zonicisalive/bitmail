@@ -87,6 +87,26 @@ async def get_dashboard_stats() -> Dict[str, Any]:
         click_rate = round((clicked_count / denominator) * 100, 1)
         bounce_rate = round((bounced_count / denominator) * 100, 1)
 
+        # Recent failure details so dashboard can explain rejections directly
+        recent_failures = []
+        async with db.execute("""
+            SELECT id, recipient_email, recipient_name, subject, error_message, created_at, status
+            FROM sent_emails
+            WHERE status IN ('failed', 'bounced')
+            ORDER BY created_at DESC LIMIT 5
+        """) as cursor:
+            fail_rows = await cursor.fetchall()
+            for fr in fail_rows:
+                recent_failures.append({
+                    "id": fr["id"],
+                    "recipient": fr["recipient_email"],
+                    "recipient_name": fr["recipient_name"],
+                    "subject": fr["subject"],
+                    "error": fr["error_message"] or "Relay rejected delivery",
+                    "created_at": fr["created_at"],
+                    "status": fr["status"]
+                })
+
         return {
             "total_sent": total_sent,
             "delivered_count": delivered_count,
@@ -105,6 +125,8 @@ async def get_dashboard_stats() -> Dict[str, Any]:
             "relay": relay,
             "total_stored_emails": total_stored,
             "total_subscribers": total_subs,
+            "latest_failure": recent_failures[0] if recent_failures else None,
+            "recent_failures": recent_failures,
             "totalSent": total_sent,
             "deliveryRate": delivery_rate,
             "openRate": open_rate,

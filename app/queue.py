@@ -345,6 +345,7 @@ class CampaignWorker:
             "campaign_id": self.campaign_id,
             "status": status,
             "sent_count": sent,
+            "failed_count": self._failed_count,
             "total": total,
         })
 

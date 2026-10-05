@@ -304,12 +304,19 @@ function handleWebSocketEvent(message) {
     const { type, data } = message;
 
     if (type === 'email_dispatched') {
-        const isSuccess = data.status !== 'failed';
+        const isSuccess = data.status !== 'failed' && data.status !== 'bounced';
         App.stats.attempted = (App.stats.attempted || 0) + 1;
         if (isSuccess) {
             App.stats.totalSent = (App.stats.totalSent || 0) + 1;
         } else {
             App.stats.failed = (App.stats.failed || 0) + 1;
+            App.stats.latestFailure = {
+                recipient: data.recipient,
+                recipient_name: data.recipient_name,
+                subject: data.subject,
+                error: data.error || 'Relay rejected delivery',
+                created_at: new Date().toISOString()
+            };
         }
         App.stats.deliveryRate = App.stats.attempted
             ? Math.round((App.stats.totalSent / App.stats.attempted) * 1000) / 10
@@ -349,6 +356,7 @@ function handleWebSocketEvent(message) {
             recipient: data.recipient,
             subject: data.subject || 'Broadcast message',
             status: data.status || 'delivered',
+            error: data.error,
         });
 
     } else if (type === 'email_opened') {
@@ -360,14 +368,35 @@ function handleWebSocketEvent(message) {
         fetchDashboardStats();
 
     } else if (type === 'campaign_completed') {
-        showToast(`✓ Broadcast ${data.campaign_id} complete! (${data.sent_count}/${data.total} delivered)`, 'success');
+        const failedCount = Number(data.failed_count) || 0;
+        const sentCount = Number(data.sent_count) || 0;
+        const total = Number(data.total) || (sentCount + failedCount) || 1;
+        const isFailed = data.status === 'failed' || (sentCount === 0 && failedCount > 0);
+
+        if (isFailed) {
+            showToast(`❌ Broadcast ${data.campaign_id} failed: All ${failedCount} messages rejected by relay.`, 'error', 10000);
+        } else if (failedCount > 0) {
+            showToast(`⚠️ Broadcast ${data.campaign_id} completed with ${failedCount} failed deliveries (${sentCount}/${total} sent).`, 'warning', 8000);
+        } else {
+            showToast(`✓ Broadcast ${data.campaign_id} complete! (${sentCount}/${total} delivered)`, 'success');
+        }
+
         const badge = document.getElementById('broadcast-status-badge');
         if (badge) {
-            badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-            badge.innerText = "Completed";
+            if (isFailed) {
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30";
+                badge.innerText = "Failed";
+            } else if (failedCount > 0) {
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+                badge.innerText = "Partial Failure";
+            } else {
+                badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                badge.innerText = "Completed";
+            }
         }
         fetchCampaigns();
         fetchVaultEmails();
+        fetchDashboardStats();
 
     } else if (type === 'campaign_scheduled_triggered') {
         showToast(`⏰ Scheduled broadcast "${data.name || data.campaign_id}" is now dispatching!`, 'info');
@@ -463,16 +492,17 @@ function prependActivityFeedItem(item) {
     if (!container) return;
 
     // A live dispatch is 'delivered' or 'failed' - report the one that happened.
-    const failed = item.status === 'failed';
+    const failed = item.status === 'failed' || item.status === 'bounced';
     const placeholder = container.querySelector('.py-8');
     if (placeholder) container.innerHTML = '';
 
     const row = document.createElement('div');
     row.className = 'animate-fadeIn';
+    const errText = item.error ? ` (${String(item.error).slice(0, 80)})` : '';
     row.innerHTML = activityRow({
         event_type: failed ? 'failed' : 'sent',
         recipient: item.recipient || item.recipient_email,
-        event: failed ? `Rejected by relay: ${item.subject || ''}`.trim() : item.subject,
+        event: failed ? `Rejected by relay: ${item.subject || ''}${errText}`.trim() : item.subject,
         timestamp: item.timestamp || new Date().toISOString().slice(0, 19).replace('T', ' '),
     });
     container.insertBefore(row, container.firstChild);
@@ -634,6 +664,8 @@ async function fetchDashboardStats() {
         App.stats.suppressed = num(data.suppressed_count);
         App.stats.vaultStored = num(data.total_stored_emails);
         App.stats.relay = data.relay || { configured: false };
+        App.stats.latestFailure = data.latest_failure || null;
+        App.stats.recentFailures = data.recent_failures || [];
 
         renderSendHealth();
         renderEngagementTiles();
@@ -681,10 +713,22 @@ function renderSendHealth() {
 
     const callout = document.getElementById('failure-callout');
     const calloutText = document.getElementById('failure-callout-text');
+    const calloutDetail = document.getElementById('failure-callout-detail');
     if (callout && calloutText) {
         callout.classList.toggle('hidden', failed === 0);
         if (failed > 0) {
-            calloutText.textContent = `${failed.toLocaleString()} ${failed === 1 ? 'message' : 'messages'} were rejected by the relay. Each stored record carries the SMTP error.`;
+            const lf = App.stats.latestFailure;
+            if (lf) {
+                const target = lf.recipient ? ` to <span class="font-semibold text-rose-200">${escapeHtml(lf.recipient)}</span>` : '';
+                calloutText.innerHTML = `<strong>${failed.toLocaleString()} ${failed === 1 ? 'message was' : 'messages were'} rejected by the relay.</strong> Latest delivery failure${target}:`;
+                if (calloutDetail) {
+                    calloutDetail.textContent = lf.error || 'Relay rejected delivery.';
+                    calloutDetail.classList.remove('hidden');
+                }
+            } else {
+                calloutText.textContent = `${failed.toLocaleString()} ${failed === 1 ? 'message' : 'messages'} were rejected by the relay. Stored records carry the exact SMTP error details.`;
+                if (calloutDetail) calloutDetail.classList.add('hidden');
+            }
         }
     }
 }
@@ -1619,15 +1663,18 @@ async function sendBroadcastTestPreview() {
         });
 
         const data = await safeJson(res);
-        if (res.ok && data.success) {
+        if (res.ok && data.success && data.status !== 'failed') {
             showToast(`✓ Test preview sent successfully! Storage ID: ${data.sent_email_id}`, 'success');
             await fetchVaultEmails();
             await fetchDashboardStats();
         } else {
-            showToast(`Test failed: ${data.detail || data.error || data.message || 'Check SMTP server settings'}`, 'error');
+            const errReason = data.error || data.detail || data.message || 'Check SMTP server settings';
+            showToast(`❌ Test preview rejected: ${errReason}`, 'error', 10000);
+            await fetchVaultEmails();
+            await fetchDashboardStats();
         }
     } catch (err) {
-        showToast(`Test send error: ${err.message}`, 'error');
+        showToast(`Test send error: ${err.message}`, 'error', 10000);
     }
 }
 
@@ -1906,32 +1953,53 @@ function startLiveBroadcastMonitoring(campaignId, totalRecipients) {
             if (!res.ok) return;
             const camp = await res.json();
 
-            const sent = camp.sent_count || 0;
+            const sent = camp.delivered_count !== undefined ? camp.delivered_count : (camp.sent_count || 0);
+            const failed = camp.failed_count || 0;
             const total = camp.total_recipients || totalRecipients || 1;
-            const pct = Math.min(100, Math.round((sent / total) * 100));
+            const processed = (camp.sent_count || 0);
+            const pct = Math.min(100, Math.round((processed / total) * 100));
 
             if (progBar) progBar.style.width = `${pct}%`;
-            if (progText) progText.innerText = `${sent} / ${total} dispatched (${pct}%)`;
+            if (progText) progText.innerText = `${sent} delivered, ${failed} failed / ${total} total (${pct}%)`;
 
             if (logEl) {
                 const logEntry = document.createElement('div');
-                logEntry.className = 'text-slate-300';
-                logEntry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span> Dispatched batch progress: ${sent}/${total} • Stored in Vault`;
+                logEntry.className = failed > 0 ? 'text-amber-300' : 'text-slate-300';
+                logEntry.innerHTML = `<span class="text-slate-500">[${new Date().toLocaleTimeString()}]</span> Dispatched progress: ${sent} delivered, ${failed} failed of ${total} • Stored in Vault`;
                 logEl.appendChild(logEntry);
                 logEl.scrollTop = logEl.scrollHeight;
             }
 
-            if (camp.status === 'completed' || camp.status === 'cancelled' || sent >= total) {
+            const isDone = camp.status === 'completed' || camp.status === 'cancelled' || camp.status === 'failed' || processed >= total;
+
+            if (isDone) {
                 clearInterval(App.broadcastPollInterval);
+                const isFailed = camp.status === 'failed' || (sent === 0 && failed > 0);
+                const isCancelled = camp.status === 'cancelled';
                 if (statusBadge) {
-                    statusBadge.innerText = camp.status === 'cancelled' ? 'Cancelled' : 'Completed';
-                    statusBadge.className = camp.status === 'cancelled' 
-                        ? 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                        : 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                    if (isFailed) {
+                        statusBadge.innerText = 'Failed';
+                        statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30';
+                    } else if (isCancelled) {
+                        statusBadge.innerText = 'Cancelled';
+                        statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                    } else if (failed > 0) {
+                        statusBadge.innerText = 'Partial Failure';
+                        statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30';
+                    } else {
+                        statusBadge.innerText = 'Completed';
+                        statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+                    }
                 }
                 const btn = document.getElementById('btn-launch-broadcast');
                 if (btn) btn.disabled = false;
-                showToast(`✓ Broadcast ${campaignId} execution finished! All messages archived.`, 'success');
+                if (isFailed) {
+                    showToast(`❌ Broadcast ${campaignId} failed: All ${failed} deliveries were rejected by relay.`, 'error', 10000);
+                } else if (failed > 0) {
+                    showToast(`⚠️ Broadcast ${campaignId} finished with ${failed} failed deliveries out of ${total}.`, 'warning', 8000);
+                } else {
+                    showToast(`✓ Broadcast ${campaignId} execution finished! All messages delivered.`, 'success');
+                }
                 await refreshAllData();
             }
         } catch (err) {

@@ -153,6 +153,9 @@ class TestApiRoutes(unittest.TestCase):
         stats = res.json()
         self.assertIn("total_sent", stats)
         self.assertIn("active_subscribers", stats)
+        self.assertIn("latest_failure", stats)
+        self.assertIn("recent_failures", stats)
+        self.assertIsInstance(stats["recent_failures"], list)
 
         res = self.client.get("/api/dashboard/activity")
         self.assertEqual(res.status_code, 200)
