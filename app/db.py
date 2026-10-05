@@ -541,6 +541,17 @@ async def init_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_created ON webhook_deliveries(created_at);")
 
+        # Synchronize suppressions with active subscribers (active subscribers must not be suppressed)
+        await db.execute("""
+            DELETE FROM suppressions
+            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+        """)
+        await db.execute("""
+            DELETE FROM suppression_list
+            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+        """)
+        await db.commit()
+
         # Seed initial default administrator account if no users exist
         async with db.execute("SELECT COUNT(*) FROM users") as cur:
             user_count_row = await cur.fetchone()

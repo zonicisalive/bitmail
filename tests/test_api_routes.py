@@ -8,6 +8,7 @@ import io
 import json
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import unittest
 
@@ -631,6 +632,49 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn(f'value="{settings.DEFAULT_SENDER_EMAIL}"', page_res.text)
         self.assertIn(f'value="{settings.DEFAULT_SENDER_NAME}"', page_res.text)
         self.assertIn("window.BITMAIL_CONFIG", page_res.text)
+
+    def test_active_subscriber_suppression_sync_and_unsuppress(self):
+        # 1. Create a subscriber who is active
+        test_email = "resync_test@bitnade.com"
+        create_res = self.client.post("/api/subscribers", json={
+            "email": test_email,
+            "first_name": "Resync",
+            "last_name": "Test",
+            "status": "active"
+        })
+        self.assertEqual(create_res.status_code, 201)
+        sub_id = create_res.json()["id"]
+
+        # 2. Simulate an inbound bounce putting them into suppressions
+        with sqlite3.connect(settings.DATABASE_PATH) as conn:
+            conn.execute("INSERT OR IGNORE INTO suppressions (id, email, reason, created_at) VALUES ('sup_test_1', ?, 'test', '2026-10-06')", (test_email,))
+            conn.commit()
+
+        # Verify listed in suppressions endpoint
+        sup_res = self.client.get("/api/bounces/suppressions")
+        self.assertEqual(sup_res.status_code, 200)
+        self.assertTrue(any(s["email"] == test_email for s in sup_res.json()["suppressions"]))
+
+        # 3. Trigger sync endpoint
+        sync_res = self.client.post("/api/bounces/suppressions/sync")
+        self.assertEqual(sync_res.status_code, 200)
+
+        # Verify active subscriber was removed from suppressions
+        with sqlite3.connect(settings.DATABASE_PATH) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM suppressions WHERE email = ?", (test_email,)).fetchone()
+            self.assertEqual(row[0], 0)
+
+        # 4. Test manual unsuppress endpoint
+        with sqlite3.connect(settings.DATABASE_PATH) as conn:
+            conn.execute("INSERT OR IGNORE INTO suppressions (id, email, reason, created_at) VALUES ('sup_test_2', 'manual_unsub@bitnade.com', 'test', '2026-10-06')",)
+            conn.commit()
+
+        del_res = self.client.delete("/api/bounces/suppressions/manual_unsub@bitnade.com")
+        self.assertEqual(del_res.status_code, 200)
+
+        with sqlite3.connect(settings.DATABASE_PATH) as conn:
+            row = conn.execute("SELECT COUNT(*) FROM suppressions WHERE email = 'manual_unsub@bitnade.com'").fetchone()
+            self.assertEqual(row[0], 0)
 
 
 if __name__ == "__main__":

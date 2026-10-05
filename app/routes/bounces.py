@@ -112,3 +112,39 @@ async def get_bounce_stats() -> Dict[str, Any]:
         "total_bounced_sends": total_bounced_sends,
         "reasons_breakdown": breakdown
     }
+
+
+@router.get("/suppressions")
+async def list_suppressions() -> Dict[str, Any]:
+    """Retrieve all suppressed email addresses and reasons."""
+    async with get_db() as db:
+        async with db.execute("SELECT id, email, campaign_id, reason, created_at FROM suppressions ORDER BY created_at DESC LIMIT 200") as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+    return {"suppressions": rows, "count": len(rows)}
+
+
+@router.delete("/suppressions/{email}")
+async def unsuppress_email(email: str) -> Dict[str, Any]:
+    """Remove an email address from suppressions and suppression list."""
+    clean = email.strip().lower()
+    async with get_db() as db:
+        await db.execute("DELETE FROM suppressions WHERE email = ? COLLATE NOCASE", (clean,))
+        await db.execute("DELETE FROM suppression_list WHERE email = ? COLLATE NOCASE", (clean,))
+        await db.commit()
+    return {"success": True, "message": f"Address '{clean}' unsuppressed successfully."}
+
+
+@router.post("/suppressions/sync")
+async def sync_active_subscribers_suppressions() -> Dict[str, Any]:
+    """Remove active subscribers from suppressions so their sends are never blocked."""
+    async with get_db() as db:
+        await db.execute("""
+            DELETE FROM suppressions
+            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+        """)
+        await db.execute("""
+            DELETE FROM suppression_list
+            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+        """)
+        await db.commit()
+    return {"success": True, "message": "Synchronized suppressions with active subscribers."}

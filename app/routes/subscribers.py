@@ -150,6 +150,10 @@ async def create_subscriber(payload: SubscriberCreate):
             now
         ))
 
+        if payload.status == SubscriberStatus.ACTIVE:
+            await db.execute("DELETE FROM suppressions WHERE email = ?", (email_clean,))
+            await db.execute("DELETE FROM suppression_list WHERE email = ?", (email_clean,))
+
         lists_added: List[str] = []
         if payload.list_ids:
             for l_id in payload.list_ids:
@@ -577,6 +581,10 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
             now,
             subscriber_id
         ))
+
+        if new_status == "active":
+            await db.execute("DELETE FROM suppressions WHERE email = ?", (new_email,))
+            await db.execute("DELETE FROM suppression_list WHERE email = ?", (new_email,))
 
         if payload.list_ids is not None:
             await db.execute("DELETE FROM subscriber_list_memberships WHERE subscriber_id = ?", (subscriber_id,))

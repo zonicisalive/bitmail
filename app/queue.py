@@ -105,16 +105,40 @@ class CampaignWorker:
             recipients = await self.resolve_recipients(explicit_recipients)
             total = len(recipients)
 
+            if total == 0:
+                initial_count = len(explicit_recipients) if explicit_recipients else 0
+                if initial_count > 0:
+                    logger.warning(
+                        "Campaign %s had %s recipients but all were suppressed or unsubscribed.",
+                        self.campaign_id, initial_count
+                    )
+                    async with get_db() as db:
+                        await db.execute(
+                            "UPDATE campaigns SET status = ?, started_at = ?, total_recipients = ?, updated_at = ? WHERE id = ?",
+                            (CampaignStatus.FAILED.value, utc_now_iso(), initial_count, utc_now_iso(), self.campaign_id)
+                        )
+                        await db.commit()
+
+                    await emit_event("campaign_completed", {
+                        "campaign_id": self.campaign_id,
+                        "status": "failed",
+                        "sent_count": 0,
+                        "failed_count": initial_count,
+                        "total": initial_count,
+                        "error": "No deliverable recipients found. All intended addresses were unsubscribed or suppressed."
+                    })
+                    await self._finish(CampaignStatus.FAILED.value, sent=0, total=initial_count)
+                    return
+                else:
+                    await self._finish(CampaignStatus.COMPLETED.value, sent=0, total=0)
+                    return
+
             async with get_db() as db:
                 await db.execute(
                     "UPDATE campaigns SET status = ?, started_at = ?, total_recipients = ?, updated_at = ? WHERE id = ?",
                     (CampaignStatus.SENDING.value, utc_now_iso(), total, utc_now_iso(), self.campaign_id)
                 )
                 await db.commit()
-
-            if total == 0:
-                await self._finish(CampaignStatus.COMPLETED.value, sent=0, total=0)
-                return
 
             # Load campaign details
             subject_tmpl = getattr(self.campaign, "subject", "")
@@ -217,6 +241,17 @@ class CampaignWorker:
         paste, an uploaded list) are filtered too - a suppression is global.
         """
         async with get_db() as db:
+            # Active subscribers should NEVER be suppressed by stale test records
+            await db.execute("""
+                DELETE FROM suppressions
+                WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+            """)
+            await db.execute("""
+                DELETE FROM suppression_list
+                WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+            """)
+            await db.commit()
+
             async with db.execute("SELECT email FROM suppressions") as cur:
                 suppressed = {row["email"].strip().lower() for row in await cur.fetchall()}
 

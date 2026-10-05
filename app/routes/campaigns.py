@@ -777,10 +777,11 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
     elif payload.list_id and payload.list_id.lower() != "all":
         async with get_db() as db:
             async with db.execute("""
-                SELECT s.* FROM subscribers s
-                JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                WHERE m.list_id = ? AND s.status = 'active'
-            """, (payload.list_id,)) as cur:
+                SELECT DISTINCT s.* FROM subscribers s
+                LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
+                LEFT JOIN list_subscribers ls ON s.id = ls.subscriber_id
+                WHERE (m.list_id = ? OR ls.list_id = ?) AND s.status = 'active'
+            """, (payload.list_id, payload.list_id)) as cur:
                 rows = await cur.fetchall()
                 for r in rows:
                     cf = {}
