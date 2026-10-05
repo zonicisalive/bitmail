@@ -22,6 +22,7 @@ from app.routes import (
     bulk,
     campaigns,
     dashboard,
+    deliverability,
     logs,
     pages,
     smtp,
@@ -90,6 +91,7 @@ app.include_router(smtp.router, dependencies=[Depends(get_current_user)])
 app.include_router(logs.router, dependencies=[Depends(get_current_user)])
 app.include_router(transactional.router, dependencies=[Depends(get_current_user)])
 app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
+app.include_router(deliverability.router, dependencies=[Depends(get_current_user)])
 
 
 # Alias route for API explorer in frontend: /api/v1/vault/emails -> storage.list_stored_emails

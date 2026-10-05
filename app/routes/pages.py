@@ -205,6 +205,13 @@ async def page_logs(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/deliverability", response_class=HTMLResponse)
+async def page_deliverability(request: Request):
+    """Dynamic Deliverability & DNS Diagnostics Page."""
+    ctx = await get_initial_page_context(request, active_tab="deliverability")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
 @router.get("/auth/scan-approve/{token}", response_class=HTMLResponse)
 async def page_scan_approve(request: Request, token: str):
     """Mobile 1-Tap QR Scan Approval Page."""

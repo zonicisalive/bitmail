@@ -90,7 +90,14 @@ const App = {
     currentBroadcastTablePlaceholders: [],
     currentStudioTablePlaceholders: [],
     currentInsertTablePreset: 'invoice',
-    currentInsertTableContext: 'broadcast'
+    currentInsertTableContext: 'broadcast',
+    deliverability: {
+        lastDiagnostic: null,
+        batchResults: [],
+        lastBatchCleaned: [],
+        batchFilter: 'all',
+        lastBroadcastCleaned: []
+    }
 };
 
 // ==========================================================================
@@ -573,6 +580,8 @@ function switchTab(tabId, updateUrl = true) {
         updateBroadcastEmailCount();
     } else if (tabId === 'logs') {
         fetchLogs();
+    } else if (tabId === 'deliverability') {
+        initDeliverabilityPanel();
     }
 
     initLucide();
@@ -5006,3 +5015,722 @@ async function emitDiagnosticTestLog() {
         showToast('Error: ' + err.message, 'error');
     }
 }
+
+// ==========================================================================
+// Deliverability & DNS Authenticator Controller
+// ==========================================================================
+
+async function copyElementText(elementId, btn) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText || el.textContent;
+    try {
+        await navigator.clipboard.writeText(text);
+        if (btn) {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '✓ Copied';
+            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+        }
+        showToast('✓ Copied to clipboard', 'success');
+    } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (btn) {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '✓ Copied';
+            setTimeout(() => { btn.innerHTML = originalHtml; }, 2000);
+        }
+        showToast('✓ Copied to clipboard', 'success');
+    }
+}
+
+function initDeliverabilityPanel() {
+    initLucide();
+    if (!App.deliverability.lastDiagnostic) {
+        const domainInput = document.getElementById('dns-check-domain');
+        if (domainInput && domainInput.value.trim()) {
+            runDnsDiagnostic(false);
+        }
+    }
+}
+
+function setDnsProbeDomain(domain) {
+    const domainInput = document.getElementById('dns-check-domain');
+    if (domainInput) {
+        domainInput.value = domain;
+        runDnsDiagnostic(true);
+    }
+}
+
+async function runDnsDiagnostic(force = true) {
+    const domainInput = document.getElementById('dns-check-domain');
+    const selectorInput = document.getElementById('dns-check-selector');
+    const btn = document.getElementById('btn-run-dns-check');
+    const searchIcon = document.getElementById('icon-dns-search');
+    const searchText = document.getElementById('text-dns-search');
+
+    if (!domainInput) return;
+    const domain = domainInput.value.trim();
+    if (!domain) {
+        showToast('Please enter a domain name to probe.', 'warning');
+        return;
+    }
+    const selector = selectorInput ? selectorInput.value.trim() : '';
+
+    if (btn) btn.disabled = true;
+    if (searchText) searchText.textContent = 'Querying DNS...';
+    if (searchIcon) {
+        searchIcon.setAttribute('data-lucide', 'loader-2');
+        searchIcon.classList.add('animate-spin');
+        initLucide();
+    }
+
+    try {
+        const res = await fetch('/api/deliverability/dns-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: domain, dkim_selector: selector || null })
+        });
+        const data = await safeJson(res);
+
+        if (!res.ok || data.status !== 'success') {
+            showToast(data.detail || 'DNS diagnostic probe failed.', 'error');
+            return;
+        }
+
+        const diag = data.result;
+        App.deliverability.lastDiagnostic = diag;
+        renderDnsDiagnosticResults(diag);
+        showToast(`✓ Live DNS probe completed for ${diag.domain} (Score: ${diag.score}/100 Grade ${diag.grade})`, 'success');
+    } catch (err) {
+        showToast('DNS query network error: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+        if (searchText) searchText.textContent = 'Query Live DNS';
+        if (searchIcon) {
+            searchIcon.setAttribute('data-lucide', 'search');
+            searchIcon.classList.remove('animate-spin');
+            initLucide();
+        }
+    }
+}
+
+function renderDnsDiagnosticResults(diag) {
+    const container = document.getElementById('dns-score-container');
+    if (!container) return;
+    container.classList.remove('hidden');
+
+    const scoreVal = document.getElementById('dns-score-value');
+    const scoreGrade = document.getElementById('dns-score-grade');
+    const scoreBadge = document.getElementById('dns-score-badge');
+    const scoreTitle = document.getElementById('dns-score-title');
+    const scoreDesc = document.getElementById('dns-score-desc');
+    const domainTag = document.getElementById('dns-score-domain-tag');
+    const timestampTag = document.getElementById('dns-score-timestamp');
+
+    if (scoreVal) scoreVal.textContent = diag.score;
+    if (scoreGrade) scoreGrade.textContent = `GRADE ${diag.grade}`;
+    if (domainTag) domainTag.textContent = diag.domain;
+    if (timestampTag) timestampTag.textContent = new Date(diag.checked_at).toLocaleTimeString();
+
+    if (scoreBadge) {
+        scoreBadge.className = 'w-16 h-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border ';
+        if (diag.score >= 90) {
+            scoreBadge.classList.add('bg-emerald-500/20', 'border-emerald-500/30');
+            if (scoreVal) scoreVal.className = 'text-2xl font-black text-emerald-400 font-mono';
+            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-emerald-300 tracking-wider';
+            if (scoreTitle) scoreTitle.textContent = 'Excellent Deliverability Configuration';
+            if (scoreDesc) scoreDesc.textContent = 'Domain meets Google & Yahoo 2024 bulk sender rules. Inboxes will trust outgoing messages.';
+        } else if (diag.score >= 70) {
+            scoreBadge.classList.add('bg-amber-500/20', 'border-amber-500/30');
+            if (scoreVal) scoreVal.className = 'text-2xl font-black text-amber-400 font-mono';
+            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-amber-300 tracking-wider';
+            if (scoreTitle) scoreTitle.textContent = 'Moderate Deliverability – Improvements Advised';
+            if (scoreDesc) scoreDesc.textContent = 'One or more authentication records are weak or missing. Messages may land in Spam.';
+        } else {
+            scoreBadge.classList.add('bg-rose-500/20', 'border-rose-500/30');
+            if (scoreVal) scoreVal.className = 'text-2xl font-black text-rose-400 font-mono';
+            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-rose-300 tracking-wider';
+            if (scoreTitle) scoreTitle.textContent = 'Critical Deliverability Issues Detected';
+            if (scoreDesc) scoreDesc.textContent = 'Missing essential authentication (SPF / DMARC). Outgoing mail risks direct rejection.';
+        }
+    }
+
+    const spfSummary = document.getElementById('dns-summary-spf');
+    const dmarcSummary = document.getElementById('dns-summary-dmarc');
+    const dkimSummary = document.getElementById('dns-summary-dkim');
+    const mxSummary = document.getElementById('dns-summary-mx');
+
+    if (spfSummary) {
+        const pass = diag.spf.status === 'pass' || diag.spf.status === 'softfail';
+        spfSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
+        spfSummary.textContent = `SPF: ${diag.spf.status.toUpperCase()}`;
+    }
+    if (dmarcSummary) {
+        const pass = diag.dmarc.status === 'pass' || diag.dmarc.status === 'warning';
+        dmarcSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
+        dmarcSummary.textContent = `DMARC: ${diag.dmarc.policy ? diag.dmarc.policy.toUpperCase() : diag.dmarc.status.toUpperCase()}`;
+    }
+    if (dkimSummary) {
+        const pass = diag.dkim.status === 'pass';
+        dkimSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'}`;
+        dkimSummary.textContent = `DKIM: ${pass ? 'FOUND' : 'MISSING'}`;
+    }
+    if (mxSummary) {
+        const pass = diag.mx.status === 'pass';
+        mxSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
+        mxSummary.textContent = `MX: ${diag.mx.records && diag.mx.records.length ? `${diag.mx.records.length} ACTIVE` : 'NONE'}`;
+    }
+
+    // Pillar 1: SPF
+    const badgeSpf = document.getElementById('badge-dns-spf');
+    const detailSpf = document.getElementById('detail-dns-spf');
+    const recordBoxSpf = document.getElementById('record-box-spf');
+    const recordTextSpf = document.getElementById('record-text-spf');
+    if (badgeSpf) {
+        badgeSpf.textContent = diag.spf.status.toUpperCase();
+        badgeSpf.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
+            diag.spf.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' :
+            (diag.spf.status === 'softfail' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300')
+        }`;
+    }
+    if (detailSpf) detailSpf.textContent = diag.spf.details || 'SPF record check complete.';
+    if (recordBoxSpf && recordTextSpf) {
+        if (diag.spf.record) {
+            recordTextSpf.textContent = diag.spf.record;
+            recordBoxSpf.classList.remove('hidden');
+        } else {
+            recordBoxSpf.classList.add('hidden');
+        }
+    }
+
+    // Pillar 2: DMARC
+    const badgeDmarc = document.getElementById('badge-dns-dmarc');
+    const detailDmarc = document.getElementById('detail-dns-dmarc');
+    const recordBoxDmarc = document.getElementById('record-box-dmarc');
+    const recordTextDmarc = document.getElementById('record-text-dmarc');
+    if (badgeDmarc) {
+        const pol = diag.dmarc.policy ? `p=${diag.dmarc.policy}` : diag.dmarc.status.toUpperCase();
+        badgeDmarc.textContent = pol;
+        badgeDmarc.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
+            diag.dmarc.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' :
+            (diag.dmarc.status === 'warning' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300')
+        }`;
+    }
+    if (detailDmarc) {
+        let msg = diag.dmarc.details || 'DMARC record check complete.';
+        if (diag.dmarc.meets_2024_bulk_requirements) {
+            msg += ' (Meets Google/Yahoo 2024 bulk sender rules)';
+        }
+        detailDmarc.textContent = msg;
+    }
+    if (recordBoxDmarc && recordTextDmarc) {
+        if (diag.dmarc.record) {
+            recordTextDmarc.textContent = diag.dmarc.record;
+            recordBoxDmarc.classList.remove('hidden');
+        } else {
+            recordBoxDmarc.classList.add('hidden');
+        }
+    }
+
+    // Pillar 3: DKIM
+    const badgeDkim = document.getElementById('badge-dns-dkim');
+    const detailDkim = document.getElementById('detail-dns-dkim');
+    const recordBoxDkim = document.getElementById('record-box-dkim');
+    const recordTextDkim = document.getElementById('record-text-dkim');
+    const dkimQueryLabel = document.getElementById('dkim-query-label');
+    if (badgeDkim) {
+        badgeDkim.textContent = diag.dkim.status === 'pass' ? 'ACTIVE' : diag.dkim.status.toUpperCase();
+        badgeDkim.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
+            diag.dkim.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+        }`;
+    }
+    if (detailDkim) detailDkim.textContent = diag.dkim.details || 'DKIM signature check complete.';
+    if (dkimQueryLabel && diag.dkim.selector) {
+        dkimQueryLabel.textContent = `Selector (${diag.dkim.selector}):`;
+    }
+    if (recordBoxDkim && recordTextDkim) {
+        if (diag.dkim.record) {
+            recordTextDkim.textContent = diag.dkim.record;
+            recordBoxDkim.classList.remove('hidden');
+        } else {
+            recordBoxDkim.classList.add('hidden');
+        }
+    }
+
+    // Pillar 4: MX
+    const badgeMx = document.getElementById('badge-dns-mx');
+    const detailMx = document.getElementById('detail-dns-mx');
+    const recordBoxMx = document.getElementById('record-box-mx');
+    if (badgeMx) {
+        badgeMx.textContent = diag.mx.status.toUpperCase();
+        badgeMx.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
+            diag.mx.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+        }`;
+    }
+    if (detailMx) {
+        let msg = diag.mx.details || 'MX record probe complete.';
+        if (diag.mx.provider) msg = `Provider: ${diag.mx.provider}. ` + msg;
+        detailMx.textContent = msg;
+    }
+    if (recordBoxMx) {
+        if (diag.mx.records && diag.mx.records.length > 0) {
+            recordBoxMx.innerHTML = diag.mx.records.map(r => `
+                <div class="flex items-center justify-between text-[11px] font-mono p-1.5 rounded bg-black/40 border border-white/5 text-slate-300">
+                    <span class="truncate">${escapeHtml(r.host)}</span>
+                    <span class="px-1.5 py-0.5 rounded bg-slate-800 text-amber-400 font-bold shrink-0 ml-2">Pri ${r.priority}</span>
+                </div>
+            `).join('');
+            recordBoxMx.classList.remove('hidden');
+        } else {
+            recordBoxMx.classList.add('hidden');
+        }
+    }
+
+    // Recommended Fixes
+    const recSection = document.getElementById('dns-recommendations-section');
+    const recList = document.getElementById('dns-recommendations-list');
+    if (recSection && recList) {
+        if (diag.recommended_records && diag.recommended_records.length > 0) {
+            recSection.classList.remove('hidden');
+            recList.innerHTML = diag.recommended_records.map((rec, idx) => `
+                <div class="p-3 rounded-xl bg-slate-950/70 border border-amber-500/20 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-bold text-[10px] font-mono">${escapeHtml(rec.type)}</span>
+                            <span class="text-xs font-semibold text-white font-mono">${escapeHtml(rec.full_name || rec.name)}</span>
+                        </div>
+                        <button type="button" onclick="copyElementText('rec-val-${idx}', this)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-medium border border-white/10 transition-colors flex items-center gap-1 cursor-pointer">
+                            <i data-lucide="copy" class="w-3 h-3"></i> Copy Record
+                        </button>
+                    </div>
+                    <div id="rec-val-${idx}" class="p-2 rounded bg-black/60 border border-white/5 text-[11px] font-mono text-slate-300 break-all select-all">${escapeHtml(rec.value)}</div>
+                    <div class="text-[11px] text-slate-400">${escapeHtml(rec.purpose)}</div>
+                </div>
+            `).join('');
+        } else {
+            recSection.classList.add('hidden');
+            recList.innerHTML = '';
+        }
+    }
+
+    initLucide();
+}
+
+// Single Email Validator
+async function validateSingleEmail() {
+    const input = document.getElementById('email-single-input');
+    const btn = document.getElementById('btn-validate-single');
+
+    if (!input) return;
+    const email = input.value.trim();
+    if (!email) {
+        showToast('Please enter an email address to verify.', 'warning');
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch('/api/deliverability/validate-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email })
+        });
+        const data = await safeJson(res);
+
+        if (!res.ok || data.status !== 'success') {
+            showToast(data.detail || 'Email validation failed.', 'error');
+            return;
+        }
+
+        const v = data.result;
+        renderSingleEmailResult(v);
+        showToast(`Email evaluated: ${v.status.toUpperCase()}`, v.status === 'valid' ? 'success' : (v.status === 'risky' ? 'warning' : 'error'));
+    } catch (err) {
+        showToast('Validation request error: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function renderSingleEmailResult(v) {
+    const resultBox = document.getElementById('email-single-result');
+    if (!resultBox) return;
+    resultBox.classList.remove('hidden');
+
+    const emailTag = document.getElementById('single-res-email');
+    const badge = document.getElementById('single-res-badge');
+    const syntaxTag = document.getElementById('single-res-syntax');
+    const burnerTag = document.getElementById('single-res-burner');
+    const mxTag = document.getElementById('single-res-mx');
+    const mxList = document.getElementById('single-res-mx-list');
+    const reasonsTag = document.getElementById('single-res-reasons');
+
+    if (emailTag) emailTag.textContent = v.email;
+    if (badge) {
+        if (v.status === 'valid') {
+            badge.textContent = 'DELIVERABLE';
+            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/20 text-emerald-300';
+        } else if (v.status === 'risky') {
+            badge.textContent = 'RISKY BURNER';
+            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-500/20 text-amber-300';
+        } else {
+            badge.textContent = 'INVALID / UNREACHABLE';
+            badge.className = 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-500/20 text-rose-300';
+        }
+    }
+
+    if (syntaxTag) {
+        syntaxTag.textContent = v.syntax_valid ? 'Valid RFC 5322' : 'Syntax Error';
+        syntaxTag.className = v.syntax_valid ? 'font-medium text-emerald-400' : 'font-medium text-rose-400';
+    }
+
+    if (burnerTag) {
+        burnerTag.textContent = v.is_disposable ? 'Burner / Disposable Detected!' : 'Clean (Not Disposable)';
+        burnerTag.className = v.is_disposable ? 'font-bold text-amber-400' : 'font-medium text-emerald-400';
+    }
+
+    if (mxTag) {
+        mxTag.textContent = v.has_mx ? 'Active MX Host Found' : 'No MX Records';
+        mxTag.className = v.has_mx ? 'font-medium text-emerald-400' : 'font-medium text-rose-400';
+    }
+
+    if (mxList) {
+        if (v.mx_records && v.mx_records.length > 0) {
+            mxList.innerHTML = `<span class="text-slate-500 text-[10px]">Resolved Exchangers:</span>` +
+                v.mx_records.map(r => `<div>• ${escapeHtml(r.host)} (Pri ${r.priority})</div>`).join('');
+            mxList.classList.remove('hidden');
+        } else {
+            mxList.classList.add('hidden');
+        }
+    }
+
+    if (reasonsTag) {
+        if (v.reasons && v.reasons.length > 0) {
+            reasonsTag.textContent = 'Note: ' + v.reasons.join(' | ');
+            reasonsTag.classList.remove('hidden');
+        } else {
+            reasonsTag.classList.add('hidden');
+        }
+    }
+}
+
+function testBurnerSampleEmail() {
+    const input = document.getElementById('email-single-input');
+    if (input) {
+        input.value = 'throwaway-lead@mailinator.com';
+        validateSingleEmail();
+    }
+}
+
+// Batch Email List Cleaner
+function updateBatchInputCount() {
+    const textarea = document.getElementById('email-batch-input');
+    const badge = document.getElementById('batch-input-count-badge');
+    if (!textarea || !badge) return;
+
+    const raw = textarea.value.trim();
+    if (!raw) {
+        badge.textContent = '0 Emails';
+        return;
+    }
+    const items = raw.split(/[\r\n,;]+/).filter(x => x.trim().length > 0);
+    badge.textContent = `${items.length} Emails`;
+}
+
+function clearBatchInput() {
+    const textarea = document.getElementById('email-batch-input');
+    if (textarea) textarea.value = '';
+    updateBatchInputCount();
+    const resBox = document.getElementById('batch-results-container');
+    if (resBox) resBox.classList.add('hidden');
+}
+
+function loadSampleBatchEmails() {
+    const textarea = document.getElementById('email-batch-input');
+    if (textarea) {
+        textarea.value = [
+            'alex.contact@gmail.com',
+            '"Sarah Tech" <sarah@bitnade.com>',
+            'temporary-burner@mailinator.com',
+            'support@outlook.com',
+            'spambox-user@tempmail.com',
+            'invalid-syntax@@broken..com',
+            'nonexistent-domain-4982734982.net'
+        ].join('\n');
+        updateBatchInputCount();
+        showToast('Sample mixed email batch loaded.', 'info');
+    }
+}
+
+async function validateBatchEmails() {
+    const textarea = document.getElementById('email-batch-input');
+    const btn = document.getElementById('btn-validate-batch');
+    const text = document.getElementById('text-validate-batch');
+
+    if (!textarea) return;
+    const raw = textarea.value.trim();
+    if (!raw) {
+        showToast('Please paste recipient emails to clean.', 'warning');
+        return;
+    }
+
+    const emailList = raw.split(/[\r\n,;]+/).map(x => x.trim()).filter(x => x.length > 0);
+    if (emailList.length === 0) {
+        showToast('No valid entries detected in input.', 'warning');
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+    if (text) text.textContent = `Cleaning ${emailList.length} emails...`;
+
+    try {
+        const res = await fetch('/api/deliverability/validate-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emails: emailList })
+        });
+        const data = await safeJson(res);
+
+        if (!res.ok || data.status !== 'success') {
+            showToast(data.detail || 'Batch verification failed.', 'error');
+            return;
+        }
+
+        const b = data.result;
+        App.deliverability.batchResults = b.results || [];
+        App.deliverability.lastBatchCleaned = (b.results || []).filter(r => r.status === 'valid').map(r => r.email);
+
+        renderBatchResults(b);
+        showToast(`✓ Batch verified in ${b.duration_seconds}s: ${b.deliverable_count}/${b.total} clean (${b.deliverable_percent}%)`, 'success');
+    } catch (err) {
+        showToast('Batch verification error: ' + err.message, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+        if (text) text.textContent = 'Clean & Verify List';
+    }
+}
+
+function renderBatchResults(b) {
+    const container = document.getElementById('batch-results-container');
+    if (!container) return;
+    container.classList.remove('hidden');
+
+    const totalTag = document.getElementById('batch-kpi-total');
+    const deliverableTag = document.getElementById('batch-kpi-deliverable');
+    const burnerTag = document.getElementById('batch-kpi-burner');
+    const invalidTag = document.getElementById('batch-kpi-invalid');
+
+    if (totalTag) totalTag.textContent = b.total;
+    if (deliverableTag) deliverableTag.textContent = `${b.deliverable_count} (${b.deliverable_percent}%)`;
+    if (burnerTag) burnerTag.textContent = b.disposable_count || b.risky_count;
+    if (invalidTag) invalidTag.textContent = b.invalid_count;
+
+    const countAll = document.getElementById('count-filter-all');
+    const countValid = document.getElementById('count-filter-valid');
+    const countRisky = document.getElementById('count-filter-risky');
+    const countInvalid = document.getElementById('count-filter-invalid');
+
+    if (countAll) countAll.textContent = b.total;
+    if (countValid) countValid.textContent = b.deliverable_count;
+    if (countRisky) countRisky.textContent = b.disposable_count || b.risky_count;
+    if (countInvalid) countInvalid.textContent = b.invalid_count;
+
+    filterBatchResults('all');
+}
+
+function filterBatchResults(filter) {
+    App.deliverability.batchFilter = filter;
+
+    ['all', 'valid', 'risky', 'invalid'].forEach(f => {
+        const btn = document.getElementById(`btn-batch-filter-${f}`);
+        if (btn) {
+            if (f === filter) {
+                btn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white cursor-pointer';
+            } else {
+                btn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white cursor-pointer';
+            }
+        }
+    });
+
+    const tbody = document.getElementById('batch-results-tbody');
+    if (!tbody) return;
+
+    let rows = App.deliverability.batchResults || [];
+    if (filter === 'valid') {
+        rows = rows.filter(r => r.status === 'valid');
+    } else if (filter === 'risky') {
+        rows = rows.filter(r => r.status === 'risky' || r.is_disposable);
+    } else if (filter === 'invalid') {
+        rows = rows.filter(r => r.status === 'invalid');
+    }
+
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-slate-500 font-sans text-xs">No records match the current filter.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+        let badgeHtml = '';
+        if (r.status === 'valid') {
+            badgeHtml = '<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold text-[10px]">Deliverable</span>';
+        } else if (r.status === 'risky') {
+            badgeHtml = '<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-semibold text-[10px]">Burner Domain</span>';
+        } else {
+            badgeHtml = '<span class="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-semibold text-[10px]">Invalid / Dead</span>';
+        }
+
+        const dispHtml = r.is_disposable 
+            ? '<span class="text-amber-400 font-bold">Burner!</span>' 
+            : '<span class="text-slate-400">Clean</span>';
+
+        const mxHtml = r.has_mx 
+            ? `<span class="text-emerald-400">${r.mx_records && r.mx_records.length ? `${r.mx_records.length} MX` : 'Yes'}</span>` 
+            : '<span class="text-rose-400 font-bold">No MX</span>';
+
+        const reason = (r.reasons && r.reasons.length) ? r.reasons[0] : (r.status === 'valid' ? 'RFC 5322 Compliant' : '--');
+
+        return `
+            <tr class="hover:bg-white/5 transition-colors">
+                <td class="py-2 px-3 text-white max-w-[200px] truncate">${escapeHtml(r.email)}</td>
+                <td class="py-2 px-3">${badgeHtml}</td>
+                <td class="py-2 px-3 font-sans">${dispHtml}</td>
+                <td class="py-2 px-3">${mxHtml}</td>
+                <td class="py-2 px-3 text-slate-400 font-sans text-[11px] truncate max-w-[220px]" title="${escapeHtml(reason)}">${escapeHtml(reason)}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function copyDeliverableEmails() {
+    const list = App.deliverability.lastBatchCleaned || [];
+    if (list.length === 0) {
+        showToast('No deliverable emails to copy.', 'warning');
+        return;
+    }
+    const text = list.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+        showToast(`✓ Copied ${list.length} deliverable email(s) to clipboard!`, 'success');
+    }).catch(() => {
+        showToast(`Failed to copy to clipboard`, 'error');
+    });
+}
+
+function exportCleanedEmailCsv() {
+    const list = App.deliverability.batchResults || [];
+    if (list.length === 0) {
+        showToast('No batch data to export.', 'warning');
+        return;
+    }
+
+    let csvContent = 'data:text/csv;charset=utf-8,Email,Status,Is_Disposable,Has_MX,Domain,Reasons\n';
+    list.forEach(r => {
+        const row = [
+            `"${(r.email || '').replace(/"/g, '""')}"`,
+            r.status,
+            r.is_disposable ? 'true' : 'false',
+            r.has_mx ? 'true' : 'false',
+            `"${(r.domain || '').replace(/"/g, '""')}"`,
+            `"${((r.reasons || []).join('; ')).replace(/"/g, '""')}"`
+        ];
+        csvContent += row.join(',') + '\n';
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `bitmail-deliverability-export-${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`✓ Exported ${list.length} email records to CSV`, 'success');
+}
+
+// Quick Broadcast Pre-flight Scan
+async function runBroadcastPreflightCheck() {
+    const banner = document.getElementById('broadcast-preflight-banner');
+    const content = document.getElementById('broadcast-preflight-content');
+    const rawInput = document.getElementById('broadcast-raw-emails');
+    const btnScan = document.getElementById('btn-broadcast-preflight');
+
+    if (!rawInput) return;
+    const raw = rawInput.value.trim();
+    if (!raw) {
+        showToast('Enter recipient emails in Step 1 first before running pre-flight scan.', 'warning');
+        return;
+    }
+
+    const emailList = raw.split(/[\r\n,;]+/).map(x => x.trim()).filter(x => x.length > 0);
+    if (emailList.length === 0) {
+        showToast('No recipients found to scan.', 'warning');
+        return;
+    }
+
+    if (btnScan) {
+        btnScan.disabled = true;
+        btnScan.innerHTML = '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i> Scanning...';
+        initLucide();
+    }
+
+    try {
+        const res = await fetch('/api/deliverability/validate-batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ emails: emailList })
+        });
+        const data = await safeJson(res);
+
+        if (!res.ok || data.status !== 'success') {
+            showToast(data.detail || 'Pre-flight scan failed.', 'error');
+            return;
+        }
+
+        const b = data.result;
+        App.deliverability.lastBroadcastCleaned = (b.results || []).filter(r => r.status === 'valid').map(r => r.email);
+
+        if (banner && content) {
+            banner.classList.remove('hidden');
+            if (b.deliverable_count === b.total) {
+                content.innerHTML = `<span class="text-emerald-400 font-bold">✓ 100% Deliverable!</span> All ${b.total} recipients verified with clean RFC 5322 syntax, no burner domains, and active MX hosts.`;
+            } else {
+                const riskyCount = (b.disposable_count || 0) + (b.invalid_count || 0);
+                content.innerHTML = `<span class="text-amber-400 font-bold">⚠ ${riskyCount} risky / invalid recipients detected</span> out of ${b.total}: 
+                    <span class="text-emerald-400 font-medium">${b.deliverable_count} Deliverable</span>, 
+                    <span class="text-amber-400 font-medium">${b.disposable_count} Disposable Burners</span>, 
+                    <span class="text-rose-400 font-medium">${b.invalid_count} Invalid / No-MX</span>. 
+                    Click "Clean Recipient List" to purge bounce risks automatically.`;
+            }
+        }
+        showToast(`Pre-flight scan complete: ${b.deliverable_count}/${b.total} clean.`, b.deliverable_count === b.total ? 'success' : 'warning');
+    } catch (err) {
+        showToast('Pre-flight scan error: ' + err.message, 'error');
+    } finally {
+        if (btnScan) {
+            btnScan.disabled = false;
+            btnScan.innerHTML = '<i data-lucide="shield-check" class="w-3 h-3"></i> Pre-flight Scan';
+            initLucide();
+        }
+    }
+}
+
+function applyBroadcastCleanedRecipients() {
+    const rawInput = document.getElementById('broadcast-raw-emails');
+    const banner = document.getElementById('broadcast-preflight-banner');
+    const cleaned = App.deliverability.lastBroadcastCleaned || [];
+
+    if (!rawInput) return;
+    if (cleaned.length === 0) {
+        showToast('No clean recipients to apply.', 'warning');
+        return;
+    }
+
+    rawInput.value = cleaned.join('\n');
+    updateBroadcastEmailCount();
+    if (banner) banner.classList.add('hidden');
+    showToast(`✓ Applied clean recipient list (${cleaned.length} verified addresses).`, 'success');
+}
+
