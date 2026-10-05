@@ -1392,6 +1392,42 @@
                                     <!-- MX Records dynamically listed here -->
                                 </div>
                             </div>
+
+                            <!-- Pillar 5: BIMI Brand Indicators -->
+                            <div id="card-dns-bimi" class="p-4 rounded-xl bg-slate-950/60 border border-white/5 space-y-3 md:col-span-2">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <div class="p-1.5 rounded-lg bg-pink-500/10 text-pink-400">
+                                            <i data-lucide="image" class="w-4 h-4"></i>
+                                        </div>
+                                        <div>
+                                            <span class="text-xs font-bold text-white">BIMI Brand Indicators (RFC BIMI1)</span>
+                                            <span class="text-[10px] text-slate-400 block">Inbox Brand Logo in Yahoo, FastMail & Apple/Gmail</span>
+                                        </div>
+                                    </div>
+                                    <span id="badge-dns-bimi" class="px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-800 text-slate-400">Unknown</span>
+                                </div>
+                                <div id="detail-dns-bimi" class="text-xs text-slate-400 leading-relaxed">No probe executed yet.</div>
+                                <div id="bimi-preview-box" class="hidden flex items-center gap-3.5 p-3 rounded-xl bg-black/40 border border-white/5">
+                                    <div class="w-12 h-12 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center overflow-hidden shrink-0">
+                                        <img id="bimi-preview-img" src="" alt="BIMI Brand Logo" class="w-full h-full object-contain p-1" />
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-[11px] font-semibold text-white truncate font-mono" id="bimi-logo-url-text"></div>
+                                        <div class="text-[10px] text-emerald-400 flex items-center gap-1.5 mt-0.5" id="bimi-support-text">
+                                            <i data-lucide="check-circle" class="w-3.5 h-3.5 shrink-0"></i>
+                                            <span>Active in Yahoo Mail & FastMail</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="record-box-bimi" class="hidden">
+                                    <div class="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                                        <span>Active TXT (default._bimi):</span>
+                                        <button type="button" onclick="copyElementText('record-text-bimi', this)" class="text-pink-400 hover:text-pink-300 font-medium cursor-pointer">Copy</button>
+                                    </div>
+                                    <div id="record-text-bimi" class="p-2.5 rounded-lg bg-black/60 border border-white/5 text-[11px] font-mono text-pink-300 break-all select-all"></div>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Recommended Fixes Section -->

@@ -5317,6 +5317,51 @@ function renderDnsDiagnosticResults(diag) {
         }
     }
 
+    // Pillar 5: BIMI
+    const badgeBimi = document.getElementById('badge-dns-bimi');
+    const detailBimi = document.getElementById('detail-dns-bimi');
+    const recordBoxBimi = document.getElementById('record-box-bimi');
+    const recordTextBimi = document.getElementById('record-text-bimi');
+    const bimiPreviewBox = document.getElementById('bimi-preview-box');
+    const bimiPreviewImg = document.getElementById('bimi-preview-img');
+    const bimiLogoUrlText = document.getElementById('bimi-logo-url-text');
+    const bimiSupportText = document.getElementById('bimi-support-text');
+
+    if (badgeBimi && diag.bimi) {
+        badgeBimi.textContent = diag.bimi.status === 'pass' ? 'ACTIVE' : (diag.bimi.status === 'none' ? 'NOT FOUND' : diag.bimi.status.toUpperCase());
+        badgeBimi.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
+            diag.bimi.status === 'pass' ? 'bg-pink-500/20 text-pink-300' :
+            (diag.bimi.status === 'warn' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-800 text-slate-400')
+        }`;
+    }
+    if (detailBimi && diag.bimi) {
+        detailBimi.textContent = diag.bimi.details || (diag.bimi.reasons ? diag.bimi.reasons[0] : 'BIMI inspection complete.');
+    }
+    if (recordBoxBimi && recordTextBimi && diag.bimi) {
+        if (diag.bimi.record) {
+            recordTextBimi.textContent = diag.bimi.record;
+            recordBoxBimi.classList.remove('hidden');
+        } else {
+            recordBoxBimi.classList.add('hidden');
+        }
+    }
+    if (bimiPreviewBox && diag.bimi) {
+        if (diag.bimi.logo_url) {
+            if (bimiPreviewImg) bimiPreviewImg.src = diag.bimi.logo_url;
+            if (bimiLogoUrlText) bimiLogoUrlText.textContent = diag.bimi.logo_url;
+            if (bimiSupportText) {
+                bimiSupportText.innerHTML = `
+                    <i data-lucide="${diag.bimi.has_vmc ? 'shield-check' : 'check-circle'}" class="w-3.5 h-3.5 shrink-0"></i>
+                    <span>${escapeHtml(diag.bimi.provider_support || 'Active in Yahoo Mail & FastMail')}</span>
+                `;
+            }
+            bimiPreviewBox.classList.remove('hidden');
+            if (typeof initLucide === 'function') initLucide();
+        } else {
+            bimiPreviewBox.classList.add('hidden');
+        }
+    }
+
     // Recommended Fixes
     const recSection = document.getElementById('dns-recommendations-section');
     const recList = document.getElementById('dns-recommendations-list');

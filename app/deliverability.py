@@ -773,10 +773,91 @@ class DnsAuthenticatorService:
         return records
 
     @classmethod
+    async def check_bimi(cls, domain: str, selector: str = "default", timeout: float = 3.5) -> Dict[str, Any]:
+        """
+        Query and evaluate BIMI (Brand Indicators for Message Identification) record.
+        Probes {selector}._bimi.<domain>.
+        """
+        clean_domain = domain.strip().lower()
+        if "@" in clean_domain:
+            clean_domain = clean_domain.split("@")[-1]
+
+        bimi_host = f"{selector}._bimi.{clean_domain}"
+        txt_records = await cls._query_txt(bimi_host, timeout)
+        bimi_records = [
+            r for r in txt_records
+            if r.startswith("v=BIMI1")
+        ]
+
+        if not bimi_records:
+            return {
+                "status": "none",
+                "score": 0,
+                "record": None,
+                "selector": selector,
+                "queried_host": bimi_host,
+                "logo_url": None,
+                "vmc_url": None,
+                "has_vmc": False,
+                "provider_support": "None (No BIMI record published)",
+                "reasons": [f"No BIMI record found at '{bimi_host}'."],
+                "recommendation": f"To display your brand logo in Yahoo/Fastmail, publish a TXT record at '{bimi_host}' with 'v=BIMI1; l=https://{clean_domain}/logo.svg;'."
+            }
+
+        record = bimi_records[0]
+        reasons = [f"BIMI record published at '{bimi_host}'."]
+        logo_url = None
+        vmc_url = None
+
+        parts = [p.strip() for p in record.split(";") if p.strip()]
+        for p in parts:
+            if p.startswith("l="):
+                logo_url = p[2:].strip().strip('"').strip("'")
+            elif p.startswith("a="):
+                vmc_url = p[2:].strip().strip('"').strip("'")
+
+        has_vmc = bool(vmc_url and vmc_url.startswith("https://"))
+        status = "pass" if logo_url else "warn"
+        score = 15
+
+        if logo_url:
+            reasons.append(f"SVG logo specified: {logo_url}")
+            if not logo_url.startswith("https://"):
+                reasons.append("Warning: BIMI logo URL must use secure HTTPS.")
+                status = "warn"
+            if not logo_url.lower().endswith(".svg"):
+                reasons.append("Notice: BIMI logo should be an SVG Tiny P/S image.")
+        else:
+            reasons.append("Warning: BIMI record is missing the required 'l=' logo URL tag.")
+            status = "warn"
+
+        if has_vmc:
+            score += 10
+            reasons.append(f"Verified Mark Certificate (VMC) specified: {vmc_url}")
+            provider_support = "Supported across Gmail, Apple Mail, Yahoo Mail, and FastMail."
+        else:
+            reasons.append("Notice: No VMC certificate specified ('a=' tag). Displays in Yahoo Mail and FastMail (Gmail/Apple Mail require a VMC).")
+            provider_support = "Active in Yahoo Mail & FastMail (Gmail & Apple Mail require VMC certificate)."
+
+        return {
+            "status": status,
+            "score": score,
+            "record": record,
+            "selector": selector,
+            "queried_host": bimi_host,
+            "logo_url": logo_url,
+            "vmc_url": vmc_url,
+            "has_vmc": has_vmc,
+            "provider_support": provider_support,
+            "reasons": reasons,
+            "recommendation": "BIMI record is operational and configured." if status == "pass" else "Review BIMI tags to ensure compliant logo rendering."
+        }
+
+    @classmethod
     async def check_domain_deliverability(cls, domain: str, dkim_selector: Optional[str] = None) -> Dict[str, Any]:
         """
         Comprehensive asynchronous domain deliverability check.
-        Runs SPF, DMARC, DKIM, and MX probes in parallel.
+        Runs SPF, DMARC, DKIM, MX, and BIMI probes in parallel.
         """
         clean_domain = domain.strip().lower()
         if "@" in clean_domain:
@@ -786,15 +867,17 @@ class DnsAuthenticatorService:
         dmarc_task = cls.check_dmarc(clean_domain)
         dkim_task = cls.check_dkim(clean_domain, selector=dkim_selector)
         mx_task = cls.check_mx(clean_domain)
+        bimi_task = cls.check_bimi(clean_domain)
 
-        spf, dmarc, dkim, mx = await asyncio.gather(spf_task, dmarc_task, dkim_task, mx_task)
+        spf, dmarc, dkim, mx, bimi = await asyncio.gather(spf_task, dmarc_task, dkim_task, mx_task, bimi_task)
 
         score, grade = cls.calculate_health_score(spf, dmarc, dkim, mx)
         diagnostics = {
             "spf": spf,
             "dmarc": dmarc,
             "dkim": dkim,
-            "mx": mx
+            "mx": mx,
+            "bimi": bimi,
         }
         recommended_records = cls.generate_recommended_records(clean_domain, diagnostics)
 
@@ -806,6 +889,7 @@ class DnsAuthenticatorService:
             "dmarc": dmarc,
             "dkim": dkim,
             "mx": mx,
+            "bimi": bimi,
             "recommended_records": recommended_records,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }

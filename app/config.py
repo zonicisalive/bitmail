@@ -111,13 +111,13 @@ class Settings(BaseModel):
     SESSION_EXPIRE_DAYS: int = Field(default=30)
     
     # Default Sender Settings
-    DEFAULT_SENDER_NAME: str = Field(default="Bitmail Team")
-    DEFAULT_SENDER_EMAIL: str = Field(default="team@bitmail.io")
+    DEFAULT_SENDER_NAME: str = Field(default=os.getenv("DEFAULT_SENDER_NAME", "Bitnade"))
+    DEFAULT_SENDER_EMAIL: str = Field(default=os.getenv("DEFAULT_SENDER_EMAIL", "contact@bitnade.com"))
     
     # Company / Compliance Information
-    COMPANY_NAME: str = Field(default="Bitmail Technologies Inc.")
-    COMPANY_ADDRESS: str = Field(default="100 Market St, Suite 500, San Francisco, CA 94105")
-    PRIVACY_POLICY_URL: str = Field(default="http://localhost:8000/privacy")
+    COMPANY_NAME: str = Field(default=os.getenv("COMPANY_NAME", "Bitnade"))
+    COMPANY_ADDRESS: str = Field(default=os.getenv("COMPANY_ADDRESS", "Bitnade, San Francisco, CA"))
+    PRIVACY_POLICY_URL: str = Field(default=os.getenv("PRIVACY_POLICY_URL", "https://bitnade.com/privacy"))
     
     def ensure_directories(self) -> None:
         """Create necessary data and storage directories if they do not exist."""
