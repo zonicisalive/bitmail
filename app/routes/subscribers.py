@@ -6,6 +6,7 @@ Provides CRUD, search, list memberships, bulk CSV import with column mapping, an
 import csv
 import io
 import json
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -308,9 +309,10 @@ async def import_subscribers_csv(
             custom_fields = {}
             for col_k, col_v in row.items():
                 if col_k not in [email_col, first_name_col, last_name_col] and col_v:
-                    clean_k = col_k.strip().lower()
-                    custom_fields[clean_k] = col_v.strip()
-                    detected_custom_fields.add(clean_k)
+                    clean_k = re.sub(r'[^a-z0-9]+', '_', col_k.strip().lower()).strip('_')
+                    if clean_k:
+                        custom_fields[clean_k] = col_v.strip()
+                        detected_custom_fields.add(clean_k)
 
             async with db.execute("SELECT id, custom_fields FROM subscribers WHERE email = ?", (raw_email,)) as cursor:
                 existing = await cursor.fetchone()
@@ -377,7 +379,8 @@ async def get_available_placeholders():
 
     async with get_db() as db:
         # Inspect subscribers table custom_fields JSON
-        async with db.execute("SELECT custom_fields FROM subscribers WHERE custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}'") as cur:
+        sql = "SELECT custom_fields FROM subscribers WHERE custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}'"
+        async with db.execute(sql) as cur:
             rows = await cur.fetchall()
             for r in rows:
                 try:
@@ -385,7 +388,9 @@ async def get_available_placeholders():
                     if isinstance(cf, dict):
                         for k in cf.keys():
                             if k:
-                                custom_tags.add(k.strip().lower())
+                                clean_k = re.sub(r'[^a-z0-9]+', '_', k.strip().lower()).strip('_')
+                                if clean_k:
+                                    custom_tags.add(clean_k)
                 except Exception:
                     pass
 
