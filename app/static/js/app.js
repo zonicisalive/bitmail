@@ -49,6 +49,10 @@ async function safeJson(res) {
 
 // Global App State
 const App = {
+    serverConfig: window.BITMAIL_CONFIG || {
+        defaultSenderEmail: 'contact@bitnade.com',
+        defaultSenderName: 'Bitnade'
+    },
     currentTab: 'broadcast',
     currentUser: null,
     stats: {
@@ -109,6 +113,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     initCustomPlaceholders();
     suppressUnwantedAutofill();
+
+    // Sync broadcast sender fields from server configuration defaults
+    if (App.serverConfig && App.serverConfig.defaultSenderEmail) {
+        const sEmail = document.getElementById('broadcast-sender-email');
+        if (sEmail && (!sEmail.value || sEmail.value === 'ops@bitmail.io' || sEmail.value === 'team@bitmail.io' || sEmail.value === 'contact@bitnade.com')) {
+            sEmail.value = App.serverConfig.defaultSenderEmail;
+        }
+    }
+    if (App.serverConfig && App.serverConfig.defaultSenderName) {
+        const sName = document.getElementById('broadcast-sender-name');
+        if (sName && (!sName.value || sName.value === 'Bitmail' || sName.value === 'Bitmail Team')) {
+            sName.value = App.serverConfig.defaultSenderName;
+        }
+    }
     
     // Check initial tab from body attribute or URL
     const initialTab = document.body.getAttribute('data-initial-tab') || 'broadcast';
@@ -1507,17 +1525,18 @@ function updateSmtpStatusHint() {
     const host = selectedConfig ? (selectedConfig.host || '').toLowerCase() : 'sandbox';
     const isSandbox = selectedConfig ? (selectedConfig.is_sandbox || host === 'sandbox' || host === '127.0.0.1' || host === 'localhost') : true;
 
-    // Auto-sync sender email if currently set to legacy ops@bitmail.io or empty
+    // Auto-sync sender email if currently set to legacy ops@bitmail.io, team@bitmail.io, or contact@bitnade.com
     const senderEmailInput = document.getElementById('broadcast-sender-email');
     if (senderEmailInput && selectedConfig) {
         const curVal = senderEmailInput.value.trim();
-        if (!curVal || curVal === 'ops@bitmail.io' || curVal === 'team@bitmail.io') {
+        const configuredDefault = App.serverConfig?.defaultSenderEmail || 'contact@bitnade.com';
+        if (!curVal || curVal === 'ops@bitmail.io' || curVal === 'team@bitmail.io' || curVal === 'contact@bitnade.com') {
             if (selectedConfig.sender_email) {
                 senderEmailInput.value = selectedConfig.sender_email;
             } else if (selectedConfig.username && selectedConfig.username.includes('@')) {
                 senderEmailInput.value = selectedConfig.username;
             } else {
-                senderEmailInput.value = 'contact@bitnade.com';
+                senderEmailInput.value = configuredDefault;
             }
         }
     }
@@ -1559,8 +1578,10 @@ async function sendBroadcastTestPreview() {
 
     const subject = document.getElementById('broadcast-subject')?.value || 'Test Preview';
     const html = document.getElementById('broadcast-html')?.value || '<p>Test Message</p>';
-    const senderName = document.getElementById('broadcast-sender-name')?.value || 'Bitmail';
-    const senderEmail = document.getElementById('broadcast-sender-email')?.value || 'team@bitmail.io';
+    const defaultName = App.serverConfig?.defaultSenderName || 'Bitnade';
+    const defaultEmail = App.serverConfig?.defaultSenderEmail || 'contact@bitnade.com';
+    const senderName = document.getElementById('broadcast-sender-name')?.value?.trim() || defaultName;
+    const senderEmail = document.getElementById('broadcast-sender-email')?.value?.trim() || defaultEmail;
     const smtpId = document.getElementById('broadcast-smtp-select')?.value || null;
 
     showToast(`Dispatching test preview to ${testEmail}...`, 'info');
@@ -1733,8 +1754,10 @@ function getSelectedRateLimit() {
 async function launchQuickBroadcast() {
     const subject = document.getElementById('broadcast-subject')?.value?.trim();
     const html = document.getElementById('broadcast-html')?.value?.trim();
-    const senderName = document.getElementById('broadcast-sender-name')?.value?.trim() || 'Bitmail Team';
-    const senderEmail = document.getElementById('broadcast-sender-email')?.value?.trim() || 'team@bitmail.io';
+    const defaultName = App.serverConfig?.defaultSenderName || 'Bitnade';
+    const defaultEmail = App.serverConfig?.defaultSenderEmail || 'contact@bitnade.com';
+    const senderName = document.getElementById('broadcast-sender-name')?.value?.trim() || defaultName;
+    const senderEmail = document.getElementById('broadcast-sender-email')?.value?.trim() || defaultEmail;
     const smtpId = document.getElementById('broadcast-smtp-select')?.value || null;
     const rateLimit = getSelectedRateLimit();
     const trackOpens = document.getElementById('broadcast-track-opens')?.checked ?? true;

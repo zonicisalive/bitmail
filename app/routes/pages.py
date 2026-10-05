@@ -63,6 +63,9 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
             "app_env": settings.APP_ENV,
             "current_user": None,
             "is_authenticated": False,
+            "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
+            "default_sender_name": settings.DEFAULT_SENDER_NAME,
+            "company_name": settings.COMPANY_NAME,
         }
 
     try:
@@ -141,6 +144,20 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
         "app_env": settings.APP_ENV,
         "current_user": current_user,
         "is_authenticated": True,
+        "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
+        "default_sender_name": settings.DEFAULT_SENDER_NAME,
+        "company_name": settings.COMPANY_NAME,
+    }
+
+
+@router.get("/api/system/config", tags=["System Config"])
+async def get_system_config():
+    """Returns runtime public client configuration defaults."""
+    return {
+        "default_sender_email": settings.DEFAULT_SENDER_EMAIL,
+        "default_sender_name": settings.DEFAULT_SENDER_NAME,
+        "company_name": settings.COMPANY_NAME,
+        "app_env": settings.APP_ENV,
     }
 
 

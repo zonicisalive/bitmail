@@ -350,24 +350,24 @@ class TestDeliverabilityApiEndpoints(unittest.TestCase):
         self.assertIn("mx", diag)
         self.assertIn("bimi", diag)
 
-    async def test_check_bimi_evaluation(self):
+    def test_check_bimi_evaluation(self):
         with patch.object(DnsAuthenticatorService, "_query_txt", new_callable=AsyncMock) as mock_txt:
             # Case 1: Active BIMI with logo
             mock_txt.return_value = ["v=BIMI1; l=https://demo.bitnade.com/logo.svg;"]
-            res = await DnsAuthenticatorService.check_bimi("bitnade.com")
+            res = asyncio.run(DnsAuthenticatorService.check_bimi("bitnade.com"))
             self.assertEqual(res["status"], "pass")
             self.assertEqual(res["logo_url"], "https://demo.bitnade.com/logo.svg")
             self.assertFalse(res["has_vmc"])
 
             # Case 2: Active BIMI with VMC
             mock_txt.return_value = ["v=BIMI1; l=https://example.com/logo.svg; a=https://example.com/cert.pem;"]
-            res = await DnsAuthenticatorService.check_bimi("example.com")
+            res = asyncio.run(DnsAuthenticatorService.check_bimi("example.com"))
             self.assertEqual(res["status"], "pass")
             self.assertTrue(res["has_vmc"])
 
             # Case 3: Missing BIMI
             mock_txt.return_value = []
-            res = await DnsAuthenticatorService.check_bimi("nodomain.org")
+            res = asyncio.run(DnsAuthenticatorService.check_bimi("nodomain.org"))
             self.assertEqual(res["status"], "none")
             self.assertIsNone(res["logo_url"])
 

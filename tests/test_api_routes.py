@@ -613,8 +613,25 @@ class TestApiRoutes(unittest.TestCase):
         self.assertIn("event_name", t_data["schema_fields"])
         self.assertIn("seat_no", t_data["schema_fields"])
 
+    def test_system_config_and_dynamic_page_defaults(self):
+        # 1. System Config API endpoint
+        res = self.client.get("/api/system/config")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["default_sender_email"], settings.DEFAULT_SENDER_EMAIL)
+        self.assertEqual(data["default_sender_name"], settings.DEFAULT_SENDER_NAME)
+        self.assertEqual(data["company_name"], settings.COMPANY_NAME)
+
+        # 2. Page rendering injection of default_sender_email
+        page_res = self.client.get("/broadcast")
+        self.assertEqual(page_res.status_code, 200)
+        self.assertIn(f'value="{settings.DEFAULT_SENDER_EMAIL}"', page_res.text)
+        self.assertIn(f'value="{settings.DEFAULT_SENDER_NAME}"', page_res.text)
+        self.assertIn("window.BITMAIL_CONFIG", page_res.text)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
