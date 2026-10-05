@@ -1124,10 +1124,30 @@ curl -X POST http://localhost:8000/api/v1/send \
                     <input type="file" id="modal-csv-file" accept=".csv,text/csv" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-xs file:font-semibold">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Target Customer Group / List (Optional)</label>
-                    <select id="modal-csv-list-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                        <option value="">All Customers (No specific group)</option>
-                    </select>
+                    <label class="block text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
+                        <span class="flex items-center gap-1.5"><i data-lucide="folder-input" class="w-3.5 h-3.5 text-purple-400"></i> Import Destination:</span>
+                        <span class="text-[10px] text-slate-400">Select table or create new</span>
+                    </label>
+
+                    <div class="space-y-2 p-2.5 rounded-xl bg-slate-900/60 border border-white/5">
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer shrink-0">
+                                <input type="radio" name="csv-dest-type" id="csv-dest-existing" value="existing" checked onchange="toggleCsvDestMode()" class="accent-purple-600 cursor-pointer">
+                                <span>Existing Table:</span>
+                            </label>
+                            <select id="modal-csv-list-select" class="flex-1 px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                                <option value="">All Customers (No specific table)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer shrink-0">
+                                <input type="radio" name="csv-dest-type" id="csv-dest-new" value="new" onchange="toggleCsvDestMode()" class="accent-purple-600 cursor-pointer">
+                                <span>Create New Table:</span>
+                            </label>
+                            <input type="text" id="modal-csv-new-list-name" disabled placeholder="e.g. October Invoices Table" class="flex-1 px-3 py-1.5 bg-slate-900/40 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed">
+                        </div>
+                    </div>
                 </div>
                 <p class="text-[11px] text-slate-500 leading-relaxed">
                     Email, first name, last name, and arbitrary custom fields (e.g. company, phone, order_id) are automatically detected and saved.

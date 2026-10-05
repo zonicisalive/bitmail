@@ -581,6 +581,38 @@ class TestApiRoutes(unittest.TestCase):
         up_data = up_res.json()
         self.assertIn("discount_code", up_data["schema_fields"])
 
+    def test_14_csv_import_create_new_table_and_merge_schema(self):
+        """Importing CSV with new_list_name creates a new table with auto-detected schema_fields."""
+        csv_data = (
+            "email,first_name,last_name,ticket_id,event_name,seat_no\n"
+            "attendee1@summit.io,Bruce,Banner,TCK-9901,AI Summit 2026,Row A-12\n"
+            "attendee2@summit.io,Tony,Stark,TCK-9902,AI Summit 2026,VIP-1\n"
+        )
+        files = {"file": ("attendees.csv", csv_data.encode("utf-8"), "text/csv")}
+        res = self.client.post(
+            "/api/subscribers/import-csv",
+            data={"new_list_name": "AI Summit Attendees Table", "update_duplicates": "true"},
+            files=files
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["added_count"], 2)
+        self.assertIsNotNone(data["list_id"])
+        self.assertEqual(data["list_name"], "AI Summit Attendees Table")
+        self.assertIn("ticket_id", data["custom_fields_detected"])
+        self.assertIn("event_name", data["custom_fields_detected"])
+        self.assertIn("seat_no", data["custom_fields_detected"])
+
+        # Verify the newly created table exists and has schema_fields
+        table_res = self.client.get(f"/api/lists/{data['list_id']}")
+        self.assertEqual(table_res.status_code, 200)
+        t_data = table_res.json()
+        self.assertEqual(t_data["name"], "AI Summit Attendees Table")
+        self.assertEqual(t_data["subscriber_count"], 2)
+        self.assertIn("ticket_id", t_data["schema_fields"])
+        self.assertIn("event_name", t_data["schema_fields"])
+        self.assertIn("seat_no", t_data["schema_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -171,6 +171,8 @@ class SubscriberBulkImportResponse(BaseModel):
     failed_count: int
     errors: List[Dict[str, Any]] = Field(default_factory=list)
     custom_fields_detected: List[str] = Field(default_factory=list)
+    list_id: Optional[str] = None
+    list_name: Optional[str] = None
 
 
 class SubscriberListBase(BaseModel):

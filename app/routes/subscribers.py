@@ -235,12 +235,13 @@ async def export_subscribers_csv(
 async def import_subscribers_csv(
     file: Optional[UploadFile] = File(default=None),
     list_id: Optional[str] = Form(default=None),
+    new_list_name: Optional[str] = Form(default=None),
     column_mapping: Optional[str] = Form(default=None),
     update_duplicates: bool = Form(default=True)
 ):
     """
     Upload and parse CSV file, map columns to subscriber fields,
-    insert or update records, and attach to list.
+    insert or update records, and attach to list or create a new table on the fly.
     """
     if not file:
         raise HTTPException(status_code=400, detail="No CSV file uploaded.")
@@ -288,6 +289,12 @@ async def import_subscribers_csv(
     if not email_col and fieldnames:
         email_col = fieldnames[0]
 
+    target_list_id = list_id
+    created_list_name = None
+    if new_list_name and new_list_name.strip():
+        created_list_name = new_list_name.strip()
+        target_list_id = f"list_{uuid.uuid4().hex[:10]}"
+
     added_count = 0
     updated_count = 0
     failed_count = 0
@@ -296,6 +303,19 @@ async def import_subscribers_csv(
     now = utc_now_iso()
 
     async with get_db() as db:
+        if created_list_name:
+            filename_str = file.filename or 'CSV' if file else 'CSV'
+            await db.execute("""
+                INSERT INTO subscriber_lists (id, name, description, schema_fields, created_at, updated_at)
+                VALUES (?, ?, ?, '[]', ?, ?)
+            """, (
+                target_list_id,
+                created_list_name,
+                f"Imported from {filename_str}",
+                now,
+                now
+            ))
+
         for row_idx, row in enumerate(reader, start=2):
             raw_email = row.get(email_col, "").strip().lower() if email_col else ""
             if not raw_email or "@" not in raw_email:
@@ -345,15 +365,44 @@ async def import_subscribers_csv(
                 """, (sub_id, raw_email, first_name, last_name, json.dumps(custom_fields), now, now))
                 added_count += 1
 
-            if list_id:
+            if target_list_id:
                 await db.execute("""
                     INSERT OR IGNORE INTO subscriber_list_memberships (subscriber_id, list_id, added_at)
                     VALUES (?, ?, ?)
-                """, (sub_id, list_id, now))
+                """, (sub_id, target_list_id, now))
                 await db.execute("""
                     INSERT OR IGNORE INTO list_subscribers (list_id, subscriber_id, status, subscribed_at)
                     VALUES (?, ?, 'active', ?)
-                """, (list_id, sub_id, now))
+                """, (target_list_id, sub_id, now))
+
+        if created_list_name:
+            # Update the new list with detected_custom_fields as schema_fields
+            await db.execute("""
+                UPDATE subscriber_lists
+                SET schema_fields = ?, updated_at = ?
+                WHERE id = ?
+            """, (
+                json.dumps(sorted(list(detected_custom_fields))),
+                now,
+                target_list_id
+            ))
+        elif target_list_id and detected_custom_fields:
+            # If importing into an existing list, merge any newly detected custom fields into schema_fields
+            async with db.execute("SELECT schema_fields FROM subscriber_lists WHERE id = ?", (target_list_id,)) as cur:
+                row_list = await cur.fetchone()
+                if row_list:
+                    existing_schema = []
+                    try:
+                        if row_list["schema_fields"]:
+                            existing_schema = json.loads(row_list["schema_fields"])
+                    except Exception:
+                        pass
+                    merged_schema = sorted(list(set(existing_schema).union(detected_custom_fields)))
+                    if merged_schema != existing_schema:
+                        await db.execute(
+                            "UPDATE subscriber_lists SET schema_fields = ?, updated_at = ? WHERE id = ?",
+                            (json.dumps(merged_schema), now, target_list_id)
+                        )
 
         await db.commit()
 
@@ -364,7 +413,9 @@ async def import_subscribers_csv(
         updated_count=updated_count,
         failed_count=failed_count,
         errors=errors[:50],
-        custom_fields_detected=sorted(list(detected_custom_fields))
+        custom_fields_detected=sorted(list(detected_custom_fields)),
+        list_id=target_list_id,
+        list_name=created_list_name
     )
 
 

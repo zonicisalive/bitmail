@@ -2155,9 +2155,36 @@ async function submitBulkCustomerEmails() {
     }
 }
 
+function toggleCsvDestMode() {
+    const isNew = document.getElementById('csv-dest-new')?.checked;
+    const listSelect = document.getElementById('modal-csv-list-select');
+    const newNameInput = document.getElementById('modal-csv-new-list-name');
+    
+    if (listSelect && newNameInput) {
+        if (isNew) {
+            listSelect.disabled = true;
+            listSelect.classList.add('opacity-40', 'cursor-not-allowed');
+            newNameInput.disabled = false;
+            newNameInput.classList.remove('opacity-40', 'cursor-not-allowed');
+            newNameInput.focus();
+        } else {
+            listSelect.disabled = false;
+            listSelect.classList.remove('opacity-40', 'cursor-not-allowed');
+            newNameInput.disabled = true;
+            newNameInput.classList.add('opacity-40', 'cursor-not-allowed');
+        }
+    }
+}
+
 function openCsvImportModal() {
     const fileEl = document.getElementById('modal-csv-file');
     if (fileEl) fileEl.value = '';
+    const newNameInput = document.getElementById('modal-csv-new-list-name');
+    if (newNameInput) newNameInput.value = '';
+    const existingRadio = document.getElementById('csv-dest-existing');
+    if (existingRadio) existingRadio.checked = true;
+    populateBroadcastDropdowns();
+    toggleCsvDestMode();
     openModal('modal-csv-import');
 }
 
@@ -2173,9 +2200,19 @@ async function submitCsvImport() {
     form.append('file', file);
     form.append('update_duplicates', 'true');
 
-    const listSelect = document.getElementById('modal-csv-list-select');
-    if (listSelect && listSelect.value) {
-        form.append('list_id', listSelect.value);
+    const isNew = document.getElementById('csv-dest-new')?.checked;
+    if (isNew) {
+        const newName = document.getElementById('modal-csv-new-list-name')?.value?.trim();
+        if (!newName) {
+            showToast('Please enter a name for the new customer table.', 'warning');
+            return;
+        }
+        form.append('new_list_name', newName);
+    } else {
+        const listSelect = document.getElementById('modal-csv-list-select');
+        if (listSelect && listSelect.value) {
+            form.append('list_id', listSelect.value);
+        }
     }
 
     showToast(`Importing ${file.name}...`, 'info');
@@ -2187,7 +2224,12 @@ async function submitCsvImport() {
             showToast(data.detail || 'CSV import failed', 'error');
             return;
         }
-        showToast(`Imported ${data.added_count} new, updated ${data.updated_count}, skipped ${data.failed_count}.`,
+
+        const destInfo = data.list_name 
+            ? ` into new table "${data.list_name}"`
+            : (data.list_id ? ' into selected table' : '');
+
+        showToast(`Imported ${data.added_count} new, updated ${data.updated_count}${destInfo}.`,
             data.failed_count ? 'warning' : 'success');
 
         // Automatically detect, register, and display custom placeholder tags from CSV multi-column import
@@ -2208,6 +2250,15 @@ async function submitCsvImport() {
         }
 
         closeModal('modal-csv-import');
+
+        // Refresh lists if a new table was created
+        const listsRes = await fetch('/api/lists');
+        if (listsRes.ok) {
+            App.lists = await listsRes.json();
+            populateBroadcastDropdowns();
+            renderManageGroupsList();
+        }
+
         await fetchSubscribers();
         await fetchDashboardStats();
     } catch (err) {
