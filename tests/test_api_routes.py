@@ -38,9 +38,69 @@ class TestApiRoutes(unittest.TestCase):
         asyncio.run(init_db())
         cls.client = TestClient(app)
 
+        # Authenticate test client with default seeded administrator
+        login_res = cls.client.post("/api/auth/login", json={
+            "login": "admin@bitmail.com",
+            "password": "admin123"
+        })
+        assert login_res.status_code == 200, f"Failed to login seeded admin: {login_res.text}"
+        cls.token = login_res.json()["token"]
+        cls.client.headers["Authorization"] = f"Bearer {cls.token}"
+
     @classmethod
     def tearDownClass(cls):
         cls.test_dir.cleanup()
+
+    def test_00_auth_lock_and_session_lifecycle(self):
+        """Test that all protected APIs strictly reject unauthenticated requests and accept valid login tokens."""
+        # 1. Unauthenticated client MUST be rejected with 401
+        raw_client = TestClient(app)
+        res = raw_client.get("/api/dashboard/stats")
+        self.assertEqual(res.status_code, 401)
+        self.assertIn("Authentication required", res.json().get("detail", ""))
+
+        res2 = raw_client.get("/api/subscribers")
+        self.assertEqual(res2.status_code, 401)
+
+        res3 = raw_client.get("/api/templates")
+        self.assertEqual(res3.status_code, 401)
+
+        # 2. Bad credentials MUST be rejected with 401
+        bad_login = raw_client.post("/api/auth/login", json={
+            "login": "admin@bitmail.com",
+            "password": "WrongPassword999"
+        })
+        self.assertEqual(bad_login.status_code, 401)
+
+        # 3. Successful login with username as well as email
+        good_login = raw_client.post("/api/auth/login", json={
+            "login": "admin",
+            "password": "admin123"
+        })
+        self.assertEqual(good_login.status_code, 200)
+        auth_data = good_login.json()
+        self.assertTrue(auth_data["success"])
+        self.assertIn("token", auth_data)
+        self.assertEqual(auth_data["user"]["email"], "admin@bitmail.com")
+
+        # 4. Verify /api/auth/me returns current user
+        me_res = raw_client.get("/api/auth/me", headers={"Authorization": f"Bearer {auth_data['token']}"})
+        self.assertEqual(me_res.status_code, 200)
+        self.assertEqual(me_res.json()["email"], "admin@bitmail.com")
+
+        # 5. Direct QR Scan simulate approval creates valid session
+        scan_sess_res = raw_client.post("/api/auth/scan/session")
+        self.assertEqual(scan_sess_res.status_code, 200)
+        session_id = scan_sess_res.json()["session_id"]
+
+        sim_res = raw_client.post(f"/api/auth/scan/simulate-approval/{session_id}?email=mobile.user@bitmail.com")
+        self.assertEqual(sim_res.status_code, 200)
+        sim_data = sim_res.json()
+        sim_token = sim_data["auth_token"]
+
+        # This simulated token can now access protected APIs
+        sub_check = raw_client.get("/api/subscribers", headers={"Authorization": f"Bearer {sim_token}"})
+        self.assertEqual(sub_check.status_code, 200)
 
     def test_01_health_and_static(self):
         """Test healthcheck and SPA static root."""

@@ -359,6 +359,34 @@ async def init_db() -> None:
             );
         """)
 
+        # 11. Users Table (Authentication & Access Control)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+                username TEXT UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                name TEXT,
+                role TEXT NOT NULL DEFAULT 'admin',
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
+        # 12. Persistent User Sessions Table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_sessions (
+                token TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                last_seen_at TEXT,
+                user_agent TEXT,
+                ip_address TEXT
+            );
+        """)
+
         # Migration helper to ensure columns exist in existing SQLite databases
         async def add_column_if_missing(table_name: str, col_name: str, col_type: str):
             try:
@@ -408,5 +436,33 @@ async def init_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_created ON email_events(created_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_suppressions_email ON suppressions(email);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_suppression_list_email ON suppression_list(email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at);")
+
+        # Seed initial default administrator account if no users exist
+        async with db.execute("SELECT COUNT(*) FROM users") as cur:
+            user_count_row = await cur.fetchone()
+            user_count = user_count_row[0] if user_count_row else 0
+
+        if user_count == 0:
+            from app.auth import hash_password
+            now = utc_now_iso()
+            admin_id = f"usr_{uuid.uuid4().hex[:12]}"
+            pwd_hash = hash_password(settings.DEFAULT_ADMIN_PASSWORD)
+            await db.execute("""
+                INSERT INTO users (
+                    id, email, username, password_hash, name, role, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?)
+            """, (
+                admin_id,
+                settings.DEFAULT_ADMIN_EMAIL.strip().lower(),
+                settings.DEFAULT_ADMIN_USERNAME.strip().lower(),
+                pwd_hash,
+                "Administrator",
+                now,
+                now
+            ))
 
         await db.commit()

@@ -8,14 +8,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.auth import get_current_user
 from app.config import BASE_DIR, settings
 from app.db import init_db
 from app.routes import (
+    auth,
     auth_scan,
     bulk,
     campaigns,
@@ -45,7 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(
-    title="NexusMail Enterprise Mass Email & Storage Platform",
+    title="Bitmail Enterprise Mass Email & Storage Platform",
     description="High-Throughput Mass Email Orchestration, SMTP Relay Management, and Email Storage Archive Vault API",
     version="2.4.0",
     docs_url="/docs",
@@ -65,21 +67,29 @@ app.add_middleware(
 # ----------------------------------------------------------------------
 # Register Routers
 # ----------------------------------------------------------------------
+# Public / Unrestricted routes (Pages, Authentication, QR Scan, Email Tracking)
 app.include_router(pages.router)
+app.include_router(auth.router)
 app.include_router(auth_scan.router)
-app.include_router(dashboard.router)
-app.include_router(subscribers.router)
-app.include_router(templates.router)
-app.include_router(campaigns.router)
-app.include_router(storage.router)
-app.include_router(smtp.router)
 app.include_router(tracking.router)
-app.include_router(transactional.router)
-app.include_router(bulk.router)
+
+# Protected API Routers (Locked strictly behind user authentication)
+app.include_router(dashboard.router, dependencies=[Depends(get_current_user)])
+app.include_router(subscribers.router, dependencies=[Depends(get_current_user)])
+app.include_router(templates.router, dependencies=[Depends(get_current_user)])
+app.include_router(campaigns.router, dependencies=[Depends(get_current_user)])
+app.include_router(storage.router, dependencies=[Depends(get_current_user)])
+app.include_router(smtp.router, dependencies=[Depends(get_current_user)])
+app.include_router(transactional.router, dependencies=[Depends(get_current_user)])
+app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 
 
 # Alias route for API explorer in frontend: /api/v1/vault/emails -> storage.list_stored_emails
-@app.get("/api/v1/vault/emails", tags=["Sent Email Storage Vault"])
+@app.get(
+    "/api/v1/vault/emails",
+    tags=["Sent Email Storage Vault"],
+    dependencies=[Depends(get_current_user)]
+)
 async def alias_vault_emails(
     search_query: str = None,
     q: str = None,

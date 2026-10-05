@@ -5,6 +5,38 @@
  * ==========================================================================
  */
 
+// Universal API Authentication & Authorization Interceptor
+(function() {
+    const originalFetch = window.fetch;
+    window.fetch = async function(url, options = {}) {
+        options = options || {};
+        options.headers = options.headers || {};
+        const token = localStorage.getItem('bitmail_token');
+        if (token) {
+            if (options.headers instanceof Headers) {
+                if (!options.headers.has('Authorization')) {
+                    options.headers.set('Authorization', 'Bearer ' + token);
+                }
+            } else if (Array.isArray(options.headers)) {
+                let hasAuth = false;
+                for (const h of options.headers) {
+                    if (h[0].toLowerCase() === 'authorization') { hasAuth = true; break; }
+                }
+                if (!hasAuth) options.headers.push(['Authorization', 'Bearer ' + token]);
+            } else {
+                if (!options.headers['Authorization'] && !options.headers['authorization']) {
+                    options.headers['Authorization'] = 'Bearer ' + token;
+                }
+            }
+        }
+        const response = await originalFetch(url, options);
+        if (response.status === 401 && typeof url === 'string' && url.startsWith('/api/') && !url.includes('/api/auth/login') && !url.includes('/api/auth/scan')) {
+            handleSessionExpired();
+        }
+        return response;
+    };
+})();
+
 // Safe JSON response parser that handles plain text / non-JSON error responses gracefully
 async function safeJson(res) {
     const text = await res.text();
@@ -18,6 +50,7 @@ async function safeJson(res) {
 // Global App State
 const App = {
     currentTab: 'broadcast',
+    currentUser: null,
     stats: {
         totalSent: 0,
         attempted: 0,
@@ -58,15 +91,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     initLucide();
     setupNavigation();
     setupEventListeners();
-    initWebSocket();
     initCustomPlaceholders();
     
     // Check initial tab from body attribute or URL
     const initialTab = document.body.getAttribute('data-initial-tab') || 'broadcast';
     switchTab(initialTab, false);
 
-    // Load initial live dataset
-    await refreshAllData();
+    // Verify user authentication before initiating protected network requests
+    const authenticated = await checkAuthSession();
+    if (authenticated) {
+        initWebSocket();
+        await refreshAllData();
+    }
 });
 
 function initLucide() {
@@ -239,24 +275,18 @@ function handleWebSocketEvent(message) {
 
     } else if (type === 'scan_auth_approved') {
         // Direct QR Scan Approved in Real-Time!
+        if (data.auth_token) {
+            localStorage.setItem('bitmail_token', data.auth_token);
+            document.cookie = `bitmail_token=${data.auth_token}; path=/; max-age=2592000; SameSite=Lax`;
+        }
         showToast(`✓ Authenticated via QR Scan as ${data.email}!`, 'success');
         
-        // Update header user badge
-        const headerLabel = document.getElementById('header-user-label');
-        if (headerLabel) {
-            headerLabel.innerText = `${data.name || data.email}`;
-        }
-        const avatarEl = document.getElementById('header-user-avatar');
-        if (avatarEl && (data.name || data.email)) {
-            const initial = (data.name || data.email).charAt(0).toUpperCase();
-            avatarEl.innerText = initial;
-            avatarEl.className = "w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[11px] font-bold shadow ring-1 ring-emerald-400/30 shrink-0";
-        }
-        const userSubLabel = document.getElementById('header-user-sublabel');
-        if (userSubLabel) {
-            userSubLabel.innerText = 'Authenticated';
-            userSubLabel.className = 'text-[10px] text-emerald-400 leading-tight';
-        }
+        App.currentUser = {
+            email: data.email,
+            name: data.name || data.email,
+            role: 'admin'
+        };
+        updateUserDisplay(App.currentUser);
 
         // Auto-update broadcast sender fields
         const senderNameInput = document.getElementById('broadcast-sender-name');
@@ -269,11 +299,19 @@ function handleWebSocketEvent(message) {
         if (statusText) {
             statusText.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(data.email)}!</span>`;
         }
+        const statusTextAuth = document.getElementById('scan-status-text-auth');
+        if (statusTextAuth) {
+            statusTextAuth.innerHTML = `<span class="text-emerald-400 font-bold">✓ Authenticated as ${escapeHtml(data.email)}!</span>`;
+        }
 
-        // Close modal after brief confirmation
+        // Close auth modals after brief confirmation
         setTimeout(() => {
+            closeLoginModal();
             closeModal('modal-scan-login');
-        }, 1200);
+        }, 1000);
+
+        // Refresh all data now that we are authenticated
+        refreshAllData();
     }
 }
 
@@ -3366,5 +3404,388 @@ async function simulateScanApproval() {
         }
     } catch (err) {
         showToast('Simulation error: ' + err.message, 'error');
+    }
+}
+
+// ==========================================================================
+// Authentication & User Session Management
+// ==========================================================================
+
+function handleSessionExpired() {
+    localStorage.removeItem('bitmail_token');
+    document.cookie = 'bitmail_token=; Max-Age=0; path=/;';
+    App.currentUser = null;
+    showToast('Your session has expired. Please sign in.', 'warning');
+    openLoginModal();
+}
+
+async function checkAuthSession() {
+    const token = localStorage.getItem('bitmail_token');
+    if (!token) {
+        openLoginModal();
+        return false;
+    }
+
+    try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const user = await res.json();
+            App.currentUser = user;
+            updateUserDisplay(user);
+            closeLoginModal();
+            return true;
+        } else {
+            handleSessionExpired();
+            return false;
+        }
+    } catch (err) {
+        console.warn('Auth validation error:', err);
+        openLoginModal();
+        return false;
+    }
+}
+
+function updateUserDisplay(user) {
+    if (!user) return;
+    const name = user.name || user.username || user.email;
+    const initial = name.charAt(0).toUpperCase();
+
+    const avatarEl = document.getElementById('header-user-avatar');
+    if (avatarEl) avatarEl.innerText = initial;
+
+    const labelEl = document.getElementById('header-user-label');
+    if (labelEl) labelEl.innerText = name;
+
+    const sublabelEl = document.getElementById('header-user-sublabel');
+    if (sublabelEl) {
+        sublabelEl.innerText = (user.role === 'admin' ? 'Administrator' : 'Session Active');
+    }
+
+    const dropName = document.getElementById('dropdown-user-name');
+    if (dropName) dropName.innerText = name;
+
+    const dropEmail = document.getElementById('dropdown-user-email');
+    if (dropEmail) dropEmail.innerText = user.email;
+
+    const dropRole = document.getElementById('dropdown-user-role');
+    if (dropRole) dropRole.innerText = (user.role === 'admin' ? 'Admin Session' : 'Member Session');
+}
+
+function openLoginModal() {
+    const modal = document.getElementById('modal-auth-login');
+    if (modal) modal.classList.remove('hidden');
+    switchAuthTab('password');
+}
+
+function closeLoginModal() {
+    const modal = document.getElementById('modal-auth-login');
+    if (modal) modal.classList.add('hidden');
+}
+
+function switchAuthTab(tab) {
+    const btnPass = document.getElementById('auth-tab-btn-password');
+    const btnScan = document.getElementById('auth-tab-btn-scan');
+    const tabPass = document.getElementById('auth-tab-password');
+    const tabScan = document.getElementById('auth-tab-scan');
+
+    if (tab === 'password') {
+        if (btnPass) {
+            btnPass.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow';
+        }
+        if (btnScan) {
+            btnScan.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        }
+        if (tabPass) tabPass.classList.remove('hidden');
+        if (tabScan) tabScan.classList.add('hidden');
+    } else {
+        if (btnScan) {
+            btnScan.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow';
+        }
+        if (btnPass) {
+            btnPass.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
+        }
+        if (tabPass) tabPass.classList.add('hidden');
+        if (tabScan) tabScan.classList.remove('hidden');
+        initAuthScanQR();
+    }
+}
+
+async function handlePasswordLogin(event) {
+    if (event) event.preventDefault();
+    const loginInput = document.getElementById('login-input-identity');
+    const passInput = document.getElementById('login-input-password');
+    const rememberInput = document.getElementById('login-remember-me');
+    const errAlert = document.getElementById('login-error-alert');
+    const submitBtn = document.getElementById('login-submit-btn');
+
+    const login = loginInput?.value?.trim();
+    const password = passInput?.value;
+    const rememberMe = rememberInput?.checked ?? true;
+
+    if (!login || !password) {
+        if (errAlert) {
+            errAlert.innerText = 'Please enter your login and password.';
+            errAlert.classList.remove('hidden');
+        }
+        return;
+    }
+
+    if (errAlert) errAlert.classList.add('hidden');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span> Authenticating...';
+    }
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ login, password, remember_me: rememberMe })
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            localStorage.setItem('bitmail_token', data.token);
+            document.cookie = `bitmail_token=${data.token}; path=/; max-age=${rememberMe ? 2592000 : 86400}; SameSite=Lax`;
+            App.currentUser = data.user;
+            updateUserDisplay(data.user);
+            closeLoginModal();
+            showToast(`✓ Welcome back, ${data.user.name || data.user.email}!`, 'success');
+
+            // Connect realtime telemetry & refresh all dashboard panels
+            initWebSocket();
+            await refreshAllData();
+        } else {
+            if (errAlert) {
+                errAlert.innerText = data.detail || 'Invalid email/username or password.';
+                errAlert.classList.remove('hidden');
+            }
+        }
+    } catch (err) {
+        if (errAlert) {
+            errAlert.innerText = 'Connection error: ' + err.message;
+            errAlert.classList.remove('hidden');
+        }
+    } finally {
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4"></i><span>Unlock Platform</span>';
+            initLucide();
+        }
+    }
+}
+
+function fillDemoAdminCredentials() {
+    const loginInput = document.getElementById('login-input-identity');
+    const passInput = document.getElementById('login-input-password');
+    if (loginInput) loginInput.value = 'admin@bitmail.com';
+    if (passInput) passInput.value = 'admin123';
+    const errAlert = document.getElementById('login-error-alert');
+    if (errAlert) errAlert.classList.add('hidden');
+}
+
+function togglePasswordVisibility(inputId, btn) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerHTML = '<i data-lucide="eye-off" class="w-4 h-4"></i>';
+    } else {
+        input.type = 'password';
+        btn.innerHTML = '<i data-lucide="eye" class="w-4 h-4"></i>';
+    }
+    initLucide();
+}
+
+function toggleUserMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.toggle('hidden');
+}
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('user-dropdown-menu');
+    const btn = document.getElementById('header-user-btn');
+    if (menu && !menu.classList.contains('hidden')) {
+        if (!menu.contains(e.target) && !btn?.contains(e.target)) {
+            menu.classList.add('hidden');
+        }
+    }
+});
+
+async function logoutUser() {
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+        console.warn('Logout API error:', e);
+    }
+    localStorage.removeItem('bitmail_token');
+    document.cookie = 'bitmail_token=; Max-Age=0; path=/;';
+    App.currentUser = null;
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+    showToast('You have been signed out.', 'info');
+    openLoginModal();
+}
+
+function openChangePasswordModal() {
+    const menu = document.getElementById('user-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+    const modal = document.getElementById('modal-change-password');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.getElementById('cp-current-password').value = '';
+        document.getElementById('cp-new-password').value = '';
+        document.getElementById('cp-confirm-password').value = '';
+        document.getElementById('cp-error-alert')?.classList.add('hidden');
+    }
+}
+
+async function handleChangePassword(e) {
+    if (e) e.preventDefault();
+    const curr = document.getElementById('cp-current-password')?.value;
+    const newP = document.getElementById('cp-new-password')?.value;
+    const conf = document.getElementById('cp-confirm-password')?.value;
+    const errEl = document.getElementById('cp-error-alert');
+
+    if (newP !== conf) {
+        if (errEl) {
+            errEl.innerText = 'New passwords do not match.';
+            errEl.classList.remove('hidden');
+        }
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/auth/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ current_password: curr, new_password: newP })
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            closeModal('modal-change-password');
+            showToast('✓ Password updated successfully!', 'success');
+        } else {
+            if (errEl) {
+                errEl.innerText = data.detail || 'Failed to update password.';
+                errEl.classList.remove('hidden');
+            }
+        }
+    } catch (err) {
+        if (errEl) {
+            errEl.innerText = 'Error: ' + err.message;
+            errEl.classList.remove('hidden');
+        }
+    }
+}
+
+let authScanSession = null;
+let authScanTimer = null;
+let authScanPoll = null;
+
+async function initAuthScanQR() {
+    const wrapper = document.getElementById('scan-qr-svg-wrapper-auth');
+    const statusText = document.getElementById('scan-status-text-auth');
+    const timerText = document.getElementById('scan-timer-text-auth');
+
+    if (wrapper) {
+        wrapper.innerHTML = `
+            <div class="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span> Generating Live QR...
+            </div>
+        `;
+    }
+    if (statusText) statusText.innerText = 'Initializing scan session...';
+
+    clearInterval(authScanTimer);
+    clearInterval(authScanPoll);
+
+    try {
+        const res = await fetch('/api/auth/scan/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ device_info: 'Desktop Browser (Bitmail Auth)' })
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            authScanSession = data;
+            if (wrapper) {
+                wrapper.innerHTML = data.qr_svg;
+                const svgEl = wrapper.querySelector('svg');
+                if (svgEl) {
+                    svgEl.setAttribute('width', '100%');
+                    svgEl.setAttribute('height', '100%');
+                }
+            }
+            if (statusText) statusText.innerText = 'Waiting for phone scan...';
+
+            let secondsLeft = data.expires_in_seconds || 300;
+            const updateTimer = () => {
+                const m = Math.floor(secondsLeft / 60);
+                const s = secondsLeft % 60;
+                if (timerText) timerText.innerText = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+            updateTimer();
+
+            authScanTimer = setInterval(() => {
+                secondsLeft--;
+                if (secondsLeft <= 0) {
+                    clearInterval(authScanTimer);
+                    clearInterval(authScanPoll);
+                    if (statusText) statusText.innerHTML = '<span class="text-rose-400">QR Expired. Click to refresh.</span>';
+                } else {
+                    updateTimer();
+                }
+            }, 1000);
+
+            authScanPoll = setInterval(async () => {
+                if (document.getElementById('modal-auth-login')?.classList.contains('hidden')) {
+                    clearInterval(authScanPoll);
+                    return;
+                }
+                try {
+                    const sRes = await fetch(`/api/auth/scan/session/${data.session_id}/status`);
+                    if (sRes.ok) {
+                        const sData = await sRes.json();
+                        if (sData.is_approved && sData.auth_token) {
+                            clearInterval(authScanPoll);
+                            clearInterval(authScanTimer);
+                            handleWebSocketEvent({
+                                type: 'scan_auth_approved',
+                                data: {
+                                    session_id: sData.session_id,
+                                    email: sData.user_email,
+                                    name: sData.user_name,
+                                    auth_token: sData.auth_token
+                                }
+                            });
+                        }
+                    }
+                } catch (e) {}
+            }, 2500);
+        }
+    } catch (err) {
+        showToast('Error generating QR: ' + err.message, 'error');
+    }
+}
+
+async function simulateAuthScanApproval() {
+    if (!authScanSession || !authScanSession.session_id) {
+        showToast('Please wait for QR code to generate.', 'warning');
+        return;
+    }
+    showToast('Simulating phone QR scan authorization...', 'info');
+    try {
+        const res = await fetch(`/api/auth/scan/simulate-approval/${authScanSession.session_id}?email=admin@bitmail.com`, {
+            method: 'POST'
+        });
+        const data = await safeJson(res);
+        if (res.ok && data.success) {
+            showToast('✓ Mobile scan simulated successfully!', 'success');
+        } else {
+            showToast('Simulation error: ' + (data.detail || 'Unknown error'), 'error');
+        }
+    } catch (err) {
+        showToast('Simulation failed: ' + err.message, 'error');
     }
 }

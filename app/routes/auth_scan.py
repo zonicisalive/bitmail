@@ -167,6 +167,31 @@ async def approve_scan_session(payload: ApproveScanSessionRequest):
             await db.commit()
             raise HTTPException(status_code=400, detail="This scan QR code has expired. Please refresh the QR code.")
 
+        # Check if user exists in users table, or auto-provision
+        user_id = None
+        async with db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (clean_email,)) as u_cur:
+            u_row = await u_cur.fetchone()
+            if u_row:
+                user_id = u_row["id"]
+
+        if not user_id:
+            from app.auth import hash_password
+            user_id = f"usr_{uuid.uuid4().hex[:12]}"
+            random_hash = hash_password(secrets.token_urlsafe(20))
+            await db.execute("""
+                INSERT INTO users (id, email, username, password_hash, name, role, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?)
+            """, (user_id, clean_email, clean_email.split("@")[0], random_hash, user_name, now, now))
+
+        # Create persistent session for auth_token
+        sess_expires_dt = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_EXPIRE_DAYS)
+        sess_expires_str = sess_expires_dt.strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute("""
+            INSERT OR REPLACE INTO user_sessions (
+                token, user_id, expires_at, created_at, last_seen_at, user_agent, ip_address
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (auth_token, user_id, sess_expires_str, now, now, sess.get("device_info", "Mobile QR Scan"), sess.get("ip_address", "127.0.0.1")))
+
         # Mark session approved
         await db.execute("""
             UPDATE scan_sessions
@@ -212,8 +237,8 @@ async def simulate_scan_approval(session_id: str, email: Optional[str] = None):
     1-Click test simulation: approves the scan session immediately on the server
     without needing a physical mobile phone camera.
     """
-    user_email = (email or "admin@bitnade.com").strip().lower()
-    user_name = "Bitnade Admin" if "@bitnade.com" in user_email else user_email.split("@")[0].capitalize()
+    user_email = (email or "admin@bitmail.com").strip().lower()
+    user_name = "Bitmail Admin" if "@bitmail" in user_email or "@bitnade" in user_email else user_email.split("@")[0].capitalize()
     auth_token = f"auth_tok_sim_{secrets.token_hex(16)}"
     now = utc_now_iso()
 
@@ -223,6 +248,29 @@ async def simulate_scan_approval(session_id: str, email: Optional[str] = None):
             if not row:
                 raise HTTPException(status_code=404, detail="Scan session not found")
             sess = dict(row)
+
+        user_id = None
+        async with db.execute("SELECT id FROM users WHERE LOWER(email) = ?", (user_email,)) as u_cur:
+            u_row = await u_cur.fetchone()
+            if u_row:
+                user_id = u_row["id"]
+
+        if not user_id:
+            from app.auth import hash_password
+            user_id = f"usr_{uuid.uuid4().hex[:12]}"
+            random_hash = hash_password(secrets.token_urlsafe(20))
+            await db.execute("""
+                INSERT INTO users (id, email, username, password_hash, name, role, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'admin', 'active', ?, ?)
+            """, (user_id, user_email, user_email.split("@")[0], random_hash, user_name, now, now))
+
+        sess_expires_dt = datetime.now(timezone.utc) + timedelta(days=settings.SESSION_EXPIRE_DAYS)
+        sess_expires_str = sess_expires_dt.strftime("%Y-%m-%d %H:%M:%S")
+        await db.execute("""
+            INSERT OR REPLACE INTO user_sessions (
+                token, user_id, expires_at, created_at, last_seen_at, user_agent, ip_address
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (auth_token, user_id, sess_expires_str, now, now, "Simulated QR Scan", "127.0.0.1"))
 
         await db.execute("""
             UPDATE scan_sessions

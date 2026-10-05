@@ -71,6 +71,10 @@ class Settings(BaseModel):
     )
     TRACKING_TOKEN_SALT: str = Field(default="bitmail-tracking-salt")
     UNSUBSCRIBE_TOKEN_SALT: str = Field(default="bitmail-unsubscribe-salt")
+    DEFAULT_ADMIN_EMAIL: str = Field(default=os.getenv("DEFAULT_ADMIN_EMAIL", "admin@bitmail.com"))
+    DEFAULT_ADMIN_USERNAME: str = Field(default=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"))
+    DEFAULT_ADMIN_PASSWORD: str = Field(default=os.getenv("DEFAULT_ADMIN_PASSWORD", "admin123"))
+    SESSION_EXPIRE_DAYS: int = Field(default=30)
     
     # Default Sender Settings
     DEFAULT_SENDER_NAME: str = Field(default="Bitmail Team")
