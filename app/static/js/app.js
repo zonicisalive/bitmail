@@ -5012,15 +5012,6 @@ async function handlePasswordLogin(event) {
     }
 }
 
-function fillDemoAdminCredentials() {
-    const loginInput = document.getElementById('login-input-identity');
-    const passInput = document.getElementById('login-input-password');
-    if (loginInput) loginInput.value = 'admin@bitmail.com';
-    if (passInput) passInput.value = 'admin123';
-    const errAlert = document.getElementById('login-error-alert');
-    if (errAlert) errAlert.classList.add('hidden');
-}
-
 function togglePasswordVisibility(inputId, btn) {
     const input = document.getElementById(inputId);
     if (!input) return;
