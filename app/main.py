@@ -62,8 +62,10 @@ app = FastAPI(
     title="Bitmail Enterprise Mass Email & Storage Platform",
     description="High-Throughput Mass Email Orchestration, SMTP Relay Management, and Email Storage Archive Vault API",
     version="2.4.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # API docs only outside production: in production they publicly map every endpoint.
+    docs_url=None if settings.APP_ENV.strip().lower() == "production" else "/docs",
+    redoc_url=None if settings.APP_ENV.strip().lower() == "production" else "/redoc",
+    openapi_url=None if settings.APP_ENV.strip().lower() == "production" else "/openapi.json",
     lifespan=lifespan
 )
 
