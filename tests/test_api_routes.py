@@ -651,6 +651,13 @@ class TestApiRoutes(unittest.TestCase):
             conn.commit()
 
         # Verify listed in suppressions endpoint
+        # Suppression management must not be reachable without logging in.
+        anon = TestClient(app)
+        self.assertEqual(anon.get("/api/bounces/suppressions").status_code, 401)
+        self.assertEqual(anon.get("/api/bounces/stats").status_code, 401)
+        self.assertEqual(anon.post("/api/bounces/suppressions/sync").status_code, 401)
+        self.assertEqual(anon.delete("/api/bounces/suppressions/someone@example.com").status_code, 401)
+
         sup_res = self.client.get("/api/bounces/suppressions")
         self.assertEqual(sup_res.status_code, 200)
         self.assertTrue(any(s["email"] == test_email for s in sup_res.json()["suppressions"]))

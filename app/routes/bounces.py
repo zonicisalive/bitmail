@@ -6,8 +6,9 @@ automatically suppressing invalid recipients and updating campaign stats.
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.auth import get_current_user
 from app.bounce import BounceClassifier
 from app.db import get_db
 from app.models import InboundBouncePayload, InboundBounceResponse
@@ -86,7 +87,7 @@ async def handle_inbound_raw_dsn(request: Request) -> Any:
     )
 
 
-@router.get("/stats")
+@router.get("/stats", dependencies=[Depends(get_current_user)])
 async def get_bounce_stats() -> Dict[str, Any]:
     """Summary of bounces and suppressions across campaigns."""
     async with get_db() as db:
@@ -114,7 +115,7 @@ async def get_bounce_stats() -> Dict[str, Any]:
     }
 
 
-@router.get("/suppressions")
+@router.get("/suppressions", dependencies=[Depends(get_current_user)])
 async def list_suppressions() -> Dict[str, Any]:
     """Retrieve all suppressed email addresses and reasons."""
     async with get_db() as db:
@@ -123,7 +124,7 @@ async def list_suppressions() -> Dict[str, Any]:
     return {"suppressions": rows, "count": len(rows)}
 
 
-@router.delete("/suppressions/{email}")
+@router.delete("/suppressions/{email}", dependencies=[Depends(get_current_user)])
 async def unsuppress_email(email: str) -> Dict[str, Any]:
     """Remove an email address from the suppressions table."""
     clean = email.strip().lower()
@@ -133,7 +134,7 @@ async def unsuppress_email(email: str) -> Dict[str, Any]:
     return {"success": True, "message": f"Address '{clean}' unsuppressed successfully."}
 
 
-@router.post("/suppressions/sync")
+@router.post("/suppressions/sync", dependencies=[Depends(get_current_user)])
 async def sync_active_subscribers_suppressions() -> Dict[str, Any]:
     """Remove active subscribers from suppressions so their sends are never blocked."""
     async with get_db() as db:
