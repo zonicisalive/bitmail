@@ -122,6 +122,20 @@
     <script>
         lucide.createIcons();
 
+        function showApprovalError(message) {
+            // Inline rather than alert(): in-app webviews (the usual QR scanner) often suppress alert().
+            let el = document.getElementById('approval-error');
+            if (!el) {
+                el = document.createElement('p');
+                el.id = 'approval-error';
+                el.setAttribute('role', 'alert');
+                el.className = 'text-xs font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2';
+                const btn = document.getElementById('btn-approve');
+                btn.parentNode.insertBefore(el, btn);
+            }
+            el.textContent = message;
+        }
+
         async function submitApproval(e) {
             e.preventDefault();
             const token = document.getElementById('auth-token-input').value;
@@ -164,13 +178,13 @@
                     document.getElementById('approval-success').classList.remove('hidden');
                     lucide.createIcons();
                 } else {
-                    alert(data.detail || data.message || 'Authorization failed.');
+                    showApprovalError(data.detail || data.message || 'Authorization failed.');
                     btn.disabled = false;
                     btn.innerHTML = `<i data-lucide="shield-check" class="w-5 h-5"></i><span>✓ Approve & Unlock Desktop Login</span>`;
                     lucide.createIcons();
                 }
             } catch (err) {
-                alert(err.message || 'Authorization failed.');
+                showApprovalError(err.message || 'Authorization failed.');
                 btn.disabled = false;
                 btn.innerHTML = `<i data-lucide="shield-check" class="w-5 h-5"></i><span>✓ Approve & Unlock Desktop Login</span>`;
                 lucide.createIcons();
