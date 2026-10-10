@@ -152,27 +152,89 @@ class TestRfc8058Unsubscribe(unittest.TestCase):
 
         asyncio.run(_verify())
 
+    def _seed_subscriber(self, sub_id, email, status="active"):
+        now = utc_now_iso()
+
+        async def _seed():
+            async with get_db() as db:
+                await db.execute("""
+                    INSERT INTO subscribers (id, email, first_name, last_name, status, created_at, updated_at)
+                    VALUES (?, ?, 'Test', 'User', ?, ?, ?)
+                """, (sub_id, email, status, now, now))
+                await db.commit()
+
+        asyncio.run(_seed())
+
+    def _status_of(self, email):
+        async def _read():
+            async with get_db() as db:
+                async with db.execute("SELECT status FROM subscribers WHERE email = ?", (email,)) as cur:
+                    row = await cur.fetchone()
+                async with db.execute("SELECT 1 FROM suppressions WHERE email = ?", (email,)) as cur:
+                    suppressed = await cur.fetchone() is not None
+            return row["status"], suppressed
+
+        return asyncio.run(_read())
+
     def test_one_click_get_renders_html(self):
-        res = self.client.get("/unsubscribe/direct_user@example.com")
+        self._seed_subscriber("sub_test_get", "get_user@example.com")
+        res = self.client.get("/unsubscribe/sub_test_get")
         self.assertEqual(res.status_code, 200)
         self.assertIn("text/html", res.headers.get("content-type", ""))
-        self.assertIn("Unsubscribed Successfully", res.text)
-        self.assertIn("Subscribe Again", res.text)
+        self.assertIn("unsubscribed", res.text)
+        self.assertIn("Subscribe again", res.text)
+        self.assertEqual(self._status_of("get_user@example.com"), ("unsubscribed", True))
 
-    def test_resubscribe_endpoint_flow(self):
-        # 1. Unsubscribe first
-        res_unsub = self.client.get("/unsubscribe/resub_test@example.com")
-        self.assertEqual(res_unsub.status_code, 200)
+    def test_bare_email_link_is_not_trusted(self):
+        """Anyone could otherwise unsubscribe or resubscribe any address."""
+        self._seed_subscriber("sub_test_bare", "bare_user@example.com")
+        res = self.client.get("/unsubscribe/bare_user@example.com")
+        self.assertIn("Link not recognised", res.text)
+        res = self.client.post("/resubscribe/bare_user@example.com", headers={"Accept": "application/json"})
+        self.assertEqual(res.status_code, 404)
+        self.assertEqual(self._status_of("bare_user@example.com"), ("active", False))
 
-        # 2. Resubscribe via JSON
-        res_json = self.client.post("/resubscribe/resub_test@example.com", headers={"Accept": "application/json"})
+    def test_resubscribe_survives_reload(self):
+        """Regression: reloading the unsubscribe page used to undo 'Subscribe again'."""
+        email = "resub_test@example.com"
+        self._seed_subscriber("sub_test_resub", email)
+
+        # 1. Click the email's unsubscribe link
+        self.assertEqual(self.client.get("/unsubscribe/sub_test_resub").status_code, 200)
+        self.assertEqual(self._status_of(email), ("unsubscribed", True))
+
+        # 2. Opening a resubscribe link only asks; it changes nothing
+        res_confirm = self.client.get("/resubscribe/sub_test_resub")
+        self.assertIn("Subscribe again?", res_confirm.text)
+        self.assertEqual(self._status_of(email), ("unsubscribed", True))
+
+        # 3. Press "Subscribe again"
+        res_json = self.client.post("/resubscribe/sub_test_resub?format=json")
         self.assertEqual(res_json.status_code, 200)
         self.assertTrue(res_json.json()["resubscribed"])
+        self.assertEqual(self._status_of(email), ("active", False))
 
-        # 3. Resubscribe via HTML
-        res_html = self.client.get("/resubscribe/resub_test@example.com")
-        self.assertEqual(res_html.status_code, 200)
-        self.assertIn("Welcome Back!", res_html.text)
+        # 4. The page reloads itself with view=1: shows status, does not unsubscribe again
+        res_view = self.client.get("/unsubscribe/sub_test_resub?view=1")
+        self.assertIn("Welcome back!", res_view.text)
+        self.assertEqual(self._status_of(email), ("active", False))
+
+        # 5. HTML form fallback for the button
+        res_html = self.client.post("/resubscribe/sub_test_resub")
+        self.assertIn("Welcome back!", res_html.text)
+
+    def test_repeat_unsubscribe_counts_once(self):
+        email = "repeat_user@example.com"
+        self._seed_subscriber("sub_test_repeat", email)
+        self.client.get("/unsubscribe/sub_test_repeat")
+        self.client.get("/unsubscribe/sub_test_repeat")
+
+        async def _count():
+            async with get_db() as db:
+                async with db.execute("SELECT COUNT(*) AS n FROM suppressions WHERE email = ?", (email,)) as cur:
+                    return (await cur.fetchone())["n"]
+
+        self.assertEqual(asyncio.run(_count()), 1)
 
 
 class TestCatchAllDetection(unittest.TestCase):
