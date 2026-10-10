@@ -146,7 +146,7 @@ class TestRfc8058Unsubscribe(unittest.TestCase):
                     sup1 = await cur.fetchone()
                     self.assertIsNotNone(sup1)
 
-                async with db.execute("SELECT email FROM suppression_list WHERE email = ?", (sub_email,)) as cur:
+                async with db.execute("SELECT email FROM suppressions WHERE email = ?", (sub_email,)) as cur:
                     sup2 = await cur.fetchone()
                     self.assertIsNotNone(sup2)
 

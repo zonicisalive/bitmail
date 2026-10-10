@@ -45,6 +45,39 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         await conn.close()
 
 
+async def _table_exists(db: aiosqlite.Connection, name: str) -> bool:
+    async with db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)) as cur:
+        return await cur.fetchone() is not None
+
+
+async def _consolidate_duplicate_tables(db: aiosqlite.Connection) -> None:
+    """
+    Earlier versions wrote list membership to both subscriber_list_memberships and
+    list_subscribers, and suppressions to both suppressions and suppression_list.
+    Readers had to UNION both and some (warmup) only read one, so lists showed
+    different members depending on the screen. Fold the duplicates into the
+    canonical table once and drop them so there is a single source of truth.
+    """
+    if await _table_exists(db, "list_subscribers"):
+        await db.execute("""
+            INSERT OR IGNORE INTO subscriber_list_memberships (subscriber_id, list_id, added_at)
+            SELECT ls.subscriber_id, ls.list_id, ls.subscribed_at
+            FROM list_subscribers ls
+            WHERE ls.subscriber_id IN (SELECT id FROM subscribers)
+              AND ls.list_id IN (SELECT id FROM subscriber_lists)
+        """)
+        await db.execute("DROP TABLE list_subscribers")
+
+    if await _table_exists(db, "suppression_list"):
+        await db.execute("""
+            INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
+            SELECT id, email, campaign_id, reason, created_at FROM suppression_list
+        """)
+        await db.execute("DROP TABLE suppression_list")
+
+    await db.commit()
+
+
 async def init_db() -> None:
     """
     Initialize SQLite database schema, create tables, views, and indexes.
@@ -104,15 +137,6 @@ async def init_db() -> None:
             );
         """)
 
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS list_subscribers (
-                list_id TEXT NOT NULL REFERENCES subscriber_lists(id) ON DELETE CASCADE,
-                subscriber_id TEXT NOT NULL REFERENCES subscribers(id) ON DELETE CASCADE,
-                status TEXT NOT NULL DEFAULT 'active',
-                subscribed_at TEXT NOT NULL,
-                PRIMARY KEY (list_id, subscriber_id)
-            );
-        """)
 
         # 8b. Storage Audit Events Table
         await db.execute("""
@@ -339,15 +363,6 @@ async def init_db() -> None:
             );
         """)
 
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS suppression_list (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
-                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
-                reason TEXT NOT NULL DEFAULT 'user_unsubscribed',
-                created_at TEXT NOT NULL
-            );
-        """)
 
         # 10. Direct QR Scan Authentication Sessions Table
         await db.execute("""
@@ -517,8 +532,11 @@ async def init_db() -> None:
         await add_column_if_missing("smtp_configs", "warmup_day", "INTEGER DEFAULT 1")
 
 
+        await _consolidate_duplicate_tables(db)
+
         # Indexes
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);")
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_created ON subscribers(created_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_status ON subscribers(status);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_memberships_list ON subscriber_list_memberships(list_id);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_memberships_sub ON subscriber_list_memberships(subscriber_id);")
@@ -532,7 +550,6 @@ async def init_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_type ON email_events(event_type);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_email_events_created ON email_events(created_at);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_suppressions_email ON suppressions(email);")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_suppression_list_email ON suppression_list(email);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);")
@@ -544,10 +561,6 @@ async def init_db() -> None:
         # Synchronize suppressions with active subscribers (active subscribers must not be suppressed)
         await db.execute("""
             DELETE FROM suppressions
-            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
-        """)
-        await db.execute("""
-            DELETE FROM suppression_list
             WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
         """)
         await db.commit()

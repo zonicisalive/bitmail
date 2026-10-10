@@ -133,6 +133,7 @@ class DnsCache:
 
 
 _dns_cache = DnsCache(ttl_seconds=300)
+_mx_inflight: Dict[str, "asyncio.Task"] = {}
 
 
 def get_async_resolver(timeout: float = 3.0) -> dns.asyncresolver.Resolver:
@@ -236,11 +237,24 @@ class EmailValidatorService:
         Returns (has_mx, list_of_records, reason).
         """
         clean_domain = domain.strip().lower()
-        cache_key = f"mx:{clean_domain}"
-        cached = _dns_cache.get(cache_key)
+        cached = _dns_cache.get(f"mx:{clean_domain}")
         if cached is not None:
             return cached
 
+        # A campaign validates every recipient concurrently, so many lookups for the
+        # same domain start before the first one is cached. Share one in-flight query
+        # per domain: fewer DNS calls, and one consistent verdict for every recipient.
+        loop = asyncio.get_running_loop()
+        pending = _mx_inflight.get(clean_domain)
+        if pending is None or pending.done() or pending.get_loop() is not loop:
+            pending = loop.create_task(EmailValidatorService._lookup_mx(clean_domain, timeout))
+            _mx_inflight[clean_domain] = pending
+            pending.add_done_callback(lambda t, d=clean_domain: _mx_inflight.pop(d, None) if _mx_inflight.get(d) is t else None)
+        return await asyncio.shield(pending)
+
+    @staticmethod
+    async def _lookup_mx(clean_domain: str, timeout: float) -> Tuple[bool, List[Dict[str, Any]], str]:
+        cache_key = f"mx:{clean_domain}"
         resolver = get_async_resolver(timeout)
         records: List[Dict[str, Any]] = []
 
@@ -268,8 +282,13 @@ class EmailValidatorService:
                     result = (True, records, "No MX records; domain accepts mail via direct A record fallback (RFC 5321).")
                     _dns_cache.set(cache_key, result)
                     return result
-            except Exception:
+            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
                 pass
+            except Exception as exc:
+                # A timeout or SERVFAIL on the fallback says nothing about the domain.
+                # Caching it as "cannot receive mail" used to block every recipient on
+                # the domain for the full cache TTL after a single DNS hiccup.
+                return (False, [], f"DNS A-record fallback lookup failed: {exc}")
             result = (False, [], "Domain exists but publishes zero MX or direct A mail exchange records.")
             _dns_cache.set(cache_key, result)
             return result
@@ -942,13 +961,6 @@ class PreSendSafetyGuard:
                     row = await cur.fetchone()
                     if row:
                         return True, f"Address is blacklisted in global suppression table ({row['reason'] or 'suppressed'})."
-
-                async with db.execute(
-                    "SELECT reason FROM suppression_list WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
-                ) as cur_sl:
-                    row_sl = await cur_sl.fetchone()
-                    if row_sl:
-                        return True, f"Address is in suppression list ({row_sl['reason'] or 'suppressed'})."
 
                 async with db.execute(
                     "SELECT status FROM subscribers WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)

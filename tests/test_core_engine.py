@@ -266,6 +266,15 @@ class TestAsyncComponents(unittest.IsolatedAsyncioTestCase):
         self.assertLess(elapsed, 0.2)
 
     async def test_campaign_queue_execution_pause_resume_cancel(self):
+        # The pre-send guard does a live MX lookup; a unit test must not depend on the
+        # internet (testdomain.com has no MX, only an A record, and slow DNS made this flaky).
+        from unittest.mock import AsyncMock, patch
+        from app.deliverability import EmailValidatorService
+        stub = AsyncMock(return_value=(True, [{"priority": 0, "host": "testdomain.com"}], "stubbed"))
+        patcher = patch.object(EmailValidatorService, "resolve_mx", stub)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
         recipients = [
             Subscriber(id=f"sub_{i}", email=f"user{i}@testdomain.com", first_name=f"User{i}")
             for i in range(1, 11)

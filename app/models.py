@@ -86,6 +86,16 @@ class SecurityType(str, Enum):
 # Subscriber & Subscriber List Models
 # ----------------------------------------------------------------------
 
+def _clean_tags(tags: List[str]) -> List[str]:
+    """Trim, lowercase and de-duplicate tags while keeping their order."""
+    seen: List[str] = []
+    for t in tags or []:
+        t = str(t).strip().lower()
+        if t and t not in seen:
+            seen.append(t)
+    return seen
+
+
 class SubscriberBase(BaseModel):
     email: str = Field(..., description="Recipient email address")
     first_name: Optional[str] = Field(default=None, description="Subscriber first name")
@@ -98,6 +108,12 @@ class SubscriberBase(BaseModel):
         default=SubscriberStatus.ACTIVE,
         description="Subscriber status"
     )
+    tags: List[str] = Field(default_factory=list, description="Free-form labels, e.g. ['vip', 'webinar-2026']")
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, v: List[str]) -> List[str]:
+        return _clean_tags(v)
 
     @field_validator("email")
     @classmethod
@@ -122,6 +138,12 @@ class SubscriberUpdate(BaseModel):
     custom_fields: Optional[Dict[str, Any]] = Field(default=None)
     status: Optional[SubscriberStatus] = Field(default=None)
     list_ids: Optional[List[str]] = Field(default=None)
+    tags: Optional[List[str]] = Field(default=None)
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        return None if v is None else _clean_tags(v)
 
 
     @field_validator("email")
@@ -200,7 +222,8 @@ class SubscriberListResponse(SubscriberListBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    subscriber_count: int = Field(default=0, description="Active subscriber count")
+    subscriber_count: int = Field(default=0, description="All contacts in the list, any status")
+    active_count: int = Field(default=0, description="Contacts in the list that can be mailed")
     created_at: str
     updated_at: str
 

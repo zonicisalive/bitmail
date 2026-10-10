@@ -125,11 +125,10 @@ async def list_suppressions() -> Dict[str, Any]:
 
 @router.delete("/suppressions/{email}")
 async def unsuppress_email(email: str) -> Dict[str, Any]:
-    """Remove an email address from suppressions and suppression list."""
+    """Remove an email address from the suppressions table."""
     clean = email.strip().lower()
     async with get_db() as db:
         await db.execute("DELETE FROM suppressions WHERE email = ? COLLATE NOCASE", (clean,))
-        await db.execute("DELETE FROM suppression_list WHERE email = ? COLLATE NOCASE", (clean,))
         await db.commit()
     return {"success": True, "message": f"Address '{clean}' unsuppressed successfully."}
 
@@ -140,10 +139,6 @@ async def sync_active_subscribers_suppressions() -> Dict[str, Any]:
     async with get_db() as db:
         await db.execute("""
             DELETE FROM suppressions
-            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
-        """)
-        await db.execute("""
-            DELETE FROM suppression_list
             WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
         """)
         await db.commit()

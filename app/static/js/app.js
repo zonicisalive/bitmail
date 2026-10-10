@@ -84,6 +84,20 @@ const App = {
     selected: {},
     // Non-null while an edit modal is open; switches submit handlers to PUT.
     editing: { subscriber: null, smtp: null, template: null },
+    // Contacts page view state; the server does the filtering, sorting and paging.
+    contacts: {
+        page: 1,
+        perPage: (() => { try { return parseInt(localStorage.getItem('bitmail_contacts_per_page'), 10) || 50; } catch (e) { return 50; } })(),
+        sort: 'created_at',
+        order: 'desc',
+        listId: 'all',
+        total: 0,
+        selectAllMatching: false
+    },
+    contactSummary: null,
+    // Custom field keys the contact had when its edit modal opened, so keys the
+    // user removes can be cleared server-side instead of silently kept.
+    editingContactFieldKeys: [],
     customPlaceholders: [],
     lastFocusedInput: null,
     previewSource: 'broadcast',
@@ -1039,10 +1053,10 @@ function updateBroadcastEmailCount() {
         const select = document.getElementById('broadcast-list-select');
         const selectedVal = select?.value || 'all';
         if (selectedVal === 'all') {
-            badge.innerText = `${App.subscribers.length} Customers (All)`;
+            badge.innerText = `${activeContactCount()} Customers (All)`;
         } else {
             const targetList = App.lists.find(l => l.id === selectedVal);
-            badge.innerText = `${targetList ? targetList.subscriber_count : 0} Customers`;
+            badge.innerText = `${targetList ? targetList.active_count : 0} Customers`;
         }
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
     }
@@ -1497,34 +1511,36 @@ function loadBroadcastTemplatePreset(type) {
     showToast('Loaded template preset into composer', 'info');
 }
 
+function activeContactCount() {
+    const n = App.contactSummary ? App.contactSummary.active : App.stats.activeSubscribers;
+    return Number(n || 0).toLocaleString();
+}
+
 function populateBroadcastDropdowns() {
     // Populate Quick Broadcast List Dropdown
     const listSelect = document.getElementById('broadcast-list-select');
     if (listSelect) {
-        listSelect.innerHTML = `<option value="all">⭐ All Active Customers (${App.subscribers.length})</option>` +
-            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.subscriber_count} contacts)</option>`).join('');
+        const cur = listSelect.value;
+        // Campaigns only mail active contacts, so show the count that will actually receive it.
+        listSelect.innerHTML = `<option value="all">⭐ All Active Contacts (${activeContactCount()})</option>` +
+            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.active_count} active)</option>`).join('');
+        if (cur && [...listSelect.options].some(o => o.value === cur)) listSelect.value = cur;
     }
 
     // Populate CSV Import Target Group Dropdown
     const csvListSelect = document.getElementById('modal-csv-list-select');
     if (csvListSelect) {
-        csvListSelect.innerHTML = `<option value="">All Customers (No specific group)</option>` +
-            App.lists.map(l => `<option value="${l.id}">Group: ${escapeHtml(l.name)} (${l.subscriber_count} contacts)</option>`).join('');
+        csvListSelect.innerHTML = `<option value="">Don't add to a list</option>` +
+            App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)} (${l.subscriber_count} contacts)</option>`).join('');
     }
 
-    // Populate Add/Edit Customer Group Dropdown
-    const subListSelect = document.getElementById('modal-sub-list-select');
-    if (subListSelect) {
-        subListSelect.innerHTML = `<option value="">No specific group</option>` +
+    // Paste-emails modal destination list
+    const pasteListSelect = document.getElementById('modal-bulk-list-select');
+    if (pasteListSelect) {
+        const cur = pasteListSelect.value;
+        pasteListSelect.innerHTML = `<option value="">Don't add to a list</option>` +
             App.lists.map(l => `<option value="${l.id}">${escapeHtml(l.name)}</option>`).join('');
-    }
-
-    // Populate Customer Table Filter Dropdown
-    const filterListSelect = document.getElementById('subscriber-filter-list');
-    if (filterListSelect) {
-        const curVal = filterListSelect.value || 'all';
-        filterListSelect.innerHTML = `<option value="all">📁 All Groups / Lists</option>` +
-            App.lists.map(l => `<option value="${l.id}" ${curVal === l.id ? 'selected' : ''}>📁 ${escapeHtml(l.name)} (${l.subscriber_count})</option>`).join('');
+        if (cur) pasteListSelect.value = cur;
     }
 
     // Populate Template Studio Table Dropdown
@@ -1535,11 +1551,6 @@ function populateBroadcastDropdowns() {
             App.lists.map(l => `<option value="${l.id}" ${curStudioVal === l.id ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
     }
 
-    // Update Manage Groups counts in Customers tab header and modal badge
-    const btnCount = document.getElementById('manage-groups-btn-count');
-    if (btnCount) btnCount.textContent = App.lists.length;
-    const badgeCount = document.getElementById('manage-groups-count-badge');
-    if (badgeCount) badgeCount.textContent = `${App.lists.length} Group${App.lists.length === 1 ? '' : 's'}`;
 
 
     // Populate SMTP Relay Dropdown
@@ -2228,23 +2239,233 @@ function setVaultModalTab(tab) {
 // ==========================================================================
 // 4. Customers & Subscriber Management
 // ==========================================================================
-async function fetchSubscribers() {
-    try {
-        const res = await fetch('/api/subscribers?limit=200');
-        if (!res.ok) return;
-        const data = await res.json();
-        App.subscribers = Array.isArray(data) ? data : (data.items || data.subscribers || []);
+// Contacts page: server-side paging, sorting and filtering. App.subscribers holds
+// only the current page; totals come from the X-Total-Count response header.
+const CONTACT_STATUS_STYLES = {
+    active: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    unsubscribed: 'bg-slate-500/20 text-slate-300 border-white/10',
+    bounced: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    complained: 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+};
 
-        const listsRes = await fetch('/api/lists');
-        if (listsRes.ok) {
-            App.lists = await listsRes.json();
+function contactFilters() {
+    return {
+        search: (document.getElementById('subscriber-search-input')?.value || '').trim(),
+        status: document.getElementById('subscriber-filter-status')?.value || 'all',
+        tag: document.getElementById('subscriber-filter-tag')?.value || '',
+        list_id: App.contacts.listId || 'all'
+    };
+}
+
+function contactFilterParams() {
+    const f = contactFilters();
+    const params = new URLSearchParams();
+    if (f.search) params.set('search', f.search);
+    if (f.status !== 'all') params.set('status', f.status);
+    if (f.tag) params.set('tag', f.tag);
+    if (f.list_id !== 'all') params.set('list_id', f.list_id);
+    return params;
+}
+
+// Monotonic request id so a slow response for an old search can never
+// overwrite the results of a newer one.
+let _contactsRequestSeq = 0;
+
+async function fetchSubscribers() {
+    const seq = ++_contactsRequestSeq;
+    const c = App.contacts;
+    const params = contactFilterParams();
+    params.set('page', c.page);
+    params.set('per_page', c.perPage);
+    params.set('sort', c.sort);
+    params.set('order', c.order);
+
+    try {
+        const [res, listsRes, summaryRes] = await Promise.all([
+            fetch(`/api/subscribers?${params}`),
+            fetch('/api/lists'),
+            fetch('/api/subscribers/summary')
+        ]);
+        if (seq !== _contactsRequestSeq) return;
+
+        if (listsRes.ok) App.lists = await listsRes.json();
+        if (summaryRes.ok) App.contactSummary = await summaryRes.json();
+
+        if (!res.ok) {
+            const err = await safeJson(res);
+            showToast(err.detail || 'Failed to load contacts', 'error');
+            return;
+        }
+        App.subscribers = await res.json();
+        c.total = parseInt(res.headers.get('X-Total-Count') || String(App.subscribers.length), 10);
+
+        // Deleting the last rows of the last page would otherwise show an empty page.
+        const lastPage = Math.max(1, Math.ceil(c.total / c.perPage));
+        if (c.page > lastPage) {
+            c.page = lastPage;
+            return fetchSubscribers();
         }
 
-        filterSubscribers();
+        renderSubscribersTable();
+        renderContactSummary();
+        renderContactListNav();
+        renderContactTagFilter();
+        renderContactsPager();
         populateBroadcastDropdowns();
     } catch (err) {
-        console.warn('Subscribers fetch error:', err);
+        console.warn('Contacts fetch error:', err);
     }
+}
+
+function renderContactSummary() {
+    const el = document.getElementById('contacts-summary');
+    const sum = App.contactSummary;
+    if (!el || !sum) return;
+    const by = sum.by_status || {};
+    const current = document.getElementById('subscriber-filter-status')?.value || 'all';
+    const tiles = [
+        ['all', 'All contacts', sum.total, 'text-white'],
+        ['active', 'Active', by.active || 0, 'text-emerald-300'],
+        ['unsubscribed', 'Unsubscribed', by.unsubscribed || 0, 'text-slate-300'],
+        ['bounced', 'Bounced / complained', (by.bounced || 0) + (by.complained || 0), 'text-rose-300']
+    ];
+    el.innerHTML = tiles.map(([key, label, n, color]) => `
+        <button type="button" onclick="filterContactsByStatus('${key}')"
+                class="glass-panel text-left px-4 py-3 rounded-2xl border ${current === key ? 'border-indigo-500/50' : 'border-white/10'} hover:border-indigo-500/40 transition-colors cursor-pointer">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">${label}</div>
+            <div class="text-xl font-bold ${color} mt-0.5 tabular-nums">${Number(n).toLocaleString()}</div>
+        </button>
+    `).join('');
+}
+
+function filterContactsByStatus(key) {
+    const sel = document.getElementById('subscriber-filter-status');
+    // The combined bounced/complained tile filters to bounced; complained is in the dropdown.
+    if (sel) sel.value = key === 'all' ? 'all' : key;
+    filterSubscribers(true);
+}
+
+function renderContactListNav() {
+    const nav = document.getElementById('contacts-list-nav');
+    if (!nav) return;
+    const sum = App.contactSummary || {};
+    const active = App.contacts.listId || 'all';
+    const item = (id, label, count, extra = '', title = '') => `
+        <div class="group flex items-center gap-1 rounded-lg ${active === id ? 'bg-indigo-500/15 text-white' : 'text-slate-300 hover:bg-white/5'}">
+            <button type="button" onclick="selectContactList('${id}')" class="flex-1 min-w-0 flex items-center justify-between gap-2 px-2.5 py-2 text-xs text-left cursor-pointer" title="${escapeHtml(title || label)}">
+                <span class="truncate">${escapeHtml(label)}</span>
+                <span class="text-[11px] tabular-nums ${active === id ? 'text-indigo-200' : 'text-slate-500'}">${count}</span>
+            </button>
+            ${extra}
+        </div>`;
+
+    const listItems = App.lists.map(l => {
+        const actions = `
+            <button type="button" onclick="openEditGroupModal('${l.id}')" class="p-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-white cursor-pointer" title="Rename list"><i data-lucide="pencil" class="w-3 h-3"></i></button>
+            <button type="button" onclick="deleteCustomerGroup('${l.id}')" class="p-1 mr-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-rose-400 cursor-pointer" title="Delete list"><i data-lucide="trash-2" class="w-3 h-3"></i></button>`;
+        const counts = l.active_count === l.subscriber_count
+            ? `${l.subscriber_count}`
+            : `${l.active_count}/${l.subscriber_count}`;
+        return item(l.id, l.name, counts, actions,
+            `${l.name}: ${l.active_count} active of ${l.subscriber_count} contacts`);
+    }).join('');
+
+    nav.innerHTML =
+        item('all', 'All contacts', sum.total ?? '') +
+        item('none', 'Not in any list', sum.not_in_any_list ?? '') +
+        (App.lists.length ? `<div class="my-1.5 border-t border-white/5"></div>${listItems}` :
+            `<p class="px-2.5 py-3 text-[11px] text-slate-500">No lists yet. Lists group contacts for campaigns; a contact can be in several.</p>`);
+    initLucide();
+}
+
+function renderContactTagFilter() {
+    const sel = document.getElementById('subscriber-filter-tag');
+    if (!sel) return;
+    const cur = sel.value;
+    const tags = (App.contactSummary && App.contactSummary.tags) || [];
+    sel.innerHTML = `<option value="">All tags</option>` +
+        tags.map(t => `<option value="${escapeHtml(t)}" ${t === cur ? 'selected' : ''}>#${escapeHtml(t)}</option>`).join('');
+    // Keep a filter on a tag that no longer exists from silently showing nothing.
+    if (cur && !tags.includes(cur)) sel.value = '';
+}
+
+function selectContactList(listId) {
+    App.contacts.listId = listId;
+    App.contacts.page = 1;
+    clearSelection('subscribers');
+    fetchSubscribers();
+}
+
+function sortContacts(column) {
+    const c = App.contacts;
+    if (c.sort === column) {
+        c.order = c.order === 'asc' ? 'desc' : 'asc';
+    } else {
+        c.sort = column;
+        c.order = column === 'created_at' ? 'desc' : 'asc';
+    }
+    c.page = 1;
+    clearSelection('subscribers');
+    fetchSubscribers();
+}
+
+function setContactsPerPage(value) {
+    App.contacts.perPage = parseInt(value, 10) || 50;
+    App.contacts.page = 1;
+    try { localStorage.setItem('bitmail_contacts_per_page', String(App.contacts.perPage)); } catch (e) {}
+    clearSelection('subscribers');
+    fetchSubscribers();
+}
+
+function goToContactsPage(page) {
+    const c = App.contacts;
+    const last = Math.max(1, Math.ceil(c.total / c.perPage));
+    const next = Math.min(Math.max(1, page), last);
+    if (next === c.page) return;
+    c.page = next;
+    clearSelection('subscribers');
+    fetchSubscribers();
+    document.getElementById('panel-subscribers')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function renderContactsPager() {
+    const c = App.contacts;
+    const range = document.getElementById('contacts-range');
+    const pager = document.getElementById('contacts-pager');
+    const perPageSel = document.getElementById('contacts-per-page');
+    if (perPageSel) perPageSel.value = String(c.perPage);
+
+    const from = c.total === 0 ? 0 : (c.page - 1) * c.perPage + 1;
+    const to = Math.min(c.total, c.page * c.perPage);
+    if (range) range.textContent = c.total === 0 ? '0 contacts' : `${from.toLocaleString()}–${to.toLocaleString()} of ${c.total.toLocaleString()}`;
+    if (!pager) return;
+
+    const last = Math.max(1, Math.ceil(c.total / c.perPage));
+    // First, last, and a window around the current page, with gaps as ellipses.
+    const pages = [...new Set([1, c.page - 1, c.page, c.page + 1, last])]
+        .filter(n => n >= 1 && n <= last).sort((x, y) => x - y);
+    const btn = (label, page, disabled, current = false, aria = '') => `
+        <button type="button" ${disabled ? 'disabled' : ''} onclick="goToContactsPage(${page})"
+                ${aria ? `aria-label="${aria}"` : ''} ${current ? 'aria-current="page"' : ''}
+                class="min-w-[2rem] h-8 px-2 rounded-lg text-xs font-semibold tabular-nums ${current ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">${label}</button>`;
+
+    let html = btn('‹', c.page - 1, c.page <= 1, false, 'Previous page');
+    pages.forEach((n, i) => {
+        if (i > 0 && n - pages[i - 1] > 1) html += `<span class="px-1 text-slate-500">…</span>`;
+        html += btn(n, n, false, n === c.page, `Page ${n}`);
+    });
+    html += btn('›', c.page + 1, c.page >= last, false, 'Next page');
+    pager.innerHTML = html;
+
+    document.querySelectorAll('#panel-subscribers .sort-btn').forEach(b => {
+        const on = b.dataset.sort === c.sort;
+        b.dataset.dir = on ? c.order : '';
+        b.setAttribute('aria-sort', on ? (c.order === 'asc' ? 'ascending' : 'descending') : 'none');
+    });
+}
+
+function contactListName(listId) {
+    return App.lists.find(l => l.id === listId)?.name;
 }
 
 function renderSubscribersTable(rows = App.subscribers) {
@@ -2254,63 +2475,58 @@ function renderSubscribersTable(rows = App.subscribers) {
     pruneSelection('subscribers');
 
     if (rows.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-xs text-slate-500">No customer contacts in database yet. Click "Paste Multiple Emails" or "Add Customer" to add some!</td></tr>`;
+        const filtered = contactFilterParams().toString() !== '';
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-10 text-xs text-slate-500">${filtered
+            ? 'No contacts match these filters.'
+            : 'No contacts yet. Use "Paste emails", "Import CSV" or "Add contact".'}</td></tr>`;
         renderBulkBar('subscribers');
         return;
     }
 
     tbody.innerHTML = rows.map(sub => {
-        let tagsArr = [];
-        try {
-            if (typeof sub.tags === 'string') tagsArr = JSON.parse(sub.tags);
-            else if (Array.isArray(sub.tags)) tagsArr = sub.tags;
-        } catch (e) {}
+        const fullName = `${sub.first_name || ''} ${sub.last_name || ''}`.trim();
+        const statusKey = sub.status || 'active';
 
-        const fullName = `${sub.first_name || ''} ${sub.last_name || ''}`.trim() || sub.email.split('@')[0];
-        const statusClass = sub.status === 'active' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : 'bg-rose-500/20 text-rose-300 border-rose-500/30';
+        const lists = (sub.lists || []).map(contactListName).filter(Boolean);
+        const tags = Array.isArray(sub.tags) ? sub.tags : [];
+        const chips = [
+            ...lists.map(n => `<span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-200 border border-amber-500/20 text-[10px] font-semibold max-w-[10rem] truncate" title="List: ${escapeHtml(n)}">${escapeHtml(n)}</span>`),
+            ...tags.map(t => `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/5 text-[10px]">#${escapeHtml(t)}</span>`)
+        ];
 
-        // Render Group / List memberships
-        const groupBadges = (sub.lists || []).map(lid => {
-            const listObj = App.lists.find(l => l.id === lid);
-            return listObj ? `<span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/25 text-[10px] font-semibold flex items-center gap-1" title="Customer Group / List">📁 ${escapeHtml(listObj.name)}</span>` : '';
-        }).filter(Boolean).join('');
-
-        // Render Custom Attributes / Placeholders
-        let customBadges = '';
-        try {
-            const cf = typeof sub.custom_fields === 'string' ? JSON.parse(sub.custom_fields || '{}') : (sub.custom_fields || {});
-            customBadges = Object.entries(cf).map(([k, v]) =>
-                `<span class="px-2 py-0.5 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-500/25 text-[10px] font-mono" title="Custom Attribute / Placeholder: {{${escapeHtml(k)}}}">&#123;&#123;${escapeHtml(k)}&#125;&#125;: <strong class="text-white">${escapeHtml(String(v))}</strong></span>`
-            ).join('');
-        } catch (e) {}
-
-        const tagsBadges = tagsArr.map(t => `<span class="px-2 py-0.5 rounded bg-slate-800 text-[10px] text-slate-300 border border-white/5">${escapeHtml(t)}</span>`).join('');
-        const attributesContent = (groupBadges || customBadges || tagsBadges) ? `${groupBadges}${customBadges}${tagsBadges}` : `<span class="text-slate-600 text-[11px]">—</span>`;
+        const fields = sub.custom_fields && typeof sub.custom_fields === 'object' ? sub.custom_fields : {};
+        const fieldEntries = Object.entries(fields);
+        const fieldTitle = fieldEntries.map(([k, v]) => `{{${k}}} = ${v}`).join('\n');
+        const fieldsCell = fieldEntries.length === 0
+            ? '<span class="text-slate-600">—</span>'
+            : `<span class="inline-flex items-center gap-1.5 text-[11px] text-slate-300" title="${escapeHtml(fieldTitle)}">
+                   <span class="font-mono text-indigo-300 truncate max-w-[9rem]">${escapeHtml(fieldEntries.slice(0, 2).map(([k]) => k).join(', '))}</span>
+                   ${fieldEntries.length > 2 ? `<span class="text-slate-500">+${fieldEntries.length - 2}</span>` : ''}
+               </span>`;
 
         return `
             <tr class="hover:bg-slate-900/50 transition-colors border-b border-white/5 text-xs">
                 ${selectionCheckboxCell('subscribers', sub.id)}
-                <td class="py-3 px-4">
-                    <div class="font-bold text-white">${escapeHtml(sub.email)}</div>
-                    <div class="text-[11px] text-slate-400">${escapeHtml(fullName)}</div>
+                <td class="py-3 px-4 min-w-[12rem]">
+                    <button type="button" onclick="openEditSubscriberModal('${sub.id}')" class="text-left cursor-pointer max-w-[18rem] block" title="${escapeHtml(sub.email)}">
+                        <div class="font-semibold text-white hover:text-indigo-300 truncate">${escapeHtml(sub.email)}</div>
+                        <div class="text-[11px] text-slate-400">${fullName ? escapeHtml(fullName) : '<span class="text-slate-600">No name</span>'}</div>
+                    </button>
                 </td>
                 <td class="py-3 px-4">
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                        ${attributesContent}
-                    </div>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${CONTACT_STATUS_STYLES[statusKey] || CONTACT_STATUS_STYLES.unsubscribed}">${escapeHtml(statusKey)}</span>
                 </td>
                 <td class="py-3 px-4">
-                    <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}">${sub.status || 'active'}</span>
+                    <div class="flex items-center gap-1 flex-wrap max-w-xs">${chips.join('') || '<span class="text-slate-600">—</span>'}</div>
                 </td>
-                <td class="py-3 px-4 text-slate-400 text-[11px]">
-                    ${formatDate(sub.created_at)}
-                </td>
+                <td class="py-3 px-4">${fieldsCell}</td>
+                <td class="py-3 px-4 text-slate-400 text-[11px] whitespace-nowrap">${formatDate(sub.created_at)}</td>
                 <td class="py-3 px-4 text-right">
                     <div class="flex items-center justify-end gap-1.5">
-                        <button onclick="openEditSubscriberModal('${sub.id}')" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 transition-colors" title="Edit customer">
+                        <button onclick="openEditSubscriberModal('${sub.id}')" class="p-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 transition-colors" title="Edit contact">
                             <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
                         </button>
-                        <button onclick="deleteSubscriber('${sub.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors" title="Delete customer">
+                        <button onclick="deleteSubscriber('${sub.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors" title="Delete contact">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                         </button>
                     </div>
@@ -2323,6 +2539,138 @@ function renderSubscribersTable(rows = App.subscribers) {
     initLucide();
 }
 
+// --------------------------------------------------------------------------
+// Contact mass actions. Selection is per page (like Gmail / Mailchimp); once a
+// full page is selected the bar offers "select all N matching" which sends the
+// current filters instead of IDs so the action covers every page.
+// --------------------------------------------------------------------------
+function contactSelectionTarget() {
+    if (App.contacts.selectAllMatching) {
+        return { body: { filter: contactFilters() }, count: App.contacts.total };
+    }
+    const ids = [...selectionSet('subscribers')];
+    return { body: { ids }, count: ids.length };
+}
+
+function updateContactSelectAllNote() {
+    const note = document.getElementById('contacts-select-all-matching');
+    const label = document.getElementById('bulk-count-subscribers');
+    if (!note) return;
+    const c = App.contacts;
+    const selected = selectionSet('subscribers').size;
+    const pageFull = selected > 0 && selected === App.subscribers.length;
+
+    if (c.selectAllMatching) {
+        if (label) label.textContent = `All ${c.total.toLocaleString()}`;
+        note.innerHTML = `matching contacts · <button type="button" onclick="setSelectAllMatching(false)" class="underline text-indigo-300 hover:text-white cursor-pointer">select this page only</button>`;
+        note.classList.remove('hidden');
+    } else if (pageFull && c.total > selected) {
+        note.innerHTML = `on this page · <button type="button" onclick="setSelectAllMatching(true)" class="underline text-indigo-300 hover:text-white cursor-pointer">select all ${c.total.toLocaleString()} matching contacts</button>`;
+        note.classList.remove('hidden');
+    } else {
+        note.classList.add('hidden');
+    }
+}
+
+function setSelectAllMatching(on) {
+    App.contacts.selectAllMatching = on;
+    renderBulkBar('subscribers');
+}
+
+async function contactBulkPrompt(action) {
+    const { count } = contactSelectionTarget();
+    if (!count) return;
+    const who = `${count.toLocaleString()} contact${count === 1 ? '' : 's'}`;
+
+    if (action === 'add_to_list' || action === 'remove_from_list') {
+        if (App.lists.length === 0) {
+            showToast('Create a list first.', 'warning');
+            return openCreateGroupModal();
+        }
+        const preset = action === 'remove_from_list' && !['all', 'none'].includes(App.contacts.listId) ? App.contacts.listId : '';
+        const listId = await choiceDialog(
+            action === 'add_to_list' ? `Add ${who} to which list?` : `Remove ${who} from which list?`,
+            App.lists.map(l => [l.id, `${l.name} (${l.subscriber_count})`]),
+            preset,
+            { title: action === 'add_to_list' ? 'Add to list' : 'Remove from list', confirmText: action === 'add_to_list' ? 'Add' : 'Remove' }
+        );
+        if (listId) await runContactBulk(action, { list_id: listId });
+        return;
+    }
+
+    if (action === 'add_tag' || action === 'remove_tag') {
+        const tag = await promptDialog(
+            action === 'add_tag' ? `Tag to add to ${who}:` : `Tag to remove from ${who}:`, '',
+            { title: action === 'add_tag' ? 'Add tag' : 'Remove tag', confirmText: action === 'add_tag' ? 'Add tag' : 'Remove tag' }
+        );
+        if (tag && tag.trim()) await runContactBulk(action, { tag: tag.trim().toLowerCase() });
+        return;
+    }
+
+    if (action === 'set_status') {
+        const statusVal = await choiceDialog(`New status for ${who}:`, [
+            ['active', 'Active - can be emailed'],
+            ['unsubscribed', 'Unsubscribed - never emailed'],
+            ['bounced', 'Bounced - never emailed'],
+            ['complained', 'Complained - never emailed']
+        ], 'unsubscribed', {
+            title: 'Change status',
+            confirmText: 'Apply',
+            detail: 'Setting a contact back to Active lifts their suppression. Only do this with their consent.'
+        });
+        if (statusVal) await runContactBulk('set_status', { status: statusVal });
+    }
+}
+
+async function runContactBulk(action, extra = {}) {
+    const { body, count } = contactSelectionTarget();
+    if (!count) {
+        showToast('Select contacts first.', 'warning');
+        return;
+    }
+
+    if (action === 'delete') {
+        const ok = await confirmDialog(`Permanently delete ${count.toLocaleString()} contact${count === 1 ? '' : 's'}?`, {
+            title: 'Delete contacts',
+            detail: 'Their list memberships and custom fields are removed. Unsubscribe/bounce blocks on their addresses are kept. This cannot be undone.',
+            confirmText: `Delete ${count.toLocaleString()}`,
+            danger: true
+        });
+        if (!ok) return;
+    }
+
+    try {
+        const res = await fetch('/api/subscribers/bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, ...body, ...extra })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            const msg = Array.isArray(data.detail) ? data.detail.map(d => d.msg).join('; ') : data.detail;
+            showToast(msg || 'Bulk action failed', 'error');
+            return;
+        }
+        showToast(data.message, 'success');
+        clearSelection('subscribers');
+        await fetchSubscribers();
+        if (action === 'delete' || action === 'set_status') fetchDashboardStats();
+    } catch (err) {
+        showToast('Bulk action error: ' + err.message, 'error');
+    }
+}
+
+function exportContacts(selectedOnly = false) {
+    let params;
+    if (selectedOnly && !App.contacts.selectAllMatching) {
+        params = new URLSearchParams({ ids: [...selectionSet('subscribers')].join(',') });
+    } else {
+        params = contactFilterParams();
+    }
+    // A plain navigation downloads the file without loading it into memory.
+    window.location.href = `/api/subscribers/export?${params}`;
+}
+
 function openBulkPasteModal() {
     openModal('modal-bulk-paste');
 }
@@ -2330,30 +2678,30 @@ function openBulkPasteModal() {
 async function submitBulkCustomerEmails() {
     const rawText = document.getElementById('modal-bulk-emails-text')?.value || '';
     const tagsInput = document.getElementById('modal-bulk-tags')?.value || '';
+    const listId = document.getElementById('modal-bulk-list-select')?.value || null;
 
     if (!rawText.trim()) {
-        showToast('Please paste at least one customer email address.', 'warning');
+        showToast('Paste at least one email address.', 'warning');
         return;
     }
 
-    const tags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
+    const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
 
     try {
         const res = await fetch('/api/subscribers/bulk-text', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ raw_text: rawText, tags: tags })
+            body: JSON.stringify({ raw_text: rawText, tags, list_id: listId })
         });
-
-        const data = await res.json();
+        const data = await safeJson(res);
         if (res.ok && data.success) {
-            showToast(`✓ ${data.message}`, 'success');
+            showToast(data.message, data.inactive_count ? 'warning' : 'success');
             closeModal('modal-bulk-paste');
             document.getElementById('modal-bulk-emails-text').value = '';
             await fetchSubscribers();
-            await fetchDashboardStats();
+            fetchDashboardStats();
         } else {
-            showToast(data.message || 'Failed to import emails', 'error');
+            showToast(data.message || data.detail || 'Failed to add emails', 'error');
         }
     } catch (err) {
         showToast('Import error: ' + err.message, 'error');
@@ -2384,13 +2732,119 @@ function toggleCsvDestMode() {
 function openCsvImportModal() {
     const fileEl = document.getElementById('modal-csv-file');
     if (fileEl) fileEl.value = '';
-    const newNameInput = document.getElementById('modal-csv-new-list-name');
-    if (newNameInput) newNameInput.value = '';
+    setValue('modal-csv-new-list-name', '');
+    setValue('modal-csv-tags', '');
+    const update = document.getElementById('modal-csv-update-existing');
+    if (update) update.checked = true;
+    const cols = document.getElementById('modal-csv-columns');
+    if (cols) { cols.innerHTML = ''; cols.classList.add('hidden'); }
     const existingRadio = document.getElementById('csv-dest-existing');
     if (existingRadio) existingRadio.checked = true;
     populateBroadcastDropdowns();
+    // Importing while a list is open in the sidebar targets that list by default.
+    const current = App.contacts.listId;
+    if (current && !['all', 'none'].includes(current)) setValue('modal-csv-list-select', current);
     toggleCsvDestMode();
     openModal('modal-csv-import');
+}
+
+// Minimal RFC 4180 parser for the preview: quoted fields, escaped quotes, CRLF.
+function parseCsvRows(text, maxRows) {
+    const rows = [];
+    let row = [], field = '', i = 0, quoted = false;
+    while (i < text.length && rows.length < maxRows) {
+        const ch = text[i];
+        if (quoted) {
+            if (ch === '"' && text[i + 1] === '"') { field += '"'; i += 2; continue; }
+            if (ch === '"') { quoted = false; i++; continue; }
+            field += ch; i++; continue;
+        }
+        if (ch === '"') { quoted = true; i++; continue; }
+        if (ch === ',') { row.push(field); field = ''; i++; continue; }
+        if (ch === '\r' || ch === '\n') {
+            row.push(field); field = '';
+            if (row.some(c => c !== '')) rows.push(row);
+            row = [];
+            i += (ch === '\r' && text[i + 1] === '\n') ? 2 : 1;
+            continue;
+        }
+        field += ch; i++;
+    }
+    if (field !== '' || row.length) { row.push(field); if (row.some(c => c !== '')) rows.push(row); }
+    return rows;
+}
+
+function guessCsvRole(heading) {
+    const h = heading.toLowerCase().trim();
+    if (h.includes('email') || h.includes('mail')) return 'email';
+    if (h.includes('first') || h.includes('fname') || h.includes('given') || h === 'name') return 'first_name';
+    if (h.includes('last') || h.includes('lname') || h.includes('surname') || h.includes('family')) return 'last_name';
+    return 'field';
+}
+
+function csvFieldKey(heading) {
+    return heading.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+async function previewCsvColumns() {
+    const file = document.getElementById('modal-csv-file')?.files?.[0];
+    const box = document.getElementById('modal-csv-columns');
+    if (!box) return;
+    if (!file) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+
+    // The header and a few sample rows are enough; never read a huge file into memory.
+    const text = (await file.slice(0, 65536).text()).replace(/^﻿/, '');
+    const rows = parseCsvRows(text, 4);
+    if (rows.length === 0) {
+        box.innerHTML = `<p class="text-[11px] text-rose-300">This file looks empty.</p>`;
+        box.classList.remove('hidden');
+        return;
+    }
+
+    const [header, ...samples] = rows;
+    const taken = new Set();
+    const roles = header.map(h => {
+        const r = guessCsvRole(h);
+        if (r !== 'field' && taken.has(r)) return 'field';
+        taken.add(r);
+        return r;
+    });
+    if (!roles.includes('email') && header.length) roles[0] = 'email';
+
+    box.innerHTML = `
+        <div class="text-xs font-semibold text-slate-300">Match columns <span class="font-normal text-slate-500">(${header.length} found)</span></div>
+        <div class="max-h-48 overflow-y-auto rounded-xl border border-white/5 divide-y divide-white/5">
+            ${header.map((h, idx) => `
+                <div class="flex items-center gap-2 px-2.5 py-1.5 bg-slate-900/60">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs text-white truncate" title="${escapeHtml(h)}">${escapeHtml(h || '(blank heading)')}</div>
+                        <div class="text-[10px] text-slate-500 truncate">${escapeHtml(samples.map(r => r[idx] || '').filter(Boolean).slice(0, 2).join(' · ') || 'no sample values')}</div>
+                    </div>
+                    <select class="csv-col-role px-2 py-1 bg-slate-900 border border-white/10 rounded-lg text-[11px] text-slate-200 focus:outline-none focus:border-indigo-500" data-heading="${escapeHtml(h)}" aria-label="Import ${escapeHtml(h)} as">
+                        <option value="email" ${roles[idx] === 'email' ? 'selected' : ''}>Email</option>
+                        <option value="first_name" ${roles[idx] === 'first_name' ? 'selected' : ''}>First name</option>
+                        <option value="last_name" ${roles[idx] === 'last_name' ? 'selected' : ''}>Last name</option>
+                        <option value="field" ${roles[idx] === 'field' ? 'selected' : ''}>Field {{${escapeHtml(csvFieldKey(h) || 'field')}}}</option>
+                        <option value="skip">Don't import</option>
+                    </select>
+                </div>`).join('')}
+        </div>`;
+    box.classList.remove('hidden');
+}
+
+function csvColumnMapping() {
+    const mapping = { skip: [] };
+    const selects = document.querySelectorAll('#modal-csv-columns .csv-col-role');
+    for (const sel of selects) {
+        const heading = sel.dataset.heading;
+        if (sel.value === 'skip') mapping.skip.push(heading);
+        else if (sel.value !== 'field') {
+            if (mapping[sel.value]) return { error: `Two columns are set as "${sel.selectedOptions[0].text}". Pick one.` };
+            mapping[sel.value] = heading;
+        }
+    }
+    if (selects.length && !mapping.email) return { error: 'Choose which column holds the email address.' };
+    return { mapping: selects.length ? mapping : null };
 }
 
 async function submitCsvImport() {
@@ -2401,23 +2855,29 @@ async function submitCsvImport() {
         return;
     }
 
+    const { mapping, error } = csvColumnMapping();
+    if (error) {
+        showToast(error, 'warning');
+        return;
+    }
+
     const form = new FormData();
     form.append('file', file);
-    form.append('update_duplicates', 'true');
+    form.append('update_duplicates', document.getElementById('modal-csv-update-existing')?.checked ? 'true' : 'false');
+    const tags = document.getElementById('modal-csv-tags')?.value?.trim();
+    if (tags) form.append('tags', tags);
+    if (mapping) form.append('column_mapping', JSON.stringify(mapping));
 
-    const isNew = document.getElementById('csv-dest-new')?.checked;
-    if (isNew) {
+    if (document.getElementById('csv-dest-new')?.checked) {
         const newName = document.getElementById('modal-csv-new-list-name')?.value?.trim();
         if (!newName) {
-            showToast('Please enter a name for the new customer table.', 'warning');
+            showToast('Enter a name for the new list.', 'warning');
             return;
         }
         form.append('new_list_name', newName);
     } else {
-        const listSelect = document.getElementById('modal-csv-list-select');
-        if (listSelect && listSelect.value) {
-            form.append('list_id', listSelect.value);
-        }
+        const listId = document.getElementById('modal-csv-list-select')?.value;
+        if (listId) form.append('list_id', listId);
     }
 
     showToast(`Importing ${file.name}...`, 'info');
@@ -2430,42 +2890,46 @@ async function submitCsvImport() {
             return;
         }
 
-        const destInfo = data.list_name 
-            ? ` into new table "${data.list_name}"`
-            : (data.list_id ? ' into selected table' : '');
+        closeModal('modal-csv-import');
 
-        showToast(`Imported ${data.added_count} new, updated ${data.updated_count}${destInfo}.`,
-            data.failed_count ? 'warning' : 'success');
-
-        // Automatically detect, register, and display custom placeholder tags from CSV multi-column import
-        if (data.custom_fields_detected && Array.isArray(data.custom_fields_detected) && data.custom_fields_detected.length > 0) {
-            let newlyAdded = 0;
+        if (Array.isArray(data.custom_fields_detected) && data.custom_fields_detected.length) {
+            let added = 0;
             data.custom_fields_detected.forEach(tag => {
-                const cleanTag = String(tag).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
-                if (cleanTag && !App.customPlaceholders.includes(cleanTag)) {
-                    App.customPlaceholders.push(cleanTag);
-                    newlyAdded++;
+                const clean = String(tag).trim().toLowerCase().replace(/[^a-z0-9_]/g, '_');
+                if (clean && !App.customPlaceholders.includes(clean)) {
+                    App.customPlaceholders.push(clean);
+                    added++;
                 }
             });
-            if (newlyAdded > 0) {
+            if (added) {
                 saveCustomPlaceholders();
                 renderAllPlaceholderChips();
-                showToast(`✓ Discovered ${newlyAdded} new placeholder(s): ${data.custom_fields_detected.map(t => '{{' + t + '}}').join(', ')}`, 'info');
             }
         }
 
-        closeModal('modal-csv-import');
-
-        // Refresh lists if a new table was created
-        const listsRes = await fetch('/api/lists');
-        if (listsRes.ok) {
-            App.lists = await listsRes.json();
-            populateBroadcastDropdowns();
-            renderManageGroupsList();
-        }
-
+        if (data.list_id) App.contacts.listId = data.list_id;
+        App.contacts.page = 1;
         await fetchSubscribers();
-        await fetchDashboardStats();
+        fetchDashboardStats();
+
+        const lines = [
+            `${data.added_count} new, ${data.updated_count} updated, ${data.failed_count} skipped.`,
+            data.custom_fields_detected?.length ? `Custom fields: ${data.custom_fields_detected.map(f => '{{' + f + '}}').join(', ')}` : '',
+            data.list_name ? `Created list "${data.list_name}".` : ''
+        ].filter(Boolean);
+        const skipped = (data.errors || []).slice(0, 8).map(e => `Row ${e.row}: ${e.error}`).join(' · ');
+
+        if (data.failed_count) {
+            await uiDialog({
+                title: 'Import finished with skipped rows',
+                message: lines.join(' '),
+                detail: skipped + (data.failed_count > 8 ? ` · and ${data.failed_count - 8} more` : ''),
+                confirmText: 'OK',
+                cancelText: null
+            });
+        } else {
+            showToast(lines.join(' '), 'success');
+        }
     } catch (err) {
         showToast('CSV import error: ' + err.message, 'error');
     }
@@ -2523,8 +2987,9 @@ function applyTableTemplate(presetKey) {
 
     const nameInput = document.getElementById('new-group-name');
     const descInput = document.getElementById('new-group-desc');
-    if (preset.name && nameInput) nameInput.value = preset.name;
-    if (preset.desc && descInput) descInput.value = preset.desc;
+    // Presets only suggest fields; never overwrite a name the user already typed.
+    if (preset.name && nameInput && !nameInput.value.trim()) nameInput.value = preset.name;
+    if (preset.desc && descInput && !descInput.value.trim()) descInput.value = preset.desc;
 
     App.newTableColumns = [...preset.columns];
     renderNewTableColumns();
@@ -2535,14 +3000,14 @@ function renderNewTableColumns() {
     if (!container) return;
 
     if (!App.newTableColumns || App.newTableColumns.length === 0) {
-        container.innerHTML = `<span class="text-xs text-slate-500 italic p-1">No custom columns added yet. Type a column name below or pick a template above.</span>`;
+        container.innerHTML = `<span class="text-xs text-slate-500 italic p-1">No suggested fields. Pick a preset above or type a field name below.</span>`;
         return;
     }
 
     container.innerHTML = App.newTableColumns.map(col => `
         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-950/80 border border-purple-500/30 text-purple-200 text-xs font-mono shadow-xs">
             <span>&#123;&#123;${col}&#125;&#125;</span>
-            <button type="button" onclick="removeTableColumn('${col}')" class="text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Remove column">&times;</button>
+            <button type="button" onclick="removeTableColumn('${col}')" class="text-slate-400 hover:text-rose-400 transition-colors cursor-pointer" title="Remove field" aria-label="Remove ${col}">&times;</button>
         </span>
     `).join('');
 }
@@ -2555,7 +3020,7 @@ function addNewTableColumnChip() {
 
     const clean = raw.toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
     if (!clean) {
-        showToast('Invalid column name', 'warning');
+        showToast('Invalid field name', 'warning');
         return;
     }
 
@@ -2565,7 +3030,7 @@ function addNewTableColumnChip() {
         renderNewTableColumns();
         input.value = '';
     } else {
-        showToast(`Column "${clean}" already exists in table`, 'info');
+        showToast(`"${clean}" is already in the list of fields`, 'info');
     }
 }
 
@@ -2583,7 +3048,8 @@ function openCreateGroupModal() {
     if (desc) desc.value = '';
     if (colInput) colInput.value = '';
     App.newTableColumns = [];
-    applyTableTemplate('billing');
+    // Start blank: a plain list should not silently get invoice fields.
+    applyTableTemplate('custom');
     openModal('modal-create-group');
     if (input) setTimeout(() => input.focus(), 60);
 }
@@ -2593,7 +3059,7 @@ async function handleCreateGroupSubmit(e) {
     const name = document.getElementById('new-group-name')?.value?.trim();
     const desc = document.getElementById('new-group-desc')?.value?.trim();
     if (!name) {
-        showToast('Please enter a group / table name.', 'warning');
+        showToast('Please enter a list name.', 'warning');
         return;
     }
     const btn = document.getElementById('btn-create-group-submit');
@@ -2611,127 +3077,17 @@ async function handleCreateGroupSubmit(e) {
         });
         const data = await safeJson(res);
         if (!res.ok) {
-            showToast(`Failed to create table: ${data.detail || 'Unknown error'}`, 'error');
+            showToast(`Failed to create list: ${data.detail || 'Unknown error'}`, 'error');
             return;
         }
-        showToast(`Customer table "${name}" created with ${App.newTableColumns ? App.newTableColumns.length : 0} placeholder columns!`, 'success');
+        showToast(`List "${name}" created.`, 'success');
         closeModal('modal-create-group');
         
-        // Refresh lists and dropdowns across UI
-        const listsRes = await fetch('/api/lists');
-        if (listsRes.ok) {
-            App.lists = await listsRes.json();
-            populateBroadcastDropdowns();
-            renderManageGroupsList();
-        }
         await fetchSubscribers();
     } catch (err) {
-        showToast(`Error creating table: ${err.message}`, 'error');
+        showToast(`Error creating list: ${err.message}`, 'error');
     } finally {
         if (btn) btn.disabled = false;
-    }
-}
-
-async function openManageGroupsModal() {
-    try {
-        const res = await fetch('/api/lists');
-        if (res.ok) {
-            App.lists = await res.json();
-            populateBroadcastDropdowns();
-        }
-    } catch (e) {
-        console.error('Failed to fetch lists:', e);
-    }
-    renderManageGroupsList();
-    openModal('modal-manage-groups');
-}
-
-function renderManageGroupsList() {
-    const container = document.getElementById('manage-groups-list');
-    if (!container) return;
-
-    const countBadge = document.getElementById('manage-groups-count-badge');
-    if (countBadge) {
-        countBadge.textContent = `${App.lists.length} Group${App.lists.length === 1 ? '' : 's'}`;
-    }
-
-    if (!App.lists || App.lists.length === 0) {
-        container.innerHTML = `
-            <div class="py-12 text-center text-slate-500">
-                <i data-lucide="folders" class="w-12 h-12 mx-auto text-slate-600 mb-3 opacity-60"></i>
-                <p class="text-sm font-medium text-slate-300">No customer groups yet</p>
-                <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">Create targeted customer lists to organize audience segments and run dedicated campaigns.</p>
-                <button type="button" onclick="openCreateGroupModal()" class="mt-4 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer">
-                    <i data-lucide="plus" class="w-4 h-4"></i> Create First Group
-                </button>
-            </div>
-        `;
-        if (window.lucide) lucide.createIcons();
-        return;
-    }
-
-    container.innerHTML = App.lists.map(list => {
-        const count = list.subscriber_count || 0;
-        const safeName = escapeHtml(list.name || 'Unnamed Group');
-        const safeDesc = escapeHtml(list.description || 'No description provided');
-        const listId = list.id;
-
-        let schemaCols = [];
-        try {
-            if (Array.isArray(list.schema_fields)) schemaCols = list.schema_fields;
-            else if (typeof list.schema_fields === 'string') schemaCols = JSON.parse(list.schema_fields || '[]');
-        } catch(e) {}
-
-        const schemaBadges = schemaCols.length > 0
-            ? `<div class="flex items-center gap-1 flex-wrap mt-1.5">
-                 <span class="text-[10px] text-purple-400 font-semibold flex items-center gap-0.5"><i data-lucide="columns" class="w-2.5 h-2.5"></i> Schema:</span>
-                 ${schemaCols.slice(0, 5).map(c => `<span class="px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-500/25 text-[10px] font-mono">&#123;&#123;${escapeHtml(c)}&#125;&#125;</span>`).join('')}
-                 ${schemaCols.length > 5 ? `<span class="text-[10px] text-purple-400 font-mono">+${schemaCols.length - 5} more</span>` : ''}
-               </div>`
-            : '';
-
-        return `
-            <div class="p-4 rounded-xl bg-slate-900/80 border border-white/5 hover:border-purple-500/30 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div class="flex items-start gap-3 min-w-0">
-                    <div class="w-9 h-9 rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <i data-lucide="folder" class="w-4 h-4"></i>
-                    </div>
-                    <div class="min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <h4 class="text-sm font-semibold text-white truncate">${safeName}</h4>
-                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
-                                ${count} contact${count === 1 ? '' : 's'}
-                            </span>
-                        </div>
-                        <p class="text-xs text-slate-400 mt-0.5 line-clamp-1">${safeDesc}</p>
-                        ${schemaBadges}
-                    </div>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                    <button type="button" onclick="viewGroupCustomers('${listId}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-white/5 transition-all flex items-center gap-1 cursor-pointer" title="View contacts in this group">
-                        <i data-lucide="users" class="w-3.5 h-3.5 text-cyan-400"></i> View
-                    </button>
-                    <button type="button" onclick="openEditGroupModal('${listId}')" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-white/5 transition-all flex items-center gap-1 cursor-pointer" title="Rename or edit description">
-                        <i data-lucide="edit-3" class="w-3.5 h-3.5 text-amber-400"></i> Rename
-                    </button>
-                    <button type="button" onclick="deleteCustomerGroup('${listId}', '${safeName.replace(/'/g, "\\'")}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer" title="Delete group">
-                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    if (window.lucide) lucide.createIcons();
-}
-
-function viewGroupCustomers(listId) {
-    closeModal('modal-manage-groups');
-    switchTab('subscribers');
-    const filterSelect = document.getElementById('subscriber-filter-list');
-    if (filterSelect) {
-        filterSelect.value = listId;
-        filterSubscribers();
     }
 }
 
@@ -2758,7 +3114,7 @@ async function handleEditGroupSubmit(e) {
     const desc = document.getElementById('edit-group-desc')?.value?.trim();
 
     if (!id || !name) {
-        showToast('Please enter a group name.', 'warning');
+        showToast('Please enter a list name.', 'warning');
         return;
     }
 
@@ -2770,31 +3126,25 @@ async function handleEditGroupSubmit(e) {
         });
         const data = await safeJson(res);
         if (!res.ok) {
-            showToast(`Failed to update group: ${data.detail || 'Unknown error'}`, 'error');
+            showToast(`Failed to rename list: ${data.detail || 'Unknown error'}`, 'error');
             return;
         }
 
-        showToast(`Group "${name}" updated successfully!`, 'success');
+        showToast(`List renamed to "${name}".`, 'success');
         closeModal('modal-edit-group');
 
-        // Refresh lists
-        const listsRes = await fetch('/api/lists');
-        if (listsRes.ok) {
-            App.lists = await listsRes.json();
-            populateBroadcastDropdowns();
-            renderManageGroupsList();
-        }
         await fetchSubscribers();
     } catch (err) {
-        showToast(`Error updating group: ${err.message}`, 'error');
+        showToast(`Error renaming list: ${err.message}`, 'error');
     }
 }
 
-async function deleteCustomerGroup(listId, groupName) {
-    const ok = await confirmDialog(`Delete the group "${groupName}"?`, {
-        title: 'Confirm delete',
-        detail: 'Customer contacts in this group will NOT be deleted; they will simply no longer belong to this group.',
-        confirmText: 'Delete group',
+async function deleteCustomerGroup(listId) {
+    const groupName = contactListName(listId) || 'this list';
+    const ok = await confirmDialog(`Delete the list "${groupName}"?`, {
+        title: 'Delete list',
+        detail: 'Contacts in this list are NOT deleted; they just stop belonging to it.',
+        confirmText: 'Delete list',
         danger: true
     });
     if (!ok) return;
@@ -2805,64 +3155,74 @@ async function deleteCustomerGroup(listId, groupName) {
         });
         const data = await safeJson(res);
         if (!res.ok) {
-            showToast(`Failed to delete group: ${data.detail || 'Unknown error'}`, 'error');
+            showToast(`Failed to delete list: ${data.detail || 'Unknown error'}`, 'error');
             return;
         }
 
-        showToast(`Group "${groupName}" deleted successfully!`, 'success');
+        showToast(`List "${groupName}" deleted.`, 'success');
+        if (App.contacts.listId === listId) App.contacts.listId = 'all';
 
-        // Refresh lists
-        const listsRes = await fetch('/api/lists');
-        if (listsRes.ok) {
-            App.lists = await listsRes.json();
-            populateBroadcastDropdowns();
-            renderManageGroupsList();
-        }
         await fetchSubscribers();
     } catch (err) {
-        showToast(`Error deleting group: ${err.message}`, 'error');
+        showToast(`Error deleting list: ${err.message}`, 'error');
     }
 }
 
-function onSubListSelectionChanged() {
-    const listSelect = document.getElementById('modal-sub-list-select');
-    const section = document.getElementById('modal-sub-table-schema-section');
-    const inputsContainer = document.getElementById('modal-sub-table-schema-inputs');
-    if (!listSelect || !section || !inputsContainer) return;
-
-    const listId = listSelect.value;
-    if (!listId) {
-        section.classList.add('hidden');
-        inputsContainer.innerHTML = '';
+function renderContactListCheckboxes(selectedIds = []) {
+    const box = document.getElementById('modal-sub-lists');
+    if (!box) return;
+    if (App.lists.length === 0) {
+        box.innerHTML = `<p class="col-span-full text-[11px] text-slate-500 p-1">No lists yet. Create one from the Lists sidebar.</p>`;
         return;
     }
+    box.innerHTML = App.lists.map(l => `
+        <label class="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/5 text-xs text-slate-200 cursor-pointer min-w-0">
+            <input type="checkbox" class="contact-list-checkbox row-select" value="${l.id}" ${selectedIds.includes(l.id) ? 'checked' : ''} onchange="onSubListSelectionChanged()">
+            <span class="truncate">${escapeHtml(l.name)}</span>
+        </label>
+    `).join('');
+}
 
-    const list = App.lists.find(l => l.id === listId);
-    let schema = [];
-    if (list && list.schema_fields) {
-        if (Array.isArray(list.schema_fields)) schema = list.schema_fields;
-        else if (typeof list.schema_fields === 'string') {
-            try { schema = JSON.parse(list.schema_fields); } catch (e) {}
-        }
-    }
+function checkedContactListIds() {
+    return [...document.querySelectorAll('#modal-sub-lists .contact-list-checkbox:checked')].map(cb => cb.value);
+}
 
-    if (schema.length === 0) {
+// Lists can declare suggested fields (e.g. an "Invoices" list suggests invoice_no).
+// Show inputs for those fields across every checked list.
+function onSubListSelectionChanged() {
+    const section = document.getElementById('modal-sub-table-schema-section');
+    const inputsContainer = document.getElementById('modal-sub-table-schema-inputs');
+    if (!section || !inputsContainer) return;
+
+    // Keep anything already typed when lists are ticked or unticked.
+    const typed = {};
+    inputsContainer.querySelectorAll('.schema-col-input').forEach(i => { typed[i.dataset.schemaCol] = i.value; });
+
+    const schema = [];
+    checkedContactListIds().forEach(id => {
+        const list = App.lists.find(l => l.id === id);
+        (Array.isArray(list?.schema_fields) ? list.schema_fields : []).forEach(col => {
+            if (!schema.includes(col)) schema.push(col);
+        });
+    });
+
+    // Fields that already have a free-form row are edited there, not duplicated here.
+    const freeFormKeys = [...document.querySelectorAll('.sub-custom-field-row .custom-field-key')].map(i => i.value.trim());
+    const cols = schema.filter(c => !freeFormKeys.includes(c));
+
+    if (cols.length === 0) {
         section.classList.add('hidden');
         inputsContainer.innerHTML = '';
         return;
     }
 
     section.classList.remove('hidden');
-    inputsContainer.innerHTML = schema.map(col => `
+    inputsContainer.innerHTML = cols.map(col => `
         <div>
-            <label class="block text-[11px] font-mono text-purple-300 mb-1 flex items-center justify-between">
-                <span>&#123;&#123;${escapeHtml(col)}&#125;&#125;</span>
-                <span class="text-[9px] text-slate-500 font-sans">Column</span>
-            </label>
-            <input type="text" data-schema-col="${escapeHtml(col)}" class="schema-col-input w-full px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-mono" placeholder="Value for ${escapeHtml(col)}">
+            <label class="block text-[11px] font-mono text-purple-300 mb-1">&#123;&#123;${escapeHtml(col)}&#125;&#125;</label>
+            <input type="text" data-schema-col="${escapeHtml(col)}" value="${escapeHtml(typed[col] || '')}" class="schema-col-input w-full px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-purple-500 font-mono" placeholder="${escapeHtml(col)}">
         </div>
     `).join('');
-    if (window.lucide) lucide.createIcons();
 }
 
 function addSubCustomFieldRow(key = '', val = '') {
@@ -2899,77 +3259,52 @@ function updateKeyPlaceholderBadge(input) {
     badge.textContent = `{{${cleanKey || 'tag'}}}`;
 }
 
+function resetContactModal(title, submitLabel) {
+    setText('modal-sub-title', title);
+    setText('btn-sub-submit', submitLabel);
+    const customList = document.getElementById('modal-sub-custom-fields-list');
+    if (customList) customList.innerHTML = '';
+    const schemaInputs = document.getElementById('modal-sub-table-schema-inputs');
+    if (schemaInputs) schemaInputs.innerHTML = '';
+}
+
 function openAddSubscriberModal() {
     App.editing.subscriber = null;
-    setText('modal-sub-title', 'Add Customer Contact');
-    setText('modal-sub-submit', 'Save Customer');
-    setText('btn-sub-submit', 'Save Customer');
+    App.editingContactFieldKeys = [];
+    resetContactModal('Add contact', 'Save contact');
     setValue('modal-sub-email', '');
     setValue('modal-sub-first-name', '');
     setValue('modal-sub-last-name', '');
     setValue('modal-sub-status', 'active');
-    
-    // Ensure dropdown options are loaded
-    populateBroadcastDropdowns();
-    setValue('modal-sub-list-select', '');
-
-    // Reset table schema inputs & custom fields list
-    const customList = document.getElementById('modal-sub-custom-fields-list');
-    if (customList) customList.innerHTML = '';
+    setValue('modal-sub-tags', '');
+    // Adding while a list is open in the sidebar pre-ticks that list.
+    const current = App.contacts.listId;
+    renderContactListCheckboxes(current && !['all', 'none'].includes(current) ? [current] : []);
     onSubListSelectionChanged();
-
     openModal('modal-add-subscriber');
+    setTimeout(() => document.getElementById('modal-sub-email')?.focus(), 60);
 }
 
 function openEditSubscriberModal(subId) {
     const sub = App.subscribers.find(s => s.id === subId);
     if (!sub) {
-        showToast('Customer record is no longer loaded. Refresh and try again.', 'warning');
+        showToast('Contact is no longer on this page. Refresh and try again.', 'warning');
         return;
     }
     App.editing.subscriber = subId;
-    setText('modal-sub-title', 'Edit Customer Contact');
-    setText('modal-sub-submit', 'Save Changes');
-    setText('btn-sub-submit', 'Save Changes');
+    resetContactModal('Edit contact', 'Save changes');
     setValue('modal-sub-email', sub.email || '');
     setValue('modal-sub-first-name', sub.first_name || '');
     setValue('modal-sub-last-name', sub.last_name || '');
     setValue('modal-sub-status', sub.status || 'active');
-    
-    // Ensure dropdown options are loaded
-    populateBroadcastDropdowns();
-    const assignedList = (sub.lists && sub.lists[0]) || '';
-    setValue('modal-sub-list-select', assignedList);
+    setValue('modal-sub-tags', (sub.tags || []).join(', '));
+
+    const cf = sub.custom_fields && typeof sub.custom_fields === 'object' ? sub.custom_fields : {};
+    App.editingContactFieldKeys = Object.keys(cf);
+    Object.entries(cf).forEach(([k, v]) => addSubCustomFieldRow(k, v));
+
+    renderContactListCheckboxes(sub.lists || []);
     onSubListSelectionChanged();
-
-    // Reset custom fields list
-    const customList = document.getElementById('modal-sub-custom-fields-list');
-    if (customList) customList.innerHTML = '';
-
-    // Parse custom fields
-    let cf = {};
-    try {
-        cf = typeof sub.custom_fields === 'string' ? JSON.parse(sub.custom_fields || '{}') : (sub.custom_fields || {});
-    } catch (e) {}
-
-    // Populate schema inputs if present
-    const schemaInputs = document.querySelectorAll('.schema-col-input');
-    const handledCols = new Set();
-    schemaInputs.forEach(input => {
-        const col = input.getAttribute('data-schema-col');
-        if (col && cf[col] !== undefined) {
-            input.value = cf[col];
-            handledCols.add(col);
-        }
-    });
-
-    // Any remaining custom fields become key-value rows
-    Object.entries(cf).forEach(([k, v]) => {
-        if (!handledCols.has(k)) {
-            addSubCustomFieldRow(k, v);
-        }
-    });
-
     openModal('modal-add-subscriber');
 }
 
@@ -2978,80 +3313,74 @@ async function submitAddSubscriber() {
     const first = document.getElementById('modal-sub-first-name')?.value?.trim();
     const last = document.getElementById('modal-sub-last-name')?.value?.trim();
     const status = document.getElementById('modal-sub-status')?.value || 'active';
-    const listSelect = document.getElementById('modal-sub-list-select');
-    const selectedList = listSelect ? listSelect.value : null;
+    const tags = (document.getElementById('modal-sub-tags')?.value || '')
+        .split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
 
-    if (!email || !email.includes('@')) {
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         showToast('Please enter a valid email address.', 'warning');
         return;
     }
 
-    // Collect custom fields from Schema Inputs and Custom Key-Value Rows
     const customFields = {};
-
-    // 1. Schema inputs
-    const schemaInputs = document.querySelectorAll('.schema-col-input');
-    schemaInputs.forEach(input => {
+    document.querySelectorAll('.schema-col-input').forEach(input => {
         const col = input.getAttribute('data-schema-col');
-        if (col) {
-            const val = input.value.trim();
-            if (val) customFields[col] = val;
-        }
+        const val = input.value.trim();
+        if (col && val) customFields[col] = val;
     });
-
-    // 2. Custom field rows
-    const customRows = document.querySelectorAll('.sub-custom-field-row');
-    customRows.forEach(row => {
-        const keyInput = row.querySelector('.custom-field-key');
-        const valInput = row.querySelector('.custom-field-val');
-        if (keyInput && valInput) {
-            const rawKey = keyInput.value.trim();
-            const cleanKey = rawKey.toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
-            const val = valInput.value.trim();
-            if (cleanKey && val) {
-                customFields[cleanKey] = val;
-            }
-        }
+    document.querySelectorAll('.sub-custom-field-row').forEach(row => {
+        const cleanKey = (row.querySelector('.custom-field-key')?.value || '')
+            .trim().toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
+        const val = (row.querySelector('.custom-field-val')?.value || '').trim();
+        if (cleanKey && val) customFields[cleanKey] = val;
     });
 
     const editingId = App.editing.subscriber;
+    // The API merges custom fields, so a field the user deleted must be sent as
+    // empty to be removed - otherwise it quietly survives the edit.
+    if (editingId) {
+        App.editingContactFieldKeys.forEach(k => {
+            if (!(k in customFields)) customFields[k] = '';
+        });
+    }
 
     try {
         const res = await fetch(editingId ? `/api/subscribers/${editingId}` : '/api/subscribers', {
             method: editingId ? 'PUT' : 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                email: email,
+                email,
                 first_name: first || null,
                 last_name: last || null,
-                status: status,
+                status,
+                tags,
                 custom_fields: customFields,
-                list_ids: selectedList ? [selectedList] : []
+                list_ids: checkedContactListIds()
             })
         });
 
         const data = await safeJson(res);
-        if (res.ok) {
-            showToast(editingId ? `Customer ${email} updated.` : `Customer ${email} added successfully.`, 'success');
-            App.editing.subscriber = null;
-            closeModal('modal-add-subscriber');
-            await fetchSubscribers();
-            await fetchDashboardStats();
+        if (!res.ok) {
+            const msg = Array.isArray(data.detail) ? data.detail.map(d => d.msg).join('; ') : data.detail;
+            showToast(msg || 'Failed to save contact', 'error');
+            return;
+        }
 
-            // Discover new placeholders into App.customPlaceholders
-            let addedAny = false;
-            Object.keys(customFields).forEach(k => {
-                if (!App.customPlaceholders.includes(k)) {
-                    App.customPlaceholders.push(k);
-                    addedAny = true;
-                }
-            });
-            if (addedAny) {
-                saveCustomPlaceholders();
-                renderAllPlaceholderChips();
+        showToast(editingId ? `${email} updated.` : `${email} added.`, 'success');
+        App.editing.subscriber = null;
+        closeModal('modal-add-subscriber');
+        await fetchSubscribers();
+        fetchDashboardStats();
+
+        let addedAny = false;
+        Object.keys(customFields).forEach(k => {
+            if (customFields[k] !== '' && !App.customPlaceholders.includes(k)) {
+                App.customPlaceholders.push(k);
+                addedAny = true;
             }
-        } else {
-            showToast(data.detail || 'Failed to save customer', 'error');
+        });
+        if (addedAny) {
+            saveCustomPlaceholders();
+            renderAllPlaceholderChips();
         }
     } catch (err) {
         showToast('Error: ' + err.message, 'error');
@@ -3061,40 +3390,21 @@ async function submitAddSubscriber() {
 async function deleteSubscriber(subId) {
     const sub = App.subscribers.find(s => s.id === subId);
     await deleteOne('subscribers', subId,
-        `Remove ${sub ? sub.email : 'this customer contact'} from your customer database?`);
+        `Delete ${sub ? sub.email : 'this contact'}? Their list memberships and custom fields are removed.`);
 }
 
-function filterSubscribers() {
-    const q = document.getElementById('subscriber-search-input')?.value?.toLowerCase() || '';
-    const status = document.getElementById('subscriber-filter-status')?.value || 'all';
-    const listFilter = document.getElementById('subscriber-filter-list')?.value || 'all';
-
-    let filtered = App.subscribers;
-    if (status !== 'all') {
-        filtered = filtered.filter(s => (s.status || 'active').toLowerCase() === status.toLowerCase());
-    }
-    if (listFilter !== 'all') {
-        filtered = filtered.filter(s => Array.isArray(s.lists) && s.lists.includes(listFilter));
-    }
-    if (q) {
-        filtered = filtered.filter(s => {
-            const email = (s.email || '').toLowerCase();
-            const fn = (s.first_name || '').toLowerCase();
-            const ln = (s.last_name || '').toLowerCase();
-            const tags = String(s.tags || '').toLowerCase();
-            const custom = String(typeof s.custom_fields === 'object' ? JSON.stringify(s.custom_fields) : (s.custom_fields || '')).toLowerCase();
-            return email.includes(q) || fn.includes(q) || ln.includes(q) || tags.includes(q) || custom.includes(q);
-        });
-    }
-
-    const tbody = document.getElementById('subscribers-table-body');
-    if (!tbody) return;
-    if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-xs text-slate-500">No customers match the filter.</td></tr>`;
-        renderBulkBar('subscribers');
-        return;
-    }
-    renderSubscribersTable(filtered);
+// Filters are applied server-side. Typing is debounced so each keystroke does not
+// fire a request; dropdown changes pass immediate=true.
+let _contactFilterTimer = null;
+function filterSubscribers(immediate = false) {
+    clearTimeout(_contactFilterTimer);
+    const run = () => {
+        App.contacts.page = 1;
+        clearSelection('subscribers');
+        fetchSubscribers();
+    };
+    if (immediate) return run();
+    _contactFilterTimer = setTimeout(run, 300);
 }
 
 // ==========================================================================
@@ -4040,7 +4350,12 @@ function uiDialog(opts) {
         ? 'bg-rose-600 hover:bg-rose-500 text-white'
         : 'bg-indigo-600 hover:bg-indigo-500 text-white';
 
-    const inputHtml = input ? `
+    const fieldClass = 'w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500';
+    const inputHtml = input && input.options ? `
+        <select id="ui-dialog-input" class="${fieldClass}">
+            ${input.options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${value === input.value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+        </select>
+    ` : input ? `
         <input id="ui-dialog-input" type="${input.type || 'text'}"
                value="${escapeHtml(input.value || '')}"
                placeholder="${escapeHtml(input.placeholder || '')}"
@@ -4061,7 +4376,7 @@ function uiDialog(opts) {
             </div>
             ${inputHtml}
             <div class="flex items-center justify-end gap-2 pt-3 border-t border-white/5">
-                <button type="button" data-ui-dialog-cancel class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">${escapeHtml(cancelText)}</button>
+                ${cancelText === null ? '' : `<button type="button" data-ui-dialog-cancel class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">${escapeHtml(cancelText)}</button>`}
                 <button type="submit" value="confirm" data-autofocus class="px-5 py-2 rounded-xl text-xs font-bold ${confirmClass}">${escapeHtml(confirmText)}</button>
             </div>
         </form>
@@ -4079,7 +4394,7 @@ function uiDialog(opts) {
     const field = dlg.querySelector('#ui-dialog-input');
     if (field) {
         field.focus();
-        field.select();
+        if (field.select) field.select();
     } else {
         dlg.querySelector('[data-autofocus]')?.focus();
     }
@@ -4100,6 +4415,17 @@ function uiDialog(opts) {
 // natives they replace, minus the blocking and the blockability.
 function confirmDialog(message, opts = {}) {
     return uiDialog({ message, ...opts });
+}
+
+// options: [[value, label], ...]. Resolves the chosen value, or null when cancelled.
+function choiceDialog(message, options, defaultValue = '', opts = {}) {
+    return uiDialog({
+        title: 'Choose',
+        message,
+        confirmText: 'Continue',
+        input: { options, value: defaultValue || (options[0] && options[0][0]) },
+        ...opts
+    });
 }
 
 function promptDialog(message, defaultValue = '', opts = {}) {
@@ -4162,6 +4488,7 @@ function isSelected(kind, id) {
 function toggleRowSelection(kind, id, checked) {
     const set = selectionSet(kind);
     if (checked) set.add(id); else set.delete(id);
+    if (kind === 'subscribers' && !checked) App.contacts.selectAllMatching = false;
     renderBulkBar(kind);
 }
 
@@ -4173,11 +4500,13 @@ function toggleSelectAll(kind, checked) {
         cb.checked = checked;
         if (checked) set.add(cb.dataset.id); else set.delete(cb.dataset.id);
     });
+    if (kind === 'subscribers' && !checked) App.contacts.selectAllMatching = false;
     renderBulkBar(kind);
 }
 
 function clearSelection(kind) {
     selectionSet(kind).clear();
+    if (kind === 'subscribers') App.contacts.selectAllMatching = false;
     const master = document.getElementById(`select-all-${kind}`);
     if (master) {
         master.checked = false;
@@ -4213,6 +4542,7 @@ function renderBulkBar(kind) {
         master.checked = boxes.length > 0 && checked === boxes.length;
         master.indeterminate = checked > 0 && checked < boxes.length;
     }
+    if (kind === 'subscribers') updateContactSelectAllNote();
 }
 
 function selectionCheckboxCell(kind, id) {

@@ -502,3 +502,39 @@ select:-webkit-autofill {
     caret-color: #f8fafc !important;
     transition: background-color 5000s ease-in-out 0s !important;
 }
+
+/* Contacts page: mass-action buttons */
+.contact-bulk-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+.contact-bulk-btn:hover { background: rgba(51, 65, 85, 0.95); }
+.contact-bulk-btn:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+.contact-bulk-btn-danger { color: #fda4af; border-color: rgba(244, 63, 94, 0.3); background: rgba(244, 63, 94, 0.1); }
+.contact-bulk-btn-danger:hover { background: rgba(244, 63, 94, 0.2); }
+
+/* Contacts page: sortable column headers. data-dir is set by renderContactsPager(). */
+.sort-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    color: inherit;
+    cursor: pointer;
+}
+.sort-btn:hover { color: #e2e8f0; }
+.sort-btn::after { content: "↕"; opacity: 0.35; font-size: 0.7rem; }
+.sort-btn[data-dir="asc"]::after { content: "↑"; opacity: 1; color: #a5b4fc; }
+.sort-btn[data-dir="desc"]::after { content: "↓"; opacity: 1; color: #a5b4fc; }

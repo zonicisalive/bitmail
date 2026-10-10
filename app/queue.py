@@ -246,10 +246,6 @@ class CampaignWorker:
                 DELETE FROM suppressions
                 WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
             """)
-            await db.execute("""
-                DELETE FROM suppression_list
-                WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
-            """)
             await db.commit()
 
             async with db.execute("SELECT email FROM suppressions") as cur:
@@ -267,15 +263,13 @@ class CampaignWorker:
                     return []
                 list_id = camp_row["list_id"]
 
-            # Membership is recorded in two tables by different import paths; take both.
             if list_id:
                 query = """
-                    SELECT DISTINCT s.* FROM subscribers s
-                    LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                    LEFT JOIN list_subscribers ls ON s.id = ls.subscriber_id
-                    WHERE (m.list_id = ? OR ls.list_id = ?) AND s.status = 'active'
+                    SELECT s.* FROM subscribers s
+                    JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
+                    WHERE m.list_id = ? AND s.status = 'active'
                 """
-                params = (list_id, list_id)
+                params = (list_id,)
             else:
                 query = "SELECT * FROM subscribers WHERE status = 'active'"
                 params = ()
@@ -344,9 +338,16 @@ class CampaignWorker:
         """Mark the campaign finished and announce it."""
         now = utc_now_iso()
         async with get_db() as db:
+            # Per-send progress writes come from concurrent tasks and can commit out of
+            # order (a task that saw 9 sent finishing after the one that saw 10), so the
+            # final row must carry the authoritative in-memory counters, not just status.
             await db.execute(
-                "UPDATE campaigns SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-                (status, now, now, self.campaign_id)
+                """UPDATE campaigns
+                   SET status = ?, completed_at = ?, updated_at = ?,
+                       sent_count = ?, failed_count = ?, delivered_count = ?
+                   WHERE id = ?""",
+                (status, now, now, self._sent_count + self._failed_count,
+                 self._failed_count, self._sent_count, self.campaign_id)
             )
             await db.commit()
 
