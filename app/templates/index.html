@@ -257,7 +257,7 @@
                     <div id="user-dropdown-menu" class="hidden absolute right-0 top-full mt-2 w-56 rounded-xl bg-slate-900 border border-[#2a2a2a] shadow-2xl p-2 z-50 text-xs space-y-1">
                         <div class="p-2 border-b border-[#2a2a2a]/80 mb-1">
                             <div id="dropdown-user-name" class="font-bold text-white text-xs truncate">Administrator</div>
-                            <div id="dropdown-user-email" class="text-[11px] text-slate-400 truncate">admin@bitmail.com</div>
+                            <div id="dropdown-user-email" class="text-[11px] text-slate-400 truncate"></div>
                             <div class="mt-1"><span id="dropdown-user-role" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Admin Session</span></div>
                         </div>
                         <button type="button" onclick="openChangePasswordModal()" class="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors text-left">
@@ -2662,7 +2662,7 @@
                             <div class="input-icon-left">
                                 <i data-lucide="user" class="w-4 h-4"></i>
                             </div>
-                            <input id="login-input-identity" name="username" type="text" autocomplete="username" required placeholder="admin@bitmail.com or admin" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                            <input id="login-input-identity" name="username" type="text" autocomplete="username" required placeholder="you@company.com or username" class="w-full pl-9 pr-3 py-2.5 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
                         </div>
                     </div>
 
@@ -2696,16 +2696,6 @@
                     </button>
                 </form>
 
-                <!-- Quick Demo Helper Banner -->
-                <div class="p-3 rounded-xl bg-indigo-950/40 border border-indigo-500/20 flex items-center justify-between text-[11px] text-indigo-300">
-                    <div>
-                        <span class="font-bold text-white">Default Admin:</span>
-                        <span class="font-mono text-indigo-200">admin@bitmail.com / admin123</span>
-                    </div>
-                    <button type="button" onclick="fillDemoAdminCredentials()" class="px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 font-semibold border border-indigo-400/30 transition-colors cursor-pointer">
-                        Auto-Fill
-                    </button>
-                </div>
             </div>
 
             <!-- Tab 2: Direct QR Scan -->
@@ -3100,6 +3090,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.7.1"></script>
+    <script src="/static/js/app.js?v=2.7.2"></script>
 </body>
 </html>
