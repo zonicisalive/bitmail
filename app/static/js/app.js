@@ -122,6 +122,10 @@ const App = {
 // Initialization & Lifecycle
 // ==========================================================================
 document.addEventListener('DOMContentLoaded', async () => {
+    // Production turns the API docs off; hide the sidebar link instead of leaving a 404.
+    fetch('/openapi.json', { method: 'HEAD' }).then(r => {
+        if (!r.ok) document.getElementById('nav-api-docs')?.remove();
+    }).catch(() => {});
     initLucide();
     setupNavigation();
     setupEventListeners();
