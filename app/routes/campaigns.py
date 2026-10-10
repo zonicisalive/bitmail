@@ -141,13 +141,12 @@ async def create_campaign(payload: CampaignCreatePayload):
     async with get_db() as db:
         if target_list_id:
             async with db.execute("""
-                SELECT COUNT(DISTINCT s.id) 
+                SELECT COUNT(*)
                 FROM subscribers s
-                LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                LEFT JOIN list_subscribers ls ON s.id = ls.subscriber_id
-                WHERE (m.list_id = ? OR ls.list_id = ?) AND s.status = 'active'
+                JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
+                WHERE m.list_id = ? AND s.status = 'active'
                   AND s.email NOT IN (SELECT email FROM suppressions)
-            """, (target_list_id, target_list_id)) as cursor:
+            """, (target_list_id,)) as cursor:
                 c_row = await cursor.fetchone()
                 initial_recipients = c_row[0] if c_row else 0
         else:
@@ -742,6 +741,9 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                     row = await cur.fetchone()
 
                 if row:
+                    # Pasting an address must never override an opt-out or bounce.
+                    if (row["status"] or "active") != "active":
+                        continue
                     sub_id = row["id"]
                     cf = {}
                     try:
@@ -777,11 +779,10 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
     elif payload.list_id and payload.list_id.lower() != "all":
         async with get_db() as db:
             async with db.execute("""
-                SELECT DISTINCT s.* FROM subscribers s
-                LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                LEFT JOIN list_subscribers ls ON s.id = ls.subscriber_id
-                WHERE (m.list_id = ? OR ls.list_id = ?) AND s.status = 'active'
-            """, (payload.list_id, payload.list_id)) as cur:
+                SELECT s.* FROM subscribers s
+                JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
+                WHERE m.list_id = ? AND s.status = 'active'
+            """, (payload.list_id,)) as cur:
                 rows = await cur.fetchall()
                 for r in rows:
                     cf = {}

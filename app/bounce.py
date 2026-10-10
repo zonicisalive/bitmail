@@ -178,13 +178,13 @@ class BounceClassifier:
         """
         Applies self-healing actions:
         - If Hard Bounce (5xx):
-            - Adds recipient to suppressions & suppression_list tables
+            - Adds recipient to the suppressions table
             - Sets subscriber status = 'bounced'
             - Updates sent_emails status = 'bounced'
             - Increments campaign bounce_count
             - Dispatches outbound webhook 'email.bounced'
         - If Spam Complaint:
-            - Adds recipient to suppressions & suppression_list (reason = 'spam_complaint')
+            - Adds recipient to the suppressions table (reason = 'spam_complaint')
             - Sets subscriber status = 'complained'
             - Dispatches outbound webhook 'subscriber.unsubscribed'
         - If Soft Bounce (4xx):
@@ -214,11 +214,6 @@ class BounceClassifier:
                 # 1. Add to suppressions
                 await db.execute("""
                     INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, f"hard_bounce: {reason}", now))
-
-                await db.execute("""
-                    INSERT OR IGNORE INTO suppression_list (id, email, campaign_id, reason, created_at)
                     VALUES (?, ?, ?, ?, ?)
                 """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, f"hard_bounce: {reason}", now))
 
@@ -262,11 +257,6 @@ class BounceClassifier:
                 # 1. Add to suppressions
                 await db.execute("""
                     INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, "spam_complaint", now))
-
-                await db.execute("""
-                    INSERT OR IGNORE INTO suppression_list (id, email, campaign_id, reason, created_at)
                     VALUES (?, ?, ?, ?, ?)
                 """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, "spam_complaint", now))
 

@@ -29,10 +29,10 @@
     </style>
 
     <!-- Local Compiled Tailwind CSS & Fallback -->
-    <link rel="stylesheet" href="/static/css/tailwind.min.css">
+    <link rel="stylesheet" href="/static/css/tailwind.min.css?v=2.6.0">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.4.6">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.6.0">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
     <script src="/static/js/lucide.min.js"></script>
@@ -87,7 +87,7 @@
 
                 <a href="/customers" data-tab="subscribers" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
                     <i data-lucide="users" class="w-4 h-4 text-cyan-400"></i>
-                    <span>Customers & Lists</span>
+                    <span>Contacts &amp; Lists</span>
                     <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">{{ stats.active_subscribers }}</span>
                 </a>
 
@@ -859,91 +859,129 @@
             <!-- ========================================================================== -->
             <!-- 4. CUSTOMERS & LISTS PANEL                                                 -->
             <!-- ========================================================================== -->
-            <div id="panel-subscribers" class="app-panel hidden space-y-6">
+            <div id="panel-subscribers" class="app-panel hidden space-y-5">
                 <!-- Header -->
                 <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                     <div class="min-w-0">
-                        <h1 class="text-2xl font-bold text-white tracking-tight">Customers & Subscriber Lists</h1>
-                        <p class="text-sm text-slate-400 mt-1">Manage customer contacts, audience lists, custom merge attributes, and bulk imports.</p>
+                        <h1 class="text-2xl font-bold text-white tracking-tight">Contacts</h1>
+                        <p class="text-sm text-slate-400 mt-1">One record per email address. Put contacts in lists, label them with tags, and store any extra data as custom fields for <code>&#123;&#123;placeholders&#125;&#125;</code>.</p>
                     </div>
-                    <div class="flex items-center flex-wrap gap-2.5 shrink-0">
-                        <button onclick="openManageGroupsModal()" class="px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 border border-purple-500/30 transition-all whitespace-nowrap cursor-pointer">
-                            <i data-lucide="folders" class="w-3.5 h-3.5"></i> Manage Groups (<span id="manage-groups-btn-count">0</span>)
-                        </button>
-                        <button onclick="openCreateGroupModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
-                            <i data-lucide="folder-plus" class="w-3.5 h-3.5 text-purple-400"></i> + New Group
-                        </button>
-                        <button onclick="openBulkPasteModal()" class="btn-dark-green px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer">
-                            <i data-lucide="clipboard" class="w-3.5 h-3.5"></i> Paste Multiple Emails
+                    <div class="flex items-center flex-wrap gap-2 shrink-0">
+                        <button onclick="openBulkPasteModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
+                            <i data-lucide="clipboard" class="w-3.5 h-3.5 text-amber-400"></i> Paste emails
                         </button>
                         <button onclick="openCsvImportModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
                             <i data-lucide="file-up" class="w-3.5 h-3.5 text-indigo-400"></i> Import CSV
                         </button>
+                        <button onclick="exportContacts()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer" title="Export the contacts matching the current filters">
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-400"></i> Export
+                        </button>
                         <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap cursor-pointer">
-                            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add Single Customer
+                            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add contact
                         </button>
                     </div>
                 </div>
 
-                <!-- Search & Filters -->
-                <div class="glass-panel p-3 sm:p-4 rounded-2xl border border-white/10 flex flex-col md:flex-row items-stretch md:items-center gap-3">
-                    <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 min-w-[240px]">
-                        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                            <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
-                        </div>
-                        <input type="search" id="subscriber-search-input" name="search_subscribers" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="filterSubscribers()" placeholder="Search customers by email, first name, last name, tag..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
-                    </form>
-                    <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap shrink-0">
-                        <div class="relative flex-1 sm:flex-none flex items-center gap-1.5">
-                            <select id="subscriber-filter-list" onchange="filterSubscribers()" class="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
-                                <option value="all">📁 All Groups / Lists</option>
-                            </select>
-                            <button type="button" onclick="openManageGroupsModal()" class="p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/40 text-slate-400 hover:text-purple-300 transition-colors cursor-pointer shrink-0" title="Manage Customer Groups">
-                                <i data-lucide="settings" class="w-4 h-4"></i>
+                <!-- Status summary: click a tile to filter -->
+                <div id="contacts-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <!-- Rendered by renderContactSummary() -->
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-[230px_minmax(0,1fr)] gap-5 items-start">
+                    <!-- Lists sidebar -->
+                    <aside class="glass-panel rounded-2xl border border-white/10 p-3 space-y-1 lg:sticky lg:top-4">
+                        <div class="flex items-center justify-between px-2 pb-2">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Lists</span>
+                            <button onclick="openCreateGroupModal()" class="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white cursor-pointer" title="New list">
+                                <i data-lucide="plus" class="w-4 h-4"></i>
                             </button>
                         </div>
-                        <div class="relative flex-1 sm:flex-none">
-                            <select id="subscriber-filter-status" onchange="filterSubscribers()" class="w-full sm:w-auto px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer">
-                                <option value="all">⚡ All Statuses</option>
-                                <option value="active">Active</option>
-                                <option value="unsubscribed">Unsubscribed</option>
-                                <option value="bounced">Bounced</option>
-                            </select>
+                        <nav id="contacts-list-nav" class="space-y-0.5 max-h-[60vh] overflow-y-auto">
+                            <!-- Rendered by renderContactListNav() -->
+                        </nav>
+                    </aside>
+
+                    <div class="space-y-3 min-w-0">
+                        <!-- Toolbar -->
+                        <div class="glass-panel p-3 rounded-2xl border border-white/10 flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+                            <form role="search" autocomplete="off" action="javascript:void(0);" onsubmit="event.preventDefault();" class="relative flex-1 min-w-[200px]">
+                                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                    <i data-lucide="search" class="w-4 h-4 text-slate-400"></i>
+                                </div>
+                                <input type="search" id="subscriber-search-input" name="search_contacts" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" oninput="filterSubscribers()" placeholder="Search email, name, tag or field value..." class="w-full pl-10 pr-4 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all">
+                            </form>
+                            <div class="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+                                <select id="subscriber-filter-status" onchange="filterSubscribers(true)" class="flex-1 sm:flex-none px-3 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer" aria-label="Filter by status">
+                                    <option value="all">All statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="unsubscribed">Unsubscribed</option>
+                                    <option value="bounced">Bounced</option>
+                                    <option value="complained">Complained</option>
+                                </select>
+                                <select id="subscriber-filter-tag" onchange="filterSubscribers(true)" class="flex-1 sm:flex-none px-3 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer" aria-label="Filter by tag">
+                                    <option value="">All tags</option>
+                                </select>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Mass action bar (hidden until rows are selected) -->
-                <div id="bulk-bar-subscribers" class="hidden glass-panel px-4 py-3 rounded-2xl border border-rose-500/30 bg-rose-950/20 flex items-center justify-between gap-3">
-                    <span class="text-xs font-semibold text-rose-200">
-                        <span id="bulk-count-subscribers">0</span> selected
-                    </span>
-                    <div class="flex items-center gap-2">
-                        <button onclick="clearSelection('subscribers')" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Clear</button>
-                        <button onclick="bulkDeleteSelected('subscribers')" class="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white flex items-center gap-1.5">
-                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete Selected
-                        </button>
-                    </div>
-                </div>
+                        <!-- Mass action bar (shown while rows are selected) -->
+                        <div id="bulk-bar-subscribers" class="hidden glass-panel px-4 py-3 rounded-2xl border border-indigo-500/30 bg-indigo-950/30 space-y-2">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="text-xs font-semibold text-indigo-100">
+                                    <span id="bulk-count-subscribers">0</span> selected
+                                    <span id="contacts-select-all-matching" class="hidden"></span>
+                                </span>
+                                <button onclick="clearSelection('subscribers')" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-300 cursor-pointer">Clear selection</button>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1.5">
+                                <button onclick="contactBulkPrompt('add_to_list')" class="contact-bulk-btn"><i data-lucide="folder-plus" class="w-3.5 h-3.5"></i> Add to list</button>
+                                <button onclick="contactBulkPrompt('remove_from_list')" class="contact-bulk-btn"><i data-lucide="folder-minus" class="w-3.5 h-3.5"></i> Remove from list</button>
+                                <button onclick="contactBulkPrompt('add_tag')" class="contact-bulk-btn"><i data-lucide="tag" class="w-3.5 h-3.5"></i> Add tag</button>
+                                <button onclick="contactBulkPrompt('remove_tag')" class="contact-bulk-btn"><i data-lucide="tag" class="w-3.5 h-3.5"></i> Remove tag</button>
+                                <button onclick="contactBulkPrompt('set_status')" class="contact-bulk-btn"><i data-lucide="user-check" class="w-3.5 h-3.5"></i> Change status</button>
+                                <button onclick="exportContacts(true)" class="contact-bulk-btn"><i data-lucide="download" class="w-3.5 h-3.5"></i> Export</button>
+                                <button onclick="runContactBulk('delete')" class="contact-bulk-btn contact-bulk-btn-danger"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete</button>
+                            </div>
+                        </div>
 
-                <!-- Subscribers Table -->
-                <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden">
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left custom-table">
-                            <thead>
-                                <tr class="bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                                    <th class="py-3 px-4 w-8"><input type="checkbox" id="select-all-subscribers" class="row-select" onchange="toggleSelectAll('subscribers', this.checked)" aria-label="Select all rows"></th>
-                                    <th class="py-3 px-4">Customer Email & Name</th>
-                                    <th class="py-3 px-4">Tags & Attributes</th>
-                                    <th class="py-3 px-4">Status</th>
-                                    <th class="py-3 px-4">Date Added</th>
-                                    <th class="py-3 px-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="subscribers-table-body">
-                                <!-- Populated dynamically by app.js -->
-                            </tbody>
-                        </table>
+                        <!-- Contacts table -->
+                        <div class="glass-panel rounded-2xl border border-white/10 overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left custom-table">
+                                    <thead>
+                                        <tr class="bg-slate-900/50 text-slate-400 text-xs font-bold uppercase tracking-wider">
+                                            <th class="py-3 px-4 w-8"><input type="checkbox" id="select-all-subscribers" class="row-select" onchange="toggleSelectAll('subscribers', this.checked)" aria-label="Select all contacts on this page"></th>
+                                            <th class="py-3 px-4"><button type="button" class="sort-btn" data-sort="email" onclick="sortContacts('email')">Contact</button></th>
+                                            <th class="py-3 px-4"><button type="button" class="sort-btn" data-sort="status" onclick="sortContacts('status')">Status</button></th>
+                                            <th class="py-3 px-4">Lists &amp; tags</th>
+                                            <th class="py-3 px-4">Custom fields</th>
+                                            <th class="py-3 px-4"><button type="button" class="sort-btn" data-sort="created_at" onclick="sortContacts('created_at')">Added</button></th>
+                                            <th class="py-3 px-4 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="subscribers-table-body">
+                                        <!-- Populated dynamically by app.js -->
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Pagination -->
+                            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-white/5 text-xs text-slate-400">
+                                <div class="flex items-center gap-2">
+                                    <span id="contacts-range">0 contacts</span>
+                                    <label class="flex items-center gap-1.5">
+                                        <span class="hidden sm:inline">· Rows per page</span>
+                                        <select id="contacts-per-page" onchange="setContactsPerPage(this.value)" class="px-2 py-1 bg-slate-900 border border-white/10 rounded-lg text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer" aria-label="Rows per page">
+                                            <option value="25">25</option>
+                                            <option value="50">50</option>
+                                            <option value="100">100</option>
+                                            <option value="250">250</option>
+                                        </select>
+                                    </label>
+                                </div>
+                                <nav id="contacts-pager" class="flex items-center gap-1" aria-label="Pagination"></nav>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2152,28 +2190,36 @@
                     <div class="p-2 rounded-xl bg-amber-500/20 text-amber-300">
                         <i data-lucide="clipboard" class="w-4 h-4"></i>
                     </div>
-                    <h3 class="text-base font-bold text-white">Add Multiple Customer Emails</h3>
+                    <h3 class="text-base font-bold text-white">Paste emails</h3>
                 </div>
                 <button onclick="closeModal('modal-bulk-paste')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
-            <p class="text-xs text-slate-400">Paste your customer emails below. Supports any delimiter (commas, line breaks, semicolons) and standard formats like <code>name &lt;email&gt;</code>.</p>
+            <p class="text-xs text-slate-400">Separate with commas, semicolons or new lines. <code>Name &lt;email&gt;</code> is understood. Addresses already in Contacts are not duplicated, and anyone who unsubscribed or bounced stays that way.</p>
 
             <div class="space-y-3">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Emails List:</label>
+                    <label for="modal-bulk-emails-text" class="block text-xs font-medium text-slate-300 mb-1">Email addresses</label>
                     <textarea id="modal-bulk-emails-text" rows="8" placeholder="alex@gmail.com&#10;&quot;Sarah Jenkins&quot; <sarah@corp.com>&#10;michael.scott@dundermifflin.com, dwight@beetfarm.org" class="w-full px-3.5 py-2.5 bg-slate-900 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"></textarea>
                 </div>
 
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Tags (optional):</label>
-                    <input type="text" id="modal-bulk-tags" placeholder="e.g. leads, vip-customers, march-2026" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    <label for="modal-bulk-list-select" class="block text-xs font-medium text-slate-300 mb-1">Add to list</label>
+                    <select id="modal-bulk-list-select" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                        <option value="">Don't add to a list</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="modal-bulk-tags" class="block text-xs font-medium text-slate-300 mb-1">Tags <span class="text-slate-500 font-normal">(optional)</span></label>
+                    <input type="text" id="modal-bulk-tags" placeholder="e.g. leads, march-2026" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
                 </div>
             </div>
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-bulk-paste')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button onclick="submitBulkCustomerEmails()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Import & Save Customers</button>
+                <button onclick="submitBulkCustomerEmails()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Add contacts</button>
             </div>
         </div>
     </div>
@@ -2182,7 +2228,7 @@
     <div id="modal-add-subscriber" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="glass-panel w-full max-w-lg rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between">
-                <h3 id="modal-sub-title" class="text-base font-bold text-white">Add Customer Contact</h3>
+                <h3 id="modal-sub-title" class="text-base font-bold text-white">Add contact</h3>
                 <button onclick="closeModal('modal-add-subscriber')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
@@ -2204,25 +2250,30 @@
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">Status</label>
                     <select id="modal-sub-status" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                        <option value="active">Active</option>
+                        <option value="active">Active - can be emailed</option>
                         <option value="unsubscribed">Unsubscribed</option>
                         <option value="bounced">Bounced</option>
+                        <option value="complained">Complained (spam report)</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Customer Group / Table (Optional)</label>
-                    <select id="modal-sub-list-select" onchange="onSubListSelectionChanged()" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
-                        <option value="">No specific table</option>
-                    </select>
+                    <label for="modal-sub-tags" class="block text-xs font-medium text-slate-300 mb-1">Tags <span class="text-slate-500 font-normal">(comma separated)</span></label>
+                    <input type="text" id="modal-sub-tags" placeholder="e.g. vip, webinar-2026" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                 </div>
+                <fieldset>
+                    <legend class="block text-xs font-medium text-slate-300 mb-1">Lists</legend>
+                    <div id="modal-sub-lists" class="max-h-36 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1 p-2 rounded-xl bg-slate-900/60 border border-white/5">
+                        <!-- Checkboxes rendered by renderContactListCheckboxes() -->
+                    </div>
+                </fieldset>
 
                 <!-- Dynamic Table Schema Columns (Inputs for Selected Table) -->
                 <div id="modal-sub-table-schema-section" class="hidden space-y-2.5 pt-2 border-t border-white/5">
                     <div class="flex items-center justify-between">
                         <label class="block text-xs font-semibold text-purple-300 flex items-center gap-1.5">
-                            <i data-lucide="table" class="w-3.5 h-3.5"></i> Table Column Inputs:
+                            <i data-lucide="table" class="w-3.5 h-3.5"></i> Suggested fields for the selected lists
                         </label>
-                        <span class="text-[10px] text-slate-400">Values map to email placeholders</span>
+                        <span class="text-[10px] text-slate-400">Values fill <code>&#123;&#123;placeholders&#125;&#125;</code></span>
                     </div>
                     <div id="modal-sub-table-schema-inputs" class="grid grid-cols-2 gap-2.5">
                         <!-- Populated dynamically based on selected list's schema_fields -->
@@ -2234,12 +2285,12 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <label class="block text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
-                                <i data-lucide="tag" class="w-3.5 h-3.5"></i> Custom Placeholders & Attributes
+                                <i data-lucide="braces" class="w-3.5 h-3.5"></i> Custom fields
                             </label>
-                            <span class="text-[10px] text-slate-400">Name a placeholder key and set its value for this customer</span>
+                            <span class="text-[10px] text-slate-400">Each field becomes a <code>&#123;&#123;placeholder&#125;&#125;</code> for this contact</span>
                         </div>
                         <button type="button" onclick="addSubCustomFieldRow()" class="px-2 py-0.5 rounded bg-indigo-500/10 hover:bg-indigo-500/20 text-[11px] font-semibold text-indigo-300 border border-indigo-500/30 flex items-center gap-1 transition-colors cursor-pointer">
-                            <i data-lucide="plus" class="w-3 h-3"></i> Add Placeholder
+                            <i data-lucide="plus" class="w-3 h-3"></i> Add field
                         </button>
                     </div>
                     <div id="modal-sub-custom-fields-list" class="space-y-2">
@@ -2250,7 +2301,7 @@
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-add-subscriber')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Save Customer</button>
+                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Save contact</button>
             </div>
         </div>
     </div>
@@ -2259,44 +2310,53 @@
     <div id="modal-csv-import" class="modal-overlay fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
         <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 p-6 space-y-4 shadow-2xl">
             <div class="flex items-center justify-between">
-                <h3 class="text-base font-bold text-white">Import Customers from CSV</h3>
+                <h3 class="text-base font-bold text-white">Import contacts from CSV</h3>
                 <button onclick="closeModal('modal-csv-import')" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
 
             <div class="space-y-3">
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">CSV File *</label>
-                    <input type="file" id="modal-csv-file" accept=".csv,text/csv" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-xs file:font-semibold">
+                    <input type="file" id="modal-csv-file" accept=".csv,text/csv" onchange="previewCsvColumns()" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-slate-300 file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:text-xs file:font-semibold">
+                </div>
+                <div id="modal-csv-columns" class="hidden space-y-1.5">
+                    <!-- Column-to-field preview rendered by previewCsvColumns() -->
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-slate-300 mb-2 flex items-center justify-between">
-                        <span class="flex items-center gap-1.5"><i data-lucide="folder-input" class="w-3.5 h-3.5 text-purple-400"></i> Import Destination:</span>
-                        <span class="text-[10px] text-slate-400">Select table or create new</span>
+                    <label class="block text-xs font-semibold text-slate-300 mb-2 flex items-center gap-1.5">
+                        <i data-lucide="folder-input" class="w-3.5 h-3.5 text-purple-400"></i> Add imported contacts to
                     </label>
 
                     <div class="space-y-2 p-2.5 rounded-xl bg-slate-900/60 border border-white/5">
                         <div class="flex items-center gap-2">
                             <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer shrink-0">
                                 <input type="radio" name="csv-dest-type" id="csv-dest-existing" value="existing" checked onchange="toggleCsvDestMode()" class="accent-purple-600 cursor-pointer">
-                                <span>Existing Table:</span>
+                                <span>Existing list:</span>
                             </label>
                             <select id="modal-csv-list-select" class="flex-1 px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
-                                <option value="">All Customers (No specific table)</option>
+                                <option value="">Don't add to a list</option>
                             </select>
                         </div>
                         
                         <div class="flex items-center gap-2">
                             <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer shrink-0">
                                 <input type="radio" name="csv-dest-type" id="csv-dest-new" value="new" onchange="toggleCsvDestMode()" class="accent-purple-600 cursor-pointer">
-                                <span>Create New Table:</span>
+                                <span>New list:</span>
                             </label>
-                            <input type="text" id="modal-csv-new-list-name" disabled placeholder="e.g. October Invoices Table" class="flex-1 px-3 py-1.5 bg-slate-900/40 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <input type="text" id="modal-csv-new-list-name" disabled placeholder="e.g. October webinar" class="flex-1 px-3 py-1.5 bg-slate-900/40 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed">
                         </div>
                     </div>
                 </div>
+                <div>
+                    <label for="modal-csv-tags" class="block text-xs font-medium text-slate-300 mb-1">Tag every imported contact <span class="text-slate-500 font-normal">(optional)</span></label>
+                    <input type="text" id="modal-csv-tags" placeholder="e.g. trade-show-2026" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                </div>
+                <label class="flex items-start gap-2 text-xs text-slate-300 cursor-pointer">
+                    <input type="checkbox" id="modal-csv-update-existing" checked class="row-select mt-0.5">
+                    <span>Update contacts that already exist <span class="block text-[11px] text-slate-500">Matched by email. Names and fields are updated; unsubscribed or bounced contacts stay that way.</span></span>
+                </label>
                 <p class="text-[11px] text-slate-500 leading-relaxed">
-                    Email, first name, last name, and arbitrary custom fields (e.g. company, phone, order_id) are automatically detected and saved.
-                    Existing customers matched by email are updated rather than duplicated.
+                    Every column other than email and name becomes a custom field named after its heading, usable as a <code>&#123;&#123;placeholder&#125;&#125;</code>.
                 </p>
             </div>
 
@@ -2733,49 +2793,7 @@
         </div>
     </div>
 
-    <!-- Modal: Manage Customer Groups -->
-    <div id="modal-manage-groups" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
-        <div class="glass-panel w-full max-w-2xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            <!-- Header -->
-            <div class="p-5 border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                        <i data-lucide="folders" class="w-5 h-5"></i>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                            <span>Manage Customer Groups</span>
-                            <span id="manage-groups-count-badge" class="px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-500/20 text-purple-300">0 Groups</span>
-                        </h3>
-                        <p class="text-[11px] text-slate-400">View, organize, rename, and delete customer audience lists</p>
-                    </div>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="openCreateGroupModal()" class="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1 shadow-sm transition-all cursor-pointer">
-                        <i data-lucide="plus" class="w-3.5 h-3.5"></i> New Group
-                    </button>
-                    <button type="button" onclick="closeModal('modal-manage-groups')" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
-                        <i data-lucide="x" class="w-4 h-4"></i>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Groups List Container -->
-            <div class="p-5 overflow-y-auto space-y-3 flex-1" id="manage-groups-list">
-                <!-- Populated dynamically by app.js -->
-            </div>
-
-            <!-- Footer -->
-            <div class="p-4 bg-slate-900/60 border-t border-white/5 flex items-center justify-between text-xs text-slate-400 shrink-0">
-                <span>Deleting a group will not delete your customer contacts.</span>
-                <button type="button" onclick="closeModal('modal-manage-groups')" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors cursor-pointer">
-                    Close
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal: Edit Customer Group -->
+    <!-- Modal: Rename list -->
     <div id="modal-edit-group" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
         <div class="glass-panel w-full max-w-md rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4">
             <div class="flex items-center justify-between border-b border-white/10 pb-3">
@@ -2784,8 +2802,8 @@
                         <i data-lucide="edit-3" class="w-4 h-4"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white">Edit Customer Group</h3>
-                        <p class="text-[11px] text-slate-400">Update group name and description</p>
+                        <h3 class="text-sm font-bold text-white">Edit list</h3>
+                        <p class="text-[11px] text-slate-400">Rename it or change its description</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeModal('modal-edit-group')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
@@ -2796,8 +2814,8 @@
             <form onsubmit="handleEditGroupSubmit(event)" class="space-y-4">
                 <input type="hidden" id="edit-group-id">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Group / List Name <span class="text-rose-400">*</span></label>
-                    <input type="text" id="edit-group-name" required placeholder="Group Name" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                    <label class="block text-xs font-medium text-slate-300 mb-1">List name <span class="text-rose-400">*</span></label>
+                    <input type="text" id="edit-group-name" required placeholder="List name" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                 </div>
 
                 <div>
@@ -2818,17 +2836,17 @@
         </div>
     </div>
 
-    <!-- Modal: Create Customer Table / Group -->
+    <!-- Modal: Create list -->
     <div id="modal-create-group" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 hidden modal-overlay">
         <div class="glass-panel w-full max-w-xl rounded-2xl border border-white/10 shadow-2xl overflow-hidden p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div class="flex items-center justify-between border-b border-white/10 pb-3">
                 <div class="flex items-center gap-2.5">
                     <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
-                        <i data-lucide="table" class="w-4 h-4"></i>
+                        <i data-lucide="folder-plus" class="w-4 h-4"></i>
                     </div>
                     <div>
-                        <h3 class="text-sm font-bold text-white">Create Customer Table & Schema</h3>
-                        <p class="text-[11px] text-slate-400">Choose a premade table template or customize placeholder columns for dynamic merge tags</p>
+                        <h3 class="text-sm font-bold text-white">New list</h3>
+                        <p class="text-[11px] text-slate-400">A list groups contacts for a campaign. A contact can be in several lists.</p>
                     </div>
                 </div>
                 <button type="button" onclick="closeModal('modal-create-group')" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors">
@@ -2836,13 +2854,25 @@
                 </button>
             </div>
 
-            <!-- Premade Table Templates Selector -->
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
-                    <span>1. Choose a Table Template:</span>
-                    <span class="text-[10px] text-purple-400">Click to apply pre-configured columns</span>
-                </label>
-                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <form onsubmit="handleCreateGroupSubmit(event)" class="space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label for="new-group-name" class="block text-xs font-medium text-slate-300 mb-1">List name <span class="text-rose-400">*</span></label>
+                        <input type="text" id="new-group-name" required placeholder="e.g. Newsletter, Q4 leads" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                    <div>
+                        <label for="new-group-desc" class="block text-xs font-medium text-slate-300 mb-1">Description <span class="text-slate-500 font-normal">(optional)</span></label>
+                        <input type="text" id="new-group-desc" placeholder="Who is in this list?" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                    </div>
+                </div>
+
+                <details class="group rounded-xl border border-white/5 bg-slate-900/40">
+                    <summary class="px-3 py-2.5 text-xs font-semibold text-purple-300 cursor-pointer select-none flex items-center gap-1.5">
+                        <i data-lucide="braces" class="w-3.5 h-3.5"></i> Suggested custom fields <span class="font-normal text-slate-500">(optional)</span>
+                    </summary>
+                    <div class="px-3 pb-3 space-y-3">
+                        <p class="text-[11px] text-slate-500">Fields you expect contacts in this list to have. They show up as inputs when you add a contact to the list and as <code>&#123;&#123;placeholders&#125;&#125;</code> when composing. CSV columns add fields automatically, so you can skip this.</p>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <button type="button" onclick="applyTableTemplate('ecommerce')" id="tpl-card-ecommerce" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
                         <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">🛒 Orders</div>
                         <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">order_id, product, amount</div>
@@ -2864,45 +2894,21 @@
                         <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">account_id, plan, expiry</div>
                     </button>
                     <button type="button" onclick="applyTableTemplate('custom')" id="tpl-card-custom" class="table-template-card p-2.5 rounded-xl bg-slate-900 border border-white/10 hover:border-purple-500/50 text-left transition-all cursor-pointer group">
-                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">⚙️ Blank Table</div>
-                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">Start from scratch</div>
+                        <div class="text-xs font-bold text-white group-hover:text-purple-300 flex items-center gap-1.5">⚙️ None</div>
+                        <div class="text-[10px] text-slate-400 mt-0.5 line-clamp-1">No suggested fields</div>
                     </button>
                 </div>
-            </div>
-
-            <form onsubmit="handleCreateGroupSubmit(event)" class="space-y-4">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Table / List Name <span class="text-rose-400">*</span></label>
-                        <input type="text" id="new-group-name" required placeholder="e.g. Billing & Invoices Table" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
+                        <div id="new-table-columns-chips" class="flex flex-wrap gap-1.5 min-h-[38px] p-2 bg-slate-900/90 border border-white/10 rounded-xl items-center">
+                            <!-- Populated dynamically by app.js -->
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="new-table-col-input" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewTableColumnChip();}" placeholder="Field name, e.g. discount_code, then Enter" class="flex-1 px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-mono">
+                            <button type="button" onclick="addNewTableColumnChip()" class="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold border border-purple-500/40 shrink-0 cursor-pointer flex items-center gap-1">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add
+                            </button>
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Description (Optional)</label>
-                        <input type="text" id="new-group-desc" placeholder="Audience or billing category..." class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500">
-                    </div>
-                </div>
-
-                <!-- Custom Schema Columns / Placeholders -->
-                <div class="space-y-2 pt-2 border-t border-white/5">
-                    <div class="flex items-center justify-between">
-                        <label class="block text-xs font-semibold text-purple-300 flex items-center gap-1.5">
-                            <i data-lucide="columns" class="w-3.5 h-3.5"></i> 2. Table Placeholder Columns:
-                        </label>
-                        <span class="text-[10px] text-slate-400">Available as merge tags when sending</span>
-                    </div>
-
-                    <div id="new-table-columns-chips" class="flex flex-wrap gap-1.5 min-h-[38px] p-2 bg-slate-900/90 border border-white/10 rounded-xl items-center">
-                        <!-- Populated dynamically by app.js -->
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="new-table-col-input" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewTableColumnChip();}" placeholder="Type column name (e.g. tracking_num, discount_code) & Enter" class="flex-1 px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-mono">
-                        <button type="button" onclick="addNewTableColumnChip()" class="px-3.5 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold border border-purple-500/40 shrink-0 cursor-pointer flex items-center gap-1">
-                            <i data-lucide="plus" class="w-3.5 h-3.5"></i> Add Column
-                        </button>
-                    </div>
-                    <p class="text-[11px] text-slate-500">Every column will be accessible as <code>&#123;&#123;column_name&#125;&#125;</code> in emails sent to this table.</p>
-                </div>
+                </details>
 
                 <div class="pt-3 border-t border-white/5 flex items-center justify-end gap-2.5">
                     <button type="button" onclick="closeModal('modal-create-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
@@ -2910,7 +2916,7 @@
                     </button>
                     <button type="submit" id="btn-create-group-submit" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all cursor-pointer">
                         <i data-lucide="check" class="w-3.5 h-3.5"></i>
-                        <span>Create Table</span>
+                        <span>Create list</span>
                     </button>
                 </div>
             </form>
@@ -3070,6 +3076,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.5.5"></script>
+    <script src="/static/js/app.js?v=2.6.0"></script>
 </body>
 </html>

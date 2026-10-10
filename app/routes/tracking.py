@@ -280,11 +280,6 @@ async def handle_unsubscribe(
                 VALUES (?, ?, NULL, 'user_unsubscribed', ?)
             """, (f"sup_{uuid.uuid4().hex[:10]}", email_target, now))
 
-            await db.execute("""
-                INSERT OR IGNORE INTO suppression_list (id, email, campaign_id, reason, created_at)
-                VALUES (?, ?, NULL, 'user_unsubscribed', ?)
-            """, (f"sup_{uuid.uuid4().hex[:10]}", email_target, now))
-
             campaign_id_for_event = None
             async with db.execute(
                 "SELECT id, campaign_id FROM sent_emails WHERE recipient_email = ? ORDER BY created_at DESC LIMIT 1",
@@ -443,7 +438,7 @@ async def handle_resubscribe(
     user_agent: Optional[str] = Header(default=None)
 ):
     """
-    Resubscribe Handler: removes recipient from suppressions & suppression_list,
+    Resubscribe Handler: removes recipient from suppressions,
     restores subscriber status to 'active', records event, and renders confirmation.
     """
     client_ip = request.client.host if request.client else "127.0.0.1"
@@ -483,7 +478,6 @@ async def handle_resubscribe(
         if email_target:
             # 1. Remove from suppression records
             await db.execute("DELETE FROM suppressions WHERE email = ?", (email_target,))
-            await db.execute("DELETE FROM suppression_list WHERE email = ?", (email_target,))
 
             # 2. Update subscriber status back to active
             await db.execute("""
