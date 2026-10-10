@@ -4829,36 +4829,6 @@ async function openScanLoginModal() {
     }
 }
 
-async function simulateScanApproval() {
-    if (!currentScanSession || !currentScanSession.session_id) {
-        showToast('Please open the scan modal first.', 'warning');
-        return;
-    }
-
-    const testEmail = await promptDialog(
-        'Enter the email address to simulate instant phone authorization for.',
-        'admin@bitnade.com',
-        { title: 'Simulate scan approval', confirmText: 'Approve' }
-    );
-    if (!testEmail || !testEmail.includes('@')) return;
-
-    showToast(`Simulating instant phone scan approval for ${testEmail}...`, 'info');
-
-    try {
-        const res = await fetch(`/api/auth/scan/simulate-approval/${currentScanSession.session_id}?email=${encodeURIComponent(testEmail)}`, {
-            method: 'POST'
-        });
-        const data = await safeJson(res);
-        if (res.ok && data.success) {
-            showToast(`✓ Phone scan simulated successfully! Authenticated as ${testEmail}`, 'success');
-        } else {
-            showToast('Simulation failed: ' + (data.detail || 'Unknown error'), 'error');
-        }
-    } catch (err) {
-        showToast('Simulation error: ' + err.message, 'error');
-    }
-}
-
 // ==========================================================================
 // Authentication & User Session Management
 // ==========================================================================
@@ -5228,27 +5198,6 @@ async function initAuthScanQR() {
         }
     } catch (err) {
         showToast('Error generating QR: ' + err.message, 'error');
-    }
-}
-
-async function simulateAuthScanApproval() {
-    if (!authScanSession || !authScanSession.session_id) {
-        showToast('Please wait for QR code to generate.', 'warning');
-        return;
-    }
-    showToast('Simulating phone QR scan authorization...', 'info');
-    try {
-        const res = await fetch(`/api/auth/scan/simulate-approval/${authScanSession.session_id}?email=admin@bitmail.com`, {
-            method: 'POST'
-        });
-        const data = await safeJson(res);
-        if (res.ok && data.success) {
-            showToast('✓ Mobile scan simulated successfully!', 'success');
-        } else {
-            showToast('Simulation error: ' + (data.detail || 'Unknown error'), 'error');
-        }
-    } catch (err) {
-        showToast('Simulation failed: ' + err.message, 'error');
     }
 }
 
