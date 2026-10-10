@@ -1,44 +1,41 @@
 /* ==========================================================================
-   Bitmail - Modern High-Contrast Enterprise Theme
-   Deep Obsidian/Navy Canvas, High Contrast Slate & Indigo Accents,
-   Pixel-Perfect Layout & Self-Contained Resilient Hierarchy
+   Bitmail - Bitnade theme
+   Mirrors the main Bitnade site (src/app/globals.css): monochrome dark
+   surfaces, hairline borders, white primary actions, Geist type.
+   Colour is reserved for meaning (success / warning / danger).
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 :root {
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-    
-    /* Modern Dark Theme Color Palette */
-    --bg-page: #0b0f19;
-    --bg-sidebar: #0e1524;
-    --bg-header: #0e1524;
-    --bg-card: #131c2e;
-    --bg-card-elevated: #1a253c;
-    --bg-input: #0b111e;
-    
-    --border-card: #1f2c42;
-    --border-subtle: #182335;
-    --border-input: #263650;
-    
-    /* Solid Buttons */
-    --btn-green: #238636;
-    --btn-green-hover: #2ea043;
-    --btn-green-border: #2ea043;
-    
-    --btn-blue: #1f6feb;
-    --btn-blue-hover: #388bfd;
-    --btn-blue-border: #388bfd;
-    
-    --btn-dark: #1b2436;
-    --btn-dark-hover: #253147;
-    --btn-dark-border: #2c3a52;
+    color-scheme: dark;
+    --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
 
-    /* Text */
-    --text-primary: #f0f6fc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
+    /* Bitnade tokens */
+    --bg-page: #0a0a0a;          /* --color-bg */
+    --bg-sidebar: #0a0a0a;
+    --bg-header: rgba(20, 20, 20, 0.6);
+    --bg-card: #141414;          /* --color-surface */
+    --bg-card-elevated: #1c1c1c; /* --color-surface-2 */
+    --bg-input: #0a0a0a;
+
+    --border-card: #2a2a2a;      /* --color-line */
+    --border-subtle: #1f1f1f;
+    --border-input: #2a2a2a;
+
+    /* Primary = Bitnade --primary (light fill, dark text) */
+    --btn-primary: #ededed;
+    --btn-primary-hover: #ffffff;
+    --btn-primary-text: #0a0a0a;
+
+    --btn-dark: #1c1c1c;
+    --btn-dark-hover: #2a2a2a;
+    --btn-dark-border: #2a2a2a;
+
+    --text-primary: #ededed;     /* --color-fg */
+    --text-secondary: #a1a1a1;   /* --muted-foreground */
+    --text-muted: #737373;
+    --ring: #a1a1a1;
+    --radius: 0.75rem;
 }
 
 * {
@@ -84,7 +81,7 @@ button > svg.lucide, a > svg.lucide, span > svg.lucide {
     align-items: center;
     justify-content: center;
     pointer-events: none;
-    color: #94a3b8;
+    color: var(--text-secondary);
 }
 
 .input-icon-right {
@@ -96,7 +93,7 @@ button > svg.lucide, a > svg.lucide, span > svg.lucide {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #94a3b8;
+    color: var(--text-secondary);
 }
 
 label {
@@ -109,15 +106,20 @@ label {
     height: 6px;
 }
 ::-webkit-scrollbar-track {
-    background: #0b0f19;
+    background: var(--bg-page);
 }
 ::-webkit-scrollbar-thumb {
-    background: #1f2c42;
+    background: #2a2a2a;
     border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-    background: #334460;
+    background: #3a3a3a;
 }
+::selection { background: #ededed; color: #0a0a0a; }
+/* Native checkboxes, radios and ranges follow the monochrome palette. */
+input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: #ededed; }
+/* Firefox scrollbars (the ::-webkit rules above do not apply there). */
+* { scrollbar-color: #2a2a2a transparent; scrollbar-width: thin; }
 
 /* Structural Layout & Responsive Flexibility */
 .glass-sidebar {
@@ -151,7 +153,9 @@ main {
 
 .glass-header {
     background-color: var(--bg-header) !important;
-    border-bottom: 1px solid var(--border-card) !important;
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
     height: 4rem !important;
     min-height: 4rem !important;
     max-height: 4rem !important;
@@ -188,32 +192,31 @@ main {
 .glass-panel {
     background-color: var(--bg-card) !important;
     border: 1px solid var(--border-card) !important;
-    border-radius: 14px !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: none !important;
     color: var(--text-primary) !important;
 }
 
 .glass-panel-glow {
     background-color: var(--bg-card) !important;
     border: 1px solid var(--border-card) !important;
-    border-radius: 14px !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: none !important;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     color: var(--text-primary) !important;
 }
 
 .glass-panel-glow:hover {
-    border-color: #388bfd !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35) !important;
+    border-color: #525252 !important;
 }
 
 /* Buttons */
 .btn-dark-green {
-    background-color: var(--btn-green) !important;
-    color: #ffffff !important;
-    border: 1px solid var(--btn-green-border) !important;
-    border-radius: 10px;
-    font-weight: 700;
+    background-color: var(--btn-primary) !important;
+    color: var(--btn-primary-text) !important;
+    border: 1px solid var(--btn-primary) !important;
+    border-radius: var(--radius);
+    font-weight: 600;
     padding: 0.5rem 1rem;
     display: inline-flex !important;
     align-items: center !important;
@@ -221,21 +224,20 @@ main {
     gap: 0.5rem !important;
     cursor: pointer !important;
     transition: background-color 0.15s ease, border-color 0.15s ease !important;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2) !important;
     white-space: nowrap !important;
 }
 
 .btn-dark-green:hover {
-    background-color: var(--btn-green-hover) !important;
-    border-color: #3fb950 !important;
+    background-color: var(--btn-primary-hover) !important;
+    border-color: var(--btn-primary-hover) !important;
 }
 
 .btn-dark-blue {
-    background-color: var(--btn-blue) !important;
-    color: #ffffff !important;
-    border: 1px solid var(--btn-blue-border) !important;
-    border-radius: 10px;
-    font-weight: 700;
+    background-color: var(--btn-primary) !important;
+    color: var(--btn-primary-text) !important;
+    border: 1px solid var(--btn-primary) !important;
+    border-radius: var(--radius);
+    font-weight: 600;
     padding: 0.5rem 1rem;
     display: inline-flex !important;
     align-items: center !important;
@@ -243,20 +245,19 @@ main {
     gap: 0.5rem !important;
     cursor: pointer !important;
     transition: background-color 0.15s ease, border-color 0.15s ease !important;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2) !important;
     white-space: nowrap !important;
 }
 
 .btn-dark-blue:hover {
-    background-color: var(--btn-blue-hover) !important;
-    border-color: #58a6ff !important;
+    background-color: var(--btn-primary-hover) !important;
+    border-color: var(--btn-primary-hover) !important;
 }
 
 .btn-dark-slate {
     background-color: var(--btn-dark) !important;
-    color: #c9d1d9 !important;
+    color: var(--text-primary) !important;
     border: 1px solid var(--btn-dark-border) !important;
-    border-radius: 10px !important;
+    border-radius: var(--radius) !important;
     font-weight: 600 !important;
     padding: 0.5rem 1rem !important;
     display: inline-flex !important;
@@ -269,51 +270,52 @@ main {
 .btn-dark-slate:hover {
     background-color: var(--btn-dark-hover) !important;
     color: #ffffff !important;
-    border-color: #44536b !important;
+    border-color: #3a3a3a !important;
 }
 
 /* Navigation Items */
 .nav-item {
     border-radius: 10px !important;
     padding: 0.6rem 0.85rem !important;
-    font-weight: 600 !important;
-    color: #94a3b8 !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
     transition: background-color 0.15s ease, color 0.15s ease !important;
 }
 
 .nav-item:hover {
-    background-color: rgba(255, 255, 255, 0.06) !important;
-    color: #f8fafc !important;
+    background-color: rgba(255, 255, 255, 0.05) !important;
+    color: var(--text-primary) !important;
 }
 
 .nav-item.active {
-    background-color: #1f6feb !important;
-    color: #ffffff !important;
+    background-color: #1c1c1c !important;
+    color: var(--text-primary) !important;
+    box-shadow: inset 0 0 0 1px #2a2a2a;
 }
 
 .nav-item.active i, .nav-item.active svg {
-    color: #ffffff !important;
+    color: var(--text-primary) !important;
 }
 
 /* Inputs & Form Controls */
 input[type="text"], input[type="email"], input[type="password"], input[type="number"], select, textarea {
     background-color: var(--bg-input) !important;
     border: 1px solid var(--border-input) !important;
-    color: #f0f6fc !important;
-    border-radius: 10px !important;
+    color: var(--text-primary) !important;
+    border-radius: calc(var(--radius) * 0.8) !important;
     font-size: 0.85rem !important;
     transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
 input::placeholder, textarea::placeholder {
-    color: #64748b !important;
+    color: var(--text-muted) !important;
     opacity: 1 !important;
 }
 
 input:focus, select:focus, textarea:focus {
-    border-color: #388bfd !important;
+    border-color: var(--ring) !important;
     outline: none !important;
-    box-shadow: 0 0 0 2px rgba(56, 139, 253, 0.25) !important;
+    box-shadow: 0 0 0 3px rgba(161, 161, 161, 0.25) !important;
 }
 
 /* Badges */
@@ -334,15 +336,15 @@ input:focus, select:focus, textarea:focus {
 }
 
 .badge-sending, .badge-queued, .badge-pending, .badge-progress {
-    background-color: rgba(56, 139, 253, 0.2) !important;
-    color: #58a6ff !important;
-    border: 1px solid rgba(56, 139, 253, 0.4) !important;
+    background-color: rgba(255, 255, 255, 0.06) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid #2a2a2a !important;
 }
 
 .badge-failed, .badge-error, .badge-bounced {
-    background-color: rgba(248, 81, 73, 0.2) !important;
-    color: #ff7b72 !important;
-    border: 1px solid rgba(248, 81, 73, 0.4) !important;
+    background-color: rgba(248, 113, 113, 0.12) !important;
+    color: #f87171 !important;
+    border: 1px solid rgba(248, 113, 113, 0.35) !important;
 }
 
 /* Status Indicator Dot */
@@ -360,17 +362,17 @@ input:focus, select:focus, textarea:focus {
     font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.5;
-    background: #090d16;
+    background: #0a0a0a;
     border: 1px solid var(--border-card);
     border-radius: 10px;
     padding: 1rem;
-    color: #e2e8f0;
+    color: var(--text-primary);
     overflow-x: auto;
 }
 
 /* Live Terminal Log */
 .terminal-window {
-    background: #090d16 !important;
+    background: #0a0a0a !important;
     border: 1px solid var(--border-card) !important;
     border-radius: 10px !important;
     font-family: var(--font-mono) !important;
@@ -378,7 +380,7 @@ input:focus, select:focus, textarea:focus {
     font-size: 0.8rem !important;
     max-height: 260px !important;
     overflow-y: auto !important;
-    color: #e2e8f0 !important;
+    color: var(--text-primary) !important;
 }
 
 /* Table styling */
@@ -386,7 +388,7 @@ input:focus, select:focus, textarea:focus {
     font-weight: 700 !important;
     font-size: 0.72rem !important;
     letter-spacing: 0.05em !important;
-    color: #8b949e !important;
+    color: var(--text-secondary) !important;
     border-bottom: 1px solid var(--border-card) !important;
     padding: 0.75rem 1rem !important;
 }
@@ -394,7 +396,7 @@ input:focus, select:focus, textarea:focus {
 .custom-table td {
     border-bottom: 1px solid var(--border-subtle) !important;
     padding: 0.75rem 1rem !important;
-    color: #f0f6fc !important;
+    color: var(--text-primary) !important;
 }
 
 .custom-table tr:hover td {
@@ -432,7 +434,7 @@ dialog.ui-dialog[open], .ui-dialog[open] {
 }
 
 .ui-dialog::backdrop {
-    background: rgba(2, 6, 23, 0.8) !important;
+    background: rgba(0, 0, 0, 0.75) !important;
     backdrop-filter: blur(6px) !important;
 }
 
@@ -483,7 +485,7 @@ div[id^="modal-"].fixed > div {
 .row-select {
     width: 0.9rem;
     height: 0.9rem;
-    accent-color: #6366f1;
+    accent-color: #ededed;
     cursor: pointer;
 }
 
@@ -497,9 +499,9 @@ input:-webkit-autofill:focus,
 input:-webkit-autofill:active,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 1000px #0b111e inset !important;
-    -webkit-text-fill-color: #f8fafc !important;
-    caret-color: #f8fafc !important;
+    -webkit-box-shadow: 0 0 0 1000px #0a0a0a inset !important;
+    -webkit-text-fill-color: #ededed !important;
+    caret-color: #ededed !important;
     transition: background-color 5000s ease-in-out 0s !important;
 }
 
@@ -512,16 +514,16 @@ select:-webkit-autofill {
     border-radius: 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #e2e8f0;
-    background: rgba(30, 41, 59, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+    background: #1c1c1c;
+    border: 1px solid #2a2a2a;
     cursor: pointer;
     transition: background-color 0.15s, border-color 0.15s;
 }
-.contact-bulk-btn:hover { background: rgba(51, 65, 85, 0.95); }
-.contact-bulk-btn:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
-.contact-bulk-btn-danger { color: #fda4af; border-color: rgba(244, 63, 94, 0.3); background: rgba(244, 63, 94, 0.1); }
-.contact-bulk-btn-danger:hover { background: rgba(244, 63, 94, 0.2); }
+.contact-bulk-btn:hover { background: #2a2a2a; }
+.contact-bulk-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+.contact-bulk-btn-danger { color: #f87171; border-color: rgba(248, 113, 113, 0.3); background: rgba(248, 113, 113, 0.08); }
+.contact-bulk-btn-danger:hover { background: rgba(248, 113, 113, 0.16); }
 
 /* Contacts page: sortable column headers. data-dir is set by renderContactsPager(). */
 .sort-btn {
@@ -534,7 +536,21 @@ select:-webkit-autofill {
     color: inherit;
     cursor: pointer;
 }
-.sort-btn:hover { color: #e2e8f0; }
+.sort-btn:hover { color: var(--text-primary); }
 .sort-btn::after { content: "↕"; opacity: 0.35; font-size: 0.7rem; }
-.sort-btn[data-dir="asc"]::after { content: "↑"; opacity: 1; color: #a5b4fc; }
-.sort-btn[data-dir="desc"]::after { content: "↓"; opacity: 1; color: #a5b4fc; }
+.sort-btn[data-dir="asc"]::after { content: "↑"; opacity: 1; color: var(--text-primary); }
+.sort-btn[data-dir="desc"]::after { content: "↓"; opacity: 1; color: var(--text-primary); }
+
+/* Keyboard focus, Bitnade style (ring colour + 3px halo). */
+:where(a, button, [role="button"], summary):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}

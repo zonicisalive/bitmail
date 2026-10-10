@@ -8,37 +8,43 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet">
     
     <!-- Tailwind CSS v4 Browser Runtime -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style type="text/tailwindcss">
         @theme {
-            --color-brand-50: #eef2ff;
-            --color-brand-100: #e0e7ff;
-            --color-brand-400: #818cf8;
-            --color-brand-500: #6366f1;
-            --color-brand-600: #4f46e5;
-            --color-brand-700: #4338ca;
-            --color-dark-bg: #0b0f19;
-            --color-dark-surface: #111827;
-            --color-dark-card: #1f2937;
-            --font-sans: 'Plus Jakarta Sans', sans-serif;
-            --font-mono: 'JetBrains Mono', monospace;
+            /* Bitnade palette - keep in sync with tailwind.config.js */
+            --color-slate-50: #fafafa; --color-slate-100: #ededed; --color-slate-200: #d4d4d4; --color-slate-300: #bababa; --color-slate-400: #a1a1a1; --color-slate-500: #737373; --color-slate-600: #525252; --color-slate-700: #2a2a2a; --color-slate-800: #1c1c1c; --color-slate-900: #141414; --color-slate-950: #0a0a0a;
+            --color-gray-50: #fafafa; --color-gray-100: #ededed; --color-gray-200: #d4d4d4; --color-gray-300: #bababa; --color-gray-400: #a1a1a1; --color-gray-500: #737373; --color-gray-600: #525252; --color-gray-700: #2a2a2a; --color-gray-800: #1c1c1c; --color-gray-900: #141414; --color-gray-950: #0a0a0a;
+            --color-indigo-50: #fafafa; --color-indigo-100: #f5f5f5; --color-indigo-200: #ededed; --color-indigo-300: #ededed; --color-indigo-400: #d4d4d4; --color-indigo-500: #bdbdbd; --color-indigo-600: #ededed; --color-indigo-700: #d4d4d4; --color-indigo-800: #2a2a2a; --color-indigo-900: #1c1c1c; --color-indigo-950: #141414;
+            --color-purple-50: #fafafa; --color-purple-100: #f5f5f5; --color-purple-200: #ededed; --color-purple-300: #ededed; --color-purple-400: #d4d4d4; --color-purple-500: #bdbdbd; --color-purple-600: #ededed; --color-purple-700: #d4d4d4; --color-purple-800: #2a2a2a; --color-purple-900: #1c1c1c; --color-purple-950: #141414;
+            --color-violet-50: #fafafa; --color-violet-100: #f5f5f5; --color-violet-200: #ededed; --color-violet-300: #ededed; --color-violet-400: #d4d4d4; --color-violet-500: #bdbdbd; --color-violet-600: #ededed; --color-violet-700: #d4d4d4; --color-violet-800: #2a2a2a; --color-violet-900: #1c1c1c; --color-violet-950: #141414;
+            --color-blue-50: #fafafa; --color-blue-100: #f5f5f5; --color-blue-200: #ededed; --color-blue-300: #ededed; --color-blue-400: #d4d4d4; --color-blue-500: #bdbdbd; --color-blue-600: #ededed; --color-blue-700: #d4d4d4; --color-blue-800: #2a2a2a; --color-blue-900: #1c1c1c; --color-blue-950: #141414;
+            --color-cyan-50: #fafafa; --color-cyan-100: #f5f5f5; --color-cyan-200: #ededed; --color-cyan-300: #ededed; --color-cyan-400: #d4d4d4; --color-cyan-500: #bdbdbd; --color-cyan-600: #ededed; --color-cyan-700: #d4d4d4; --color-cyan-800: #2a2a2a; --color-cyan-900: #1c1c1c; --color-cyan-950: #141414;
+            --color-sky-50: #fafafa; --color-sky-100: #f5f5f5; --color-sky-200: #ededed; --color-sky-300: #ededed; --color-sky-400: #d4d4d4; --color-sky-500: #bdbdbd; --color-sky-600: #ededed; --color-sky-700: #d4d4d4; --color-sky-800: #2a2a2a; --color-sky-900: #1c1c1c; --color-sky-950: #141414;
+            --color-pink-50: #fafafa; --color-pink-100: #f5f5f5; --color-pink-200: #ededed; --color-pink-300: #ededed; --color-pink-400: #d4d4d4; --color-pink-500: #bdbdbd; --color-pink-600: #ededed; --color-pink-700: #d4d4d4; --color-pink-800: #2a2a2a; --color-pink-900: #1c1c1c; --color-pink-950: #141414;
+            --color-fuchsia-50: #fafafa; --color-fuchsia-100: #f5f5f5; --color-fuchsia-200: #ededed; --color-fuchsia-300: #ededed; --color-fuchsia-400: #d4d4d4; --color-fuchsia-500: #bdbdbd; --color-fuchsia-600: #ededed; --color-fuchsia-700: #d4d4d4; --color-fuchsia-800: #2a2a2a; --color-fuchsia-900: #1c1c1c; --color-fuchsia-950: #141414;
+            --color-teal-50: #fafafa; --color-teal-100: #f5f5f5; --color-teal-200: #ededed; --color-teal-300: #ededed; --color-teal-400: #d4d4d4; --color-teal-500: #bdbdbd; --color-teal-600: #ededed; --color-teal-700: #d4d4d4; --color-teal-800: #2a2a2a; --color-teal-900: #1c1c1c; --color-teal-950: #141414;
+            --color-dark-bg: #0a0a0a;
+            --color-dark-surface: #141414;
+            --color-dark-card: #1c1c1c;
+            --font-sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
+            --font-mono: 'Geist Mono', ui-monospace, monospace;
         }
     </style>
 
     <!-- Local Compiled Tailwind CSS & Fallback -->
-    <link rel="stylesheet" href="/static/css/tailwind.min.css?v=2.6.0">
+    <link rel="stylesheet" href="/static/css/tailwind.min.css?v=2.7.0">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.6.0">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.7.0">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
     <script src="/static/js/lucide.min.js"></script>
     <script src="/static/js/chart.min.js"></script>
 </head>
-<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex antialiased selection:bg-indigo-500 selection:text-white" data-initial-tab="{{ active_tab }}">
+<body class="bg-[#0a0a0a] text-[#ededed] min-h-screen flex antialiased selection:bg-[#ededed] selection:text-[#0a0a0a]" data-initial-tab="{{ active_tab }}">
 
     <!-- ========================================================================== -->
     <!-- Left Sidebar Navigation                                                    -->
@@ -47,13 +53,44 @@
         <div>
             <!-- Brand Logo -->
             <div class="p-6 pb-4 flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-[#1f6feb] flex items-center justify-center shadow-lg shadow-indigo-500/30 text-white font-black text-xl">
-                    <i data-lucide="send" class="w-5 h-5"></i>
+                <div class="w-10 h-10 rounded-xl bg-[#141414] border border-[#2a2a2a] flex items-center justify-center">
+                    <svg viewBox="0 0 64 64" width="28" height="28" aria-hidden="true" class="text-[#ededed]">
+                        <defs>
+                            <mask id="bn-logo-glass">
+                                <rect width="64" height="64" fill="#fff"/>
+                                <circle cx="46" cy="16" r="13" fill="#000"/>
+                                <g fill="none" stroke="#000" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="20.93" y="46.71" width="2.94" height="5.38" rx="1.47" stroke-width="1.02"/>
+                                    <path d="M27.64 46.04 29.20 45.11V50.09" stroke-width="1.02"/>
+                                    <rect x="33.17" y="47.20" width="2.85" height="5.21" rx="1.43" stroke-width="0.99"/>
+                                    <path d="M39.07 45.89 40.58 44.99V49.81" stroke-width="0.99"/>
+                                    <path d="M19.70 39.14 21.16 38.28V42.92" stroke-width="0.95"/>
+                                    <rect x="25.91" y="37.05" width="2.58" height="4.70" rx="1.29" stroke-width="0.90"/>
+                                    <path d="M32.54 39.80 33.94 38.96V43.44" stroke-width="0.92"/>
+                                    <rect x="38.51" y="36.65" width="2.58" height="4.70" rx="1.29" stroke-width="0.90"/>
+                                    <rect x="17.85" y="29.70" width="2.30" height="4.20" rx="1.15" stroke-width="0.80"/>
+                                    <path d="M24.60 31.90 25.90 31.13V35.28" stroke-width="0.85"/>
+                                    <rect x="30.70" y="29.38" width="2.21" height="4.03" rx="1.10" stroke-width="0.77"/>
+                                    <path d="M38.03 31.35 39.28 30.61V34.59" stroke-width="0.82"/>
+                                    <path d="M20.90 24.06 22.04 23.37V27.03" stroke-width="0.75"/>
+                                    <rect x="26.83" y="22.64" width="1.93" height="3.53" rx="0.97" stroke-width="0.67"/>
+                                    <path d="M32.53 24.91 33.62 24.26V27.74" stroke-width="0.71"/>
+                                </g>
+                            </mask>
+                            <mask id="bn-logo-wheel">
+                                <rect width="64" height="64" fill="#fff"/>
+                                <path d="M46 6v20M36 16h20M39 9l14 14M53 9 39 23" stroke="#000" stroke-width="2"/>
+                            </mask>
+                        </defs>
+                        <path d="M12 20h36l-4.4 36H16.4Z" fill="currentColor" stroke="currentColor" stroke-width="4" stroke-linejoin="round" mask="url(#bn-logo-glass)"/>
+                        <circle cx="46" cy="16" r="10" fill="none" stroke="currentColor" stroke-width="3"/>
+                        <circle cx="46" cy="16" r="6.5" fill="currentColor" mask="url(#bn-logo-wheel)"/>
+                    </svg>
                 </div>
                 <div>
                     <div class="flex items-center gap-1.5">
-                        <span class="font-extrabold text-base tracking-tight text-white">Bit<span class="text-emerald-400">mail</span></span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">DYNAMIC</span>
+                        <span class="font-semibold text-base tracking-tight text-[#ededed]">Bitmail</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">DYNAMIC</span>
                     </div>
                     <p class="text-[11px] text-slate-400 font-medium">Enterprise Email Cluster</p>
                 </div>
@@ -62,10 +99,10 @@
             <!-- Navigation Links -->
             <nav class="mt-4 px-3 space-y-1">
                 <!-- Send to Customers (Quick Broadcast) - Primary Action -->
-                <a href="/broadcast" data-tab="broadcast" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#1f2c3f] border border-[#28374d] hover:border-[#388bfd] transition-all shadow-sm">
-                    <i data-lucide="zap" class="w-4 h-4 text-amber-400"></i>
+                <a href="/broadcast" data-tab="broadcast" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold text-white bg-[#1c1c1c] border border-[#2a2a2a] hover:border-[#525252] transition-all shadow-sm">
+                    <i data-lucide="zap" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Send to Customers</span>
-                    <span class="ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#f59e0b]/20 text-[#fbbf24] border border-[#f59e0b]/40">QUICK</span>
+                    <span class="ml-auto text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">QUICK</span>
                 </a>
 
                 <a href="/" data-tab="dashboard" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
@@ -80,36 +117,36 @@
                 </a>
 
                 <a href="/vault" data-tab="vault" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="archive" class="w-4 h-4 text-emerald-400"></i>
+                    <i data-lucide="archive" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Email Storage Vault</span>
-                    <span id="nav-vault-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">{{ stats.vault_stored }}</span>
+                    <span id="nav-vault-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">{{ stats.vault_stored }}</span>
                 </a>
 
                 <a href="/customers" data-tab="subscribers" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="users" class="w-4 h-4 text-cyan-400"></i>
+                    <i data-lucide="users" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Contacts &amp; Lists</span>
-                    <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300">{{ stats.active_subscribers }}</span>
+                    <span id="nav-subs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">{{ stats.active_subscribers }}</span>
                 </a>
 
                 <a href="/templates-studio" data-tab="templates" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="palette" class="w-4 h-4 text-pink-400"></i>
+                    <i data-lucide="palette" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Template Studio</span>
                 </a>
 
                 <a href="/smtp" data-tab="smtp" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="server" class="w-4 h-4 text-amber-400"></i>
+                    <i data-lucide="server" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Mail Servers</span>
                 </a>
 
                 <a href="/deliverability" data-tab="deliverability" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="shield-check" class="w-4 h-4 text-cyan-400"></i>
+                    <i data-lucide="shield-check" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Deliverability & DNS</span>
                 </a>
 
                 <a href="/warmup" data-tab="warmup" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
+                    <i data-lucide="flame" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>Warmup & Relays</span>
-                    <span id="nav-warmup-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-300 border border-orange-500/30">AUTO</span>
+                    <span id="nav-warmup-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">AUTO</span>
                 </a>
 
                 <a href="/webhooks" data-tab="webhooks" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
@@ -120,7 +157,7 @@
 
 
                 <a href="/logs" data-tab="logs" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
-                    <i data-lucide="scroll-text" class="w-4 h-4 text-emerald-400"></i>
+                    <i data-lucide="scroll-text" class="w-4 h-4 text-[#a1a1a1]"></i>
                     <span>System Logs</span>
                     <span id="nav-logs-badge" class="ml-auto text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">0</span>
                 </a>
@@ -144,7 +181,7 @@
 
             <!-- Profile snippet -->
             <div class="flex items-center gap-3 pt-1">
-                <div class="w-8 h-8 rounded-full bg-[#1f6feb] flex items-center justify-center text-xs font-bold text-white shadow">
+                <div class="w-8 h-8 rounded-full bg-[#ededed] flex items-center justify-center text-xs font-bold text-[#0a0a0a]">
                     EM
                 </div>
                 <div class="truncate">
@@ -180,7 +217,7 @@
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400"></i>
                     </div>
-                    <input type="search" id="global-search-input" name="search_bitmail_global" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0b111e] border border-[#263650] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
+                    <input type="search" id="global-search-input" name="search_bitmail_global" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" onkeyup="handleGlobalSearch(event)" placeholder="Search stored emails, customers, campaigns... (Enter)" class="w-full pl-9 pr-3 py-1.5 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden" readonly onfocus="this.removeAttribute('readonly')" onblur="this.setAttribute('readonly', 'readonly')">
                 </form>
             </div>
 
@@ -193,32 +230,32 @@
                 </div>
 
                 <!-- Direct Scan Login Button (Subtle Ghost Style) -->
-                <button onclick="openScanLoginModal()" title="Scan QR to Login / Connect Mobile" class="h-8 px-2.5 rounded-lg bg-[#131c2e] hover:bg-[#1a253c] text-slate-300 hover:text-white border border-[#1f2c42] text-xs font-medium flex items-center gap-1.5 transition-all shrink-0">
+                <button onclick="openScanLoginModal()" title="Scan QR to Login / Connect Mobile" class="h-8 px-2.5 rounded-lg bg-[#141414] hover:bg-[#1c1c1c] text-slate-300 hover:text-white border border-[#2a2a2a] text-xs font-medium flex items-center gap-1.5 transition-all shrink-0">
                     <i data-lucide="qr-code" class="w-3.5 h-3.5 text-blue-400"></i>
                     <span class="hidden sm:inline">Scan Login</span>
                 </button>
 
                 <!-- Primary Action: Direct Send Message -->
-                <button onclick="switchTab('broadcast')" class="btn-dark-green h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-sm shadow-emerald-900/30">
-                    <i data-lucide="zap" class="w-3.5 h-3.5 text-emerald-200"></i>
+                <button onclick="switchTab('broadcast')" class="btn-dark-green h-8 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 shadow-sm shadow-black/40">
+                    <i data-lucide="zap" class="w-3.5 h-3.5 text-[#a1a1a1]"></i>
                     <span>Send Message</span>
                 </button>
 
                 <!-- User Session / Admin Profile with Dropdown -->
-                <div class="relative pl-3 border-l border-[#1f2c42] shrink-0">
+                <div class="relative pl-3 border-l border-[#2a2a2a] shrink-0">
                     <button onclick="toggleUserMenu(event)" id="header-user-btn" class="flex items-center gap-2 py-1 px-1.5 rounded-lg hover:bg-slate-800/60 transition-colors">
-                        <div id="header-user-avatar" class="w-7 h-7 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white text-[11px] font-bold shadow ring-1 ring-white/10 shrink-0">
+                        <div id="header-user-avatar" class="w-7 h-7 rounded-full bg-[#ededed] flex items-center justify-center text-[#0a0a0a] text-[11px] font-bold shadow ring-1 ring-white/10 shrink-0">
                             AD
                         </div>
                         <div class="hidden md:flex flex-col text-left">
                             <span id="header-user-label" class="text-xs font-semibold text-slate-200 leading-tight">Admin</span>
-                            <span id="header-user-sublabel" class="text-[10px] text-emerald-400 leading-tight">Session Active</span>
+                            <span id="header-user-sublabel" class="text-[10px] text-[#a1a1a1] leading-tight">Session Active</span>
                         </div>
                         <i data-lucide="chevron-down" class="w-3 h-3 text-slate-400"></i>
                     </button>
                     <!-- Dropdown Menu -->
-                    <div id="user-dropdown-menu" class="hidden absolute right-0 top-full mt-2 w-56 rounded-xl bg-slate-900 border border-[#1f2c42] shadow-2xl p-2 z-50 text-xs space-y-1">
-                        <div class="p-2 border-b border-[#1f2c42]/80 mb-1">
+                    <div id="user-dropdown-menu" class="hidden absolute right-0 top-full mt-2 w-56 rounded-xl bg-slate-900 border border-[#2a2a2a] shadow-2xl p-2 z-50 text-xs space-y-1">
+                        <div class="p-2 border-b border-[#2a2a2a]/80 mb-1">
                             <div id="dropdown-user-name" class="font-bold text-white text-xs truncate">Administrator</div>
                             <div id="dropdown-user-email" class="text-[11px] text-slate-400 truncate">admin@bitmail.com</div>
                             <div class="mt-1"><span id="dropdown-user-role" class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Admin Session</span></div>
@@ -252,7 +289,7 @@
                     <div>
                         <div class="flex items-center gap-2">
                             <h1 class="text-2xl font-bold text-white tracking-tight">Send Message to Customers</h1>
-                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#f59e0b]/20 text-[#fbbf24] border border-[#f59e0b]/40">Direct Dispatch</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">Direct Dispatch</span>
                         </div>
                         <p class="text-sm text-slate-400 mt-1">Paste multiple customer emails or select your saved customer audience to dispatch personalized emails immediately with full Storage Vault archiving.</p>
                     </div>
@@ -272,13 +309,13 @@
                                     <button type="button" onclick="runBroadcastPreflightCheck()" id="btn-broadcast-preflight" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 transition-all flex items-center gap-1 cursor-pointer" title="Scan recipients for invalid syntax, disposable domains, and missing MX records before sending">
                                         <i data-lucide="shield-check" class="w-3 h-3"></i> Pre-flight Scan
                                     </button>
-                                    <span id="broadcast-recipient-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#1f6feb]/20 text-[#58a6ff] border border-[#388bfd]/40">0 Recipients</span>
+                                    <span id="broadcast-recipient-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white/5 text-[#ededed] border border-[#2a2a2a]">0 Recipients</span>
                                 </div>
                             </div>
 
                             <!-- Mode Selector Tabs -->
                             <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/90 rounded-xl border border-white/5 text-xs font-semibold">
-                                <button type="button" id="tab-btn-paste-emails" onclick="setBroadcastAudienceMode('paste')" class="py-2 px-3 rounded-lg text-center btn-dark-blue text-white transition-all">
+                                <button type="button" id="tab-btn-paste-emails" onclick="setBroadcastAudienceMode('paste')" class="py-2 px-3 rounded-lg text-center btn-dark-blue transition-all">
                                     Paste Customer Emails
                                 </button>
                                 <button type="button" id="tab-btn-list-emails" onclick="setBroadcastAudienceMode('list')" class="py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all">
@@ -300,14 +337,14 @@
                             <div id="broadcast-preflight-banner" class="p-3 rounded-xl bg-slate-900/90 border border-cyan-500/30 text-xs hidden space-y-2">
                                 <div class="flex items-center justify-between">
                                     <span class="font-bold text-white flex items-center gap-1.5">
-                                        <i data-lucide="shield-check" class="w-4 h-4 text-cyan-400"></i>
+                                        <i data-lucide="shield-check" class="w-4 h-4 text-[#a1a1a1]"></i>
                                         Pre-flight Deliverability Results
                                     </span>
                                     <button type="button" onclick="document.getElementById('broadcast-preflight-banner').classList.add('hidden')" class="text-slate-400 hover:text-white cursor-pointer"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
                                 </div>
                                 <div id="broadcast-preflight-content" class="text-slate-300 text-[11px] leading-relaxed"></div>
                                 <div class="flex items-center gap-2 pt-1">
-                                    <button type="button" id="btn-broadcast-apply-clean" onclick="applyBroadcastCleanedRecipients()" class="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all cursor-pointer">Clean Recipient List</button>
+                                    <button type="button" id="btn-broadcast-apply-clean" onclick="applyBroadcastCleanedRecipients()" class="px-3 py-1 rounded-lg bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold transition-all cursor-pointer">Clean Recipient List</button>
                                     <button type="button" onclick="document.getElementById('broadcast-preflight-banner').classList.add('hidden')" class="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-xs cursor-pointer">Dismiss</button>
                                 </div>
                             </div>
@@ -333,7 +370,7 @@
                         <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
                             <div class="flex items-center justify-between">
                                 <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                                    <i data-lucide="server" class="w-4 h-4 text-amber-400"></i> Step 2: Sender & Mail Server
+                                    <i data-lucide="server" class="w-4 h-4 text-[#a1a1a1]"></i> Step 2: Sender & Mail Server
                                 </h3>
                                 <button type="button" onclick="switchTab('smtp')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer">
                                     <i data-lucide="settings" class="w-3.5 h-3.5"></i> Manage SMTP
@@ -387,7 +424,7 @@
                             <!-- Step 3 Header -->
                             <div class="flex items-center justify-between">
                                 <h3 class="text-sm font-bold text-white flex items-center gap-2">
-                                    <i data-lucide="mail" class="w-4 h-4 text-emerald-400"></i> Step 3: Compose Email Message
+                                    <i data-lucide="mail" class="w-4 h-4 text-[#a1a1a1]"></i> Step 3: Compose Email Message
                                 </h3>
                                 <div class="flex items-center gap-2">
                                     <button type="button" onclick="switchTab('templates')" class="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-all cursor-pointer" title="Open Template Studio to create and manage saved templates">
@@ -474,10 +511,10 @@
                                             <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i> Dispatch Schedule:
                                         </label>
                                         <div class="flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-white/5 text-[11px] font-medium">
-                                            <button type="button" id="btn-timing-now" onclick="setBroadcastTimingMode('now')" class="px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer">Send Now</button>
+                                            <button type="button" id="btn-timing-now" onclick="setBroadcastTimingMode('now')" class="px-2.5 py-1 rounded-md text-[#0a0a0a] bg-indigo-600 font-semibold transition-all cursor-pointer">Send Now</button>
                                             <button type="button" id="btn-timing-schedule" onclick="setBroadcastTimingMode('schedule')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer">Schedule for Later</button>
-                                            <button type="button" id="btn-timing-warmup" onclick="setBroadcastTimingMode('warmup')" class="px-2.5 py-1 rounded-md text-orange-400 hover:text-white transition-all cursor-pointer flex items-center gap-1">
-                                                <i data-lucide="flame" class="w-3 h-3 text-orange-400"></i> Warmup Ramp-Up
+                                            <button type="button" id="btn-timing-warmup" onclick="setBroadcastTimingMode('warmup')" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1">
+                                                <i data-lucide="flame" class="w-3 h-3 text-[#a1a1a1]"></i> Warmup Ramp-Up
                                             </button>
                                         </div>
                                     </div>
@@ -490,8 +527,8 @@
                                     </div>
                                     <div id="broadcast-warmup-wrap" class="hidden p-3 rounded-xl bg-orange-950/20 border border-orange-500/30 space-y-2.5">
                                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                                            <span class="text-orange-300 font-semibold flex items-center gap-1.5">
-                                                <i data-lucide="flame" class="w-3.5 h-3.5 text-orange-400"></i> Warmup Ramp-Up Curve:
+                                            <span class="text-[#ededed] font-semibold flex items-center gap-1.5">
+                                                <i data-lucide="flame" class="w-3.5 h-3.5 text-[#a1a1a1]"></i> Warmup Ramp-Up Curve:
                                             </span>
                                             <select id="broadcast-warmup-strategy" onchange="updateBroadcastWarmupHint()" class="px-2.5 py-1 bg-slate-900 border border-orange-500/30 rounded-lg text-xs text-white focus:outline-none focus:border-orange-400">
                                                 <option value="conservative_30" selected>Conservative (30 Days - 50 Day 1, gradual)</option>
@@ -527,7 +564,7 @@
                                         <button type="button" onclick="sendBroadcastTestPreview()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer">
                                             Send Test Preview
                                         </button>
-                                        <button type="button" onclick="launchQuickBroadcast()" id="btn-launch-broadcast" class="px-5 py-2.5 rounded-xl btn-dark-green text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer">
+                                        <button type="button" onclick="launchQuickBroadcast()" id="btn-launch-broadcast" class="px-5 py-2.5 rounded-xl btn-dark-green text-xs font-extrabold shadow-lg shadow-black/40 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer">
                                             <i data-lucide="send" class="w-4 h-4"></i>
                                             <span>Send to All Now</span>
                                         </button>
@@ -543,7 +580,7 @@
                                     <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 status-dot-pulse"></span>
                                     <h4 class="text-sm font-bold text-white">Live Broadcast Execution Monitor</h4>
                                 </div>
-                                <span id="broadcast-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">Sending</span>
+                                <span id="broadcast-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">Sending</span>
                             </div>
 
                             <!-- Progress Bar -->
@@ -568,7 +605,7 @@
                                     <button type="button" onclick="pauseActiveBroadcast()" id="btn-pause-broadcast" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">Pause</button>
                                     <button type="button" onclick="cancelActiveBroadcast()" id="btn-cancel-broadcast" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-xs text-rose-300 border border-rose-500/30">Cancel</button>
                                 </div>
-                                <button type="button" onclick="switchTab('vault')" class="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white flex items-center gap-1.5">
+                                <button type="button" onclick="switchTab('vault')" class="px-3.5 py-1.5 rounded-lg bg-[#ededed] hover:bg-white text-xs font-semibold text-[#0a0a0a] flex items-center gap-1.5">
                                     <i data-lucide="archive" class="w-3.5 h-3.5"></i> View in Storage Vault
                                 </button>
                             </div>
@@ -743,7 +780,7 @@
                         <p class="text-sm text-slate-400 mt-1">Manage scheduled broadcasts, monitor real-time sending queues, and inspect delivery telemetry.</p>
                     </div>
                     <div class="flex items-center gap-3">
-                        <button onclick="switchTab('broadcast')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                        <button onclick="switchTab('broadcast')" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-black/40 transition-all">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i> New Broadcast
                         </button>
                     </div>
@@ -794,7 +831,7 @@
                     <div>
                         <div class="flex items-center gap-2">
                             <h1 class="text-2xl font-bold text-white tracking-tight">Email Storage Vault & Archive</h1>
-                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#238636]/20 text-[#3fb950] border border-[#2ea043]/40">100% Retained</span>
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">100% Retained</span>
                         </div>
                         <p class="text-sm text-slate-400 mt-1">Every dispatched email is permanently archived as a raw RFC 5322 MIME <code>.eml</code> file and indexed database record.</p>
                     </div>
@@ -868,15 +905,15 @@
                     </div>
                     <div class="flex items-center flex-wrap gap-2 shrink-0">
                         <button onclick="openBulkPasteModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
-                            <i data-lucide="clipboard" class="w-3.5 h-3.5 text-amber-400"></i> Paste emails
+                            <i data-lucide="clipboard" class="w-3.5 h-3.5 text-[#a1a1a1]"></i> Paste emails
                         </button>
                         <button onclick="openCsvImportModal()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer">
                             <i data-lucide="file-up" class="w-3.5 h-3.5 text-indigo-400"></i> Import CSV
                         </button>
                         <button onclick="exportContacts()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors whitespace-nowrap cursor-pointer" title="Export the contacts matching the current filters">
-                            <i data-lucide="download" class="w-3.5 h-3.5 text-emerald-400"></i> Export
+                            <i data-lucide="download" class="w-3.5 h-3.5 text-[#a1a1a1]"></i> Export
                         </button>
-                        <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap cursor-pointer">
+                        <button onclick="openAddSubscriberModal()" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-black/40 transition-all whitespace-nowrap cursor-pointer">
                             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i> Add contact
                         </button>
                     </div>
@@ -1003,7 +1040,7 @@
                         <button onclick="newStudioTemplate()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 border border-white/5 transition-colors">
                             <i data-lucide="file-plus" class="w-3.5 h-3.5 text-indigo-400"></i> New Template
                         </button>
-                        <button onclick="saveStudioTemplate()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all">
+                        <button onclick="saveStudioTemplate()" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-black/40 transition-all">
                             <i data-lucide="save" class="w-3.5 h-3.5"></i> <span id="studio-save-label">Save Template</span>
                         </button>
                     </div>
@@ -1088,7 +1125,7 @@
                         <button onclick="openGmailConnectModal()" class="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-400 hover:to-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-red-500/25 transition-all whitespace-nowrap">
                             <i data-lucide="mail" class="w-3.5 h-3.5"></i> Connect Gmail Account
                         </button>
-                        <button onclick="openAddSmtpModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-indigo-500/25 transition-all whitespace-nowrap">
+                        <button onclick="openAddSmtpModal()" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-black/40 transition-all whitespace-nowrap">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i> Custom SMTP
                         </button>
                     </div>
@@ -1098,7 +1135,7 @@
                 <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900/80 space-y-3">
                     <div class="flex items-center justify-between">
                         <span class="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
-                            <i data-lucide="sparkles" class="w-4 h-4 text-amber-400"></i> Quick Setup Mail Server Presets
+                            <i data-lucide="sparkles" class="w-4 h-4 text-[#a1a1a1]"></i> Quick Setup Mail Server Presets
                         </span>
                         <span class="text-[11px] text-slate-400">Click any provider to auto-fill settings</span>
                     </div>
@@ -1298,7 +1335,7 @@
                         <p class="text-sm text-slate-400 mt-1">Live RFC 5322 syntax validation, disposable/burner domain detection, async MX health checks, and 1-click SPF / DKIM / DMARC diagnostic inspector.</p>
                     </div>
                     <div class="flex items-center flex-wrap gap-2.5 shrink-0">
-                        <button type="button" onclick="runDnsDiagnostic(true)" class="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onclick="runDnsDiagnostic(true)" class="px-3.5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold shadow-lg shadow-black/40 transition-all flex items-center gap-1.5 cursor-pointer">
                             <i data-lucide="activity" class="w-3.5 h-3.5"></i>
                             <span>Test Sending Domain</span>
                         </button>
@@ -1310,7 +1347,7 @@
                     <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-4">
                         <div>
                             <h2 class="text-base font-bold text-white flex items-center gap-2">
-                                <i data-lucide="globe" class="w-4 h-4 text-cyan-400"></i>
+                                <i data-lucide="globe" class="w-4 h-4 text-[#a1a1a1]"></i>
                                 DNS Authenticator Checker (SPF, DKIM, DMARC, MX)
                             </h2>
                             <p class="text-xs text-slate-400 mt-0.5">Queries live DNS nameservers for your sending domain and alerts you if authentication records are missing or misconfigured per Google & Yahoo 2024 bulk sender rules.</p>
@@ -1336,7 +1373,7 @@
                         </div>
 
                         <div class="md:col-span-3 flex gap-2">
-                            <button type="submit" id="btn-run-dns-check" class="w-full py-2 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-lg shadow-cyan-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                            <button type="submit" id="btn-run-dns-check" class="w-full py-2 px-4 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                                 <i data-lucide="search" id="icon-dns-search" class="w-4 h-4"></i>
                                 <span id="text-dns-search">Query Live DNS</span>
                             </button>
@@ -1515,7 +1552,7 @@
                     <div class="lg:col-span-5 glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
                         <div class="border-b border-white/5 pb-3">
                             <h2 class="text-base font-bold text-white flex items-center gap-2">
-                                <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                                <i data-lucide="shield-check" class="w-4 h-4 text-[#a1a1a1]"></i>
                                 Mailbox Availability & Safety Inspector
                             </h2>
                             <p class="text-xs text-slate-400 mt-0.5">Lookup recipient availability, MX reachability, role/burner risk, and verify mailbox status before sending.</p>
@@ -1542,7 +1579,7 @@
                             </div>
 
                             <div class="flex items-center gap-2">
-                                <button type="submit" id="btn-validate-single" class="flex-1 py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                <button type="submit" id="btn-validate-single" class="flex-1 py-2 px-4 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                                     <i data-lucide="search" class="w-3.5 h-3.5"></i>
                                     <span>Lookup Sendability</span>
                                 </button>
@@ -1649,7 +1686,7 @@
                                     Clear
                                 </button>
                             </div>
-                            <button type="button" id="btn-validate-batch" onclick="validateBatchEmails()" class="py-2 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-500/25 transition-all flex items-center gap-1.5 cursor-pointer">
+                            <button type="button" id="btn-validate-batch" onclick="validateBatchEmails()" class="py-2 px-5 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 transition-all flex items-center gap-1.5 cursor-pointer">
                                 <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
                                 <span id="text-validate-batch">Clean & Verify List</span>
                             </button>
@@ -1679,14 +1716,14 @@
                             <!-- Batch Actions & Filter -->
                             <div class="flex flex-wrap items-center justify-between gap-3 pt-2">
                                 <div class="flex items-center gap-1.5">
-                                    <button type="button" onclick="filterBatchResults('all')" id="btn-batch-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white cursor-pointer">All (<span id="count-filter-all">0</span>)</button>
+                                    <button type="button" onclick="filterBatchResults('all')" id="btn-batch-filter-all" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-[#0a0a0a] cursor-pointer">All (<span id="count-filter-all">0</span>)</button>
                                     <button type="button" onclick="filterBatchResults('valid')" id="btn-batch-filter-valid" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white cursor-pointer">Clean (<span id="count-filter-valid">0</span>)</button>
                                     <button type="button" onclick="filterBatchResults('risky')" id="btn-batch-filter-risky" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white cursor-pointer">Burners (<span id="count-filter-risky">0</span>)</button>
                                     <button type="button" onclick="filterBatchResults('invalid')" id="btn-batch-filter-invalid" class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white cursor-pointer">Invalid (<span id="count-filter-invalid">0</span>)</button>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <button type="button" onclick="copyDeliverableEmails()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-white/10 transition-colors flex items-center gap-1 cursor-pointer">
-                                        <i data-lucide="copy" class="w-3 h-3 text-cyan-400"></i> Copy Clean
+                                        <i data-lucide="copy" class="w-3 h-3 text-[#a1a1a1]"></i> Copy Clean
                                     </button>
                                     <button type="button" onclick="exportCleanedEmailCsv()" class="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-medium border border-emerald-500/30 transition-colors flex items-center gap-1 cursor-pointer">
                                         <i data-lucide="download" class="w-3 h-3"></i> Export Clean CSV
@@ -1815,7 +1852,7 @@
                         <p class="text-sm text-slate-400 mt-1">Automated 14–30 day ramp-up schedules with provider balancing (Gmail / Outlook / Yahoo) and multi-relay round-robin with automatic failover.</p>
                     </div>
                     <div class="flex items-center flex-wrap gap-2.5 shrink-0">
-                        <button type="button" onclick="openNewWarmupModal()" class="px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold shadow-lg shadow-orange-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onclick="openNewWarmupModal()" class="px-3.5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold shadow-lg shadow-black/40 transition-all flex items-center gap-1.5 cursor-pointer">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                             <span>New Warmup Schedule</span>
                         </button>
@@ -1827,7 +1864,7 @@
                     <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
                         <div class="flex items-center justify-between text-xs text-slate-400">
                             <span class="font-medium">Active Schedules</span>
-                            <i data-lucide="flame" class="w-4 h-4 text-orange-400"></i>
+                            <i data-lucide="flame" class="w-4 h-4 text-[#a1a1a1]"></i>
                         </div>
                         <div class="text-2xl font-black text-white" id="warmup-kpi-active-count">0</div>
                         <div class="text-[11px] text-slate-500" id="warmup-kpi-total-recipients">0 total recipients warming</div>
@@ -1835,7 +1872,7 @@
                     <div class="glass-panel p-5 rounded-2xl border border-white/10 space-y-1">
                         <div class="flex items-center justify-between text-xs text-slate-400">
                             <span class="font-medium">Today's Warmup Cap</span>
-                            <i data-lucide="gauge" class="w-4 h-4 text-amber-400"></i>
+                            <i data-lucide="gauge" class="w-4 h-4 text-[#a1a1a1]"></i>
                         </div>
                         <div class="text-2xl font-black text-white" id="warmup-kpi-today-cap">0</div>
                         <div class="text-[11px] text-slate-500" id="warmup-kpi-today-sent">0 sent today</div>
@@ -1865,7 +1902,7 @@
                 <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
                     <div class="flex items-center justify-between border-b border-white/5 pb-3">
                         <h2 class="text-base font-bold text-white flex items-center gap-2">
-                            <i data-lucide="calendar" class="w-4 h-4 text-orange-400"></i>
+                            <i data-lucide="calendar" class="w-4 h-4 text-[#a1a1a1]"></i>
                             <span>Active Warmup Progression & Schedules</span>
                         </h2>
                         <button type="button" onclick="fetchWarmupSchedules()" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 cursor-pointer">
@@ -1915,7 +1952,7 @@
                 <div class="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
                     <div class="border-b border-white/5 pb-3">
                         <h2 class="text-base font-bold text-white flex items-center gap-2">
-                            <i data-lucide="calculator" class="w-4 h-4 text-emerald-400"></i>
+                            <i data-lucide="calculator" class="w-4 h-4 text-[#a1a1a1]"></i>
                             <span>Interactive Ramp-Up Calculator & Simulator</span>
                         </h2>
                         <p class="text-xs text-slate-400 mt-0.5">Model how your audience will be throttled and balanced across Gmail, Outlook, Yahoo, and corporate MX providers over time.</p>
@@ -1935,7 +1972,7 @@
                             </select>
                         </div>
                         <div class="flex items-end">
-                            <button type="button" onclick="runWarmupSimulation()" class="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                            <button type="button" onclick="runWarmupSimulation()" class="w-full py-2 px-3 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer">
                                 <i data-lucide="play" class="w-3.5 h-3.5"></i> Recompute Curve
                             </button>
                         </div>
@@ -1981,7 +2018,7 @@
                         <p class="text-sm text-slate-400 mt-1">Real-time webhook events dispatched to external CRMs, Slack, or endpoints on email sent, delivered, opened, clicked, bounced, or unsubscribed.</p>
                     </div>
                     <div class="flex items-center flex-wrap gap-2.5 shrink-0">
-                        <button type="button" onclick="openNewWebhookModal()" class="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/20 transition-all flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onclick="openNewWebhookModal()" class="px-3.5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-semibold shadow-lg shadow-black/40 transition-all flex items-center gap-1.5 cursor-pointer">
                             <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                             <span>Add Webhook Endpoint</span>
                         </button>
@@ -2113,7 +2150,7 @@
 
                 <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-new-warmup')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300 cursor-pointer">Cancel</button>
-                    <button type="submit" id="btn-submit-warmup" class="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold text-white shadow-lg shadow-orange-500/25 transition-all cursor-pointer">Initialize Warmup Schedule</button>
+                    <button type="submit" id="btn-submit-warmup" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-xs font-bold text-[#0a0a0a] shadow-lg shadow-black/40 transition-all cursor-pointer">Initialize Warmup Schedule</button>
                 </div>
             </form>
         </div>
@@ -2175,7 +2212,7 @@
                 </div>
                 <div class="flex items-center justify-end gap-2 pt-2 border-t border-white/5">
                     <button type="button" onclick="closeNewWebhookModal()" class="px-3.5 py-2 rounded-xl text-xs text-slate-400 hover:text-white cursor-pointer">Cancel</button>
-                    <button type="submit" id="btn-submit-webhook" class="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold shadow-lg shadow-violet-500/20 cursor-pointer">Save Webhook</button>
+                    <button type="submit" id="btn-submit-webhook" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 cursor-pointer">Save Webhook</button>
                 </div>
             </form>
         </div>
@@ -2219,7 +2256,7 @@
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-bulk-paste')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button onclick="submitBulkCustomerEmails()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Add contacts</button>
+                <button onclick="submitBulkCustomerEmails()" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-xs font-bold text-[#0a0a0a] shadow-lg shadow-black/40">Add contacts</button>
             </div>
         </div>
     </div>
@@ -2301,7 +2338,7 @@
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-add-subscriber')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white shadow-lg shadow-indigo-500/25">Save contact</button>
+                <button id="btn-sub-submit" onclick="submitAddSubscriber()" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-xs font-bold text-[#0a0a0a] shadow-lg shadow-black/40">Save contact</button>
             </div>
         </div>
     </div>
@@ -2362,7 +2399,7 @@
 
             <div class="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
                 <button onclick="closeModal('modal-csv-import')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                <button onclick="submitCsvImport()" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Upload & Import</button>
+                <button onclick="submitCsvImport()" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-xs font-bold text-[#0a0a0a]">Upload & Import</button>
             </div>
         </div>
     </div>
@@ -2424,7 +2461,7 @@
                     </button>
                     <div class="flex items-center gap-2">
                         <button type="button" onclick="closeModal('modal-add-smtp')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                        <button type="submit" id="btn-smtp-submit" class="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white">Save Mail Server</button>
+                        <button type="submit" id="btn-smtp-submit" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-xs font-bold text-[#0a0a0a]">Save Mail Server</button>
                     </div>
                 </div>
             </form>
@@ -2526,7 +2563,7 @@
 
                 <div class="flex items-center justify-between pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-gmail-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                    <button type="submit" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl btn-dark-blue text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
+                    <button type="submit" id="btn-submit-gmail-connect" class="px-5 py-2 rounded-xl btn-dark-blue text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all">
                         <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
                         <span>Connect & Verify Gmail</span>
                     </button>
@@ -2584,7 +2621,7 @@
 
                 <div class="flex items-center justify-between pt-3 border-t border-white/5">
                     <button type="button" onclick="closeModal('modal-brevo-connect')" class="px-4 py-2 rounded-xl bg-slate-800 text-xs text-slate-300">Cancel</button>
-                    <button type="submit" id="btn-submit-brevo-connect" class="px-5 py-2 rounded-xl btn-dark-green text-xs font-bold text-white shadow-lg flex items-center gap-1.5 transition-all">
+                    <button type="submit" id="btn-submit-brevo-connect" class="px-5 py-2 rounded-xl btn-dark-green text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all">
                         <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
                         <span>Connect & Verify Brevo</span>
                     </button>
@@ -2595,14 +2632,11 @@
 
     <!-- Modal 0: Unified Secure Authentication Login (Locked Gate) -->
     <div id="modal-auth-login" class="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 hidden">
-        <div class="glass-panel w-full max-w-md rounded-3xl border border-indigo-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
-            <!-- Glow accents -->
-            <div class="absolute -top-20 -left-20 w-44 h-44 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
-            <div class="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-600/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div class="glass-panel w-full max-w-md rounded-2xl p-6 sm:p-7 space-y-5 relative overflow-hidden">
 
             <!-- Header -->
             <div class="text-center relative z-10 space-y-1">
-                <div class="inline-flex p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 mb-2">
+                <div class="inline-flex p-3 rounded-2xl bg-[#1c1c1c] border border-[#2a2a2a] text-[#ededed] mb-2">
                     <i data-lucide="shield-check" class="w-7 h-7"></i>
                 </div>
                 <h2 class="text-xl font-extrabold text-white tracking-tight">Bitmail Authorization</h2>
@@ -2611,7 +2645,7 @@
 
             <!-- Auth Tabs: Password vs QR Scan -->
             <div class="flex rounded-xl bg-slate-900/90 border border-white/10 p-1 relative z-10">
-                <button type="button" id="auth-tab-btn-password" onclick="switchAuthTab('password')" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow">
+                <button type="button" id="auth-tab-btn-password" onclick="switchAuthTab('password')" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-[#0a0a0a] shadow">
                     Password Sign In
                 </button>
                 <button type="button" id="auth-tab-btn-scan" onclick="switchAuthTab('scan')" class="flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all">
@@ -2656,7 +2690,7 @@
 
                     <div id="login-error-alert" class="hidden p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center"></div>
 
-                    <button id="login-submit-btn" type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                    <button id="login-submit-btn" type="submit" class="w-full py-2.5 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] font-bold text-xs shadow-lg shadow-black/40 transition-all flex items-center justify-center gap-2 cursor-pointer">
                         <i data-lucide="log-in" class="w-4 h-4"></i>
                         <span>Unlock Platform</span>
                     </button>
@@ -2718,7 +2752,7 @@
                     <input id="cp-confirm-password" type="password" required minlength="6" autocomplete="new-password" class="w-full px-3 py-2 bg-slate-950/80 border border-white/10 rounded-xl text-xs text-white">
                 </div>
                 <div id="cp-error-alert" class="hidden p-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs"></div>
-                <button type="submit" class="w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow transition-all cursor-pointer">
+                <button type="submit" class="w-full py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] font-bold text-xs shadow transition-all cursor-pointer">
                     Update Password
                 </button>
             </form>
@@ -2729,7 +2763,6 @@
     <div id="modal-scan-login" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 hidden">
         <div class="glass-panel w-full max-w-md rounded-3xl border border-purple-500/30 p-6 sm:p-7 space-y-5 shadow-2xl relative overflow-hidden">
             <!-- Background Glow Effect -->
-            <div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-600/20 rounded-full blur-3xl pointer-events-none"></div>
 
             <div class="flex items-center justify-between relative z-10">
                 <div class="flex items-center gap-2.5">
@@ -2818,7 +2851,7 @@
                     <button type="button" onclick="closeModal('modal-edit-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
                         Cancel
                     </button>
-                    <button type="submit" id="btn-edit-group-submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg shadow-indigo-500/25 flex items-center gap-1.5 transition-all">
+                    <button type="submit" id="btn-edit-group-submit" class="px-4 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 flex items-center gap-1.5 transition-all">
                         <i data-lucide="check" class="w-3.5 h-3.5"></i>
                         <span>Save Changes</span>
                     </button>
@@ -2905,7 +2938,7 @@
                     <button type="button" onclick="closeModal('modal-create-group')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
                         Cancel
                     </button>
-                    <button type="submit" id="btn-create-group-submit" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all cursor-pointer">
+                    <button type="submit" id="btn-create-group-submit" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 flex items-center gap-1.5 transition-all cursor-pointer">
                         <i data-lucide="check" class="w-3.5 h-3.5"></i>
                         <span>Create list</span>
                     </button>
@@ -2967,7 +3000,7 @@
                 <button type="button" onclick="closeModal('modal-insert-table')" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors">
                     Cancel
                 </button>
-                <button type="button" onclick="confirmInsertHtmlTable()" class="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-500/25 flex items-center gap-1.5 transition-all cursor-pointer">
+                <button type="button" onclick="confirmInsertHtmlTable()" class="px-5 py-2 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-bold shadow-lg shadow-black/40 flex items-center gap-1.5 transition-all cursor-pointer">
                     <i data-lucide="plus" class="w-3.5 h-3.5"></i>
                     <span>Insert Table into Message</span>
                 </button>
@@ -2998,7 +3031,7 @@
                 <!-- Device Controls & Actions -->
                 <div class="flex items-center gap-2 shrink-0">
                     <div class="flex items-center bg-slate-900 border border-white/10 rounded-lg p-0.5">
-                        <button type="button" onclick="setPreviewDevice('desktop')" id="preview-btn-desktop" class="px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-white flex items-center gap-1 transition-all" title="Desktop Email View (640px)">
+                        <button type="button" onclick="setPreviewDevice('desktop')" id="preview-btn-desktop" class="px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-[#0a0a0a] flex items-center gap-1 transition-all" title="Desktop Email View (640px)">
                             <i data-lucide="monitor" class="w-3.5 h-3.5"></i>
                             <span class="hidden sm:inline">Desktop</span>
                         </button>
@@ -3067,6 +3100,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.6.1"></script>
+    <script src="/static/js/app.js?v=2.7.0"></script>
 </body>
 </html>

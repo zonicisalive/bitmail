@@ -863,10 +863,12 @@ async function renderDeliverabilityChart() {
         if (App.chartInstance) App.chartInstance.destroy();
 
         const series = data.datasets || {};
-        const line = (label, key, color, fill) => ({
+        // Bitnade palette: series differ by lightness (and a dash), red is kept for failures.
+        const line = (label, key, color, fill, dash) => ({
             label,
             data: series[key] || [],
             borderColor: color,
+            borderDash: dash || [],
             backgroundColor: fill || 'transparent',
             fill: Boolean(fill),
             tension: 0.35,
@@ -874,7 +876,7 @@ async function renderDeliverabilityChart() {
             pointRadius: 0,
             pointHoverRadius: 4,
             pointHoverBorderWidth: 2,
-            pointHoverBackgroundColor: '#0f172a',
+            pointHoverBackgroundColor: '#0a0a0a',
             pointHoverBorderColor: color,
         });
 
@@ -883,10 +885,10 @@ async function renderDeliverabilityChart() {
             data: {
                 labels: data.labels || [],
                 datasets: [
-                    line('Delivered', 'delivered', '#2ea043', 'rgba(46, 160, 67, 0.10)'),
-                    line('Opened', 'opened', '#a371f7'),
-                    line('Clicked', 'clicked', '#388bfd'),
-                    line('Failed', 'failed', '#f85149'),
+                    line('Delivered', 'delivered', '#ededed', 'rgba(237, 237, 237, 0.06)'),
+                    line('Opened', 'opened', '#a1a1a1'),
+                    line('Clicked', 'clicked', '#737373', null, [4, 4]),
+                    line('Failed', 'failed', '#f87171'),
                 ],
             },
             options: {
@@ -897,21 +899,21 @@ async function renderDeliverabilityChart() {
                     legend: {
                         align: 'end',
                         labels: {
-                            color: '#8b949e',
+                            color: '#a1a1a1',
                             boxWidth: 8,
                             boxHeight: 8,
                             usePointStyle: true,
                             pointStyle: 'circle',
                             padding: 16,
-                            font: { family: 'Plus Jakarta Sans', size: 11 },
+                            font: { family: 'Geist', size: 11 },
                         },
                     },
                     tooltip: {
-                        backgroundColor: '#111824',
-                        borderColor: '#28374d',
+                        backgroundColor: '#141414',
+                        borderColor: '#2a2a2a',
                         borderWidth: 1,
-                        titleColor: '#f0f6fc',
-                        bodyColor: '#c9d1d9',
+                        titleColor: '#ededed',
+                        bodyColor: '#a1a1a1',
                         padding: 10,
                         cornerRadius: 8,
                         displayColors: true,
@@ -922,13 +924,13 @@ async function renderDeliverabilityChart() {
                     x: {
                         border: { display: false },
                         grid: { display: false },
-                        ticks: { color: '#6e7681', font: { size: 10 }, maxRotation: 0, autoSkipPadding: 16 },
+                        ticks: { color: '#737373', font: { size: 10 }, maxRotation: 0, autoSkipPadding: 16 },
                     },
                     y: {
                         beginAtZero: true,
                         border: { display: false },
                         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { color: '#6e7681', font: { size: 10 }, precision: 0 },
+                        ticks: { color: '#737373', font: { size: 10 }, precision: 0 },
                     },
                 },
             },
@@ -949,12 +951,12 @@ function setBroadcastAudienceMode(mode) {
     const modeList = document.getElementById('broadcast-mode-list');
 
     if (mode === 'paste') {
-        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue text-white transition-all cursor-pointer';
+        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue transition-all cursor-pointer';
         if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all cursor-pointer';
         if (modePaste) modePaste.classList.remove('hidden');
         if (modeList) modeList.classList.add('hidden');
     } else {
-        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue text-white transition-all cursor-pointer';
+        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue transition-all cursor-pointer';
         if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all cursor-pointer';
         if (modeList) modeList.classList.remove('hidden');
         if (modePaste) modePaste.classList.add('hidden');
@@ -975,20 +977,20 @@ function setBroadcastTimingMode(mode) {
     // Reset button states
     if (btnNow) btnNow.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
     if (btnSchedule) btnSchedule.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer';
-    if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-orange-400 hover:text-white transition-all cursor-pointer flex items-center gap-1';
+    if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all cursor-pointer flex items-center gap-1';
 
     if (scheduleWrap) scheduleWrap.classList.add('hidden');
     if (warmupWrap) warmupWrap.classList.add('hidden');
 
     if (mode === 'now') {
-        if (btnNow) btnNow.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
+        if (btnNow) btnNow.className = 'px-2.5 py-1 rounded-md text-[#0a0a0a] bg-indigo-600 font-semibold transition-all cursor-pointer';
         if (launchBtn) {
             launchBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i><span>Send to All Now</span>';
-            launchBtn.className = 'px-5 py-2.5 rounded-xl btn-dark-green text-white text-xs font-extrabold shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl btn-dark-green text-xs font-extrabold shadow-lg shadow-black/40 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
             initLucide();
         }
     } else if (mode === 'schedule') {
-        if (btnSchedule) btnSchedule.className = 'px-2.5 py-1 rounded-md text-white bg-indigo-600 font-semibold transition-all cursor-pointer';
+        if (btnSchedule) btnSchedule.className = 'px-2.5 py-1 rounded-md text-[#0a0a0a] bg-indigo-600 font-semibold transition-all cursor-pointer';
         if (scheduleWrap) scheduleWrap.classList.remove('hidden');
         if (input && (!input.value || new Date(input.value).getTime() <= Date.now())) {
             const nextHour = new Date(Date.now() + 3600000);
@@ -997,16 +999,16 @@ function setBroadcastTimingMode(mode) {
         }
         if (launchBtn) {
             launchBtn.innerHTML = '<i data-lucide="clock" class="w-4 h-4"></i><span>Schedule Broadcast</span>';
-            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold shadow-lg shadow-purple-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-extrabold shadow-lg shadow-black/40 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
             initLucide();
         }
     } else if (mode === 'warmup') {
-        if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-white bg-orange-600 font-semibold transition-all cursor-pointer flex items-center gap-1 shadow-sm';
+        if (btnWarmup) btnWarmup.className = 'px-2.5 py-1 rounded-md text-[#0a0a0a] bg-indigo-600 font-semibold transition-all cursor-pointer flex items-center gap-1';
         if (warmupWrap) warmupWrap.classList.remove('hidden');
         updateBroadcastWarmupHint();
         if (launchBtn) {
             launchBtn.innerHTML = '<i data-lucide="flame" class="w-4 h-4"></i><span>Start Warmup Ramp-Up</span>';
-            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-extrabold shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
+            launchBtn.className = 'px-5 py-2.5 rounded-xl bg-[#ededed] hover:bg-white text-[#0a0a0a] text-xs font-extrabold shadow-lg shadow-black/40 flex items-center justify-center gap-2 transition-all whitespace-nowrap flex-shrink-0 cursor-pointer';
             initLucide();
         }
     }
@@ -1611,7 +1613,7 @@ function updateSmtpStatusHint() {
                 <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0 text-amber-400"></i>
                 <span><strong>Sandbox Simulator:</strong> Emails are saved in Storage Vault only (no external dispatch).</span>
             </div>
-            <button type="button" onclick="openGmailConnectModal()" class="px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-[10px] shrink-0 flex items-center gap-1 shadow">
+            <button type="button" onclick="openGmailConnectModal()" class="px-2.5 py-1 rounded-lg bg-[#ededed] hover:bg-white text-[#0a0a0a] font-semibold text-[10px] shrink-0 flex items-center gap-1">
                 <i data-lucide="mail" class="w-3 h-3"></i> Connect Gmail →
             </button>
         `;
@@ -1619,7 +1621,7 @@ function updateSmtpStatusHint() {
         hintEl.className = "mt-2 p-2.5 rounded-xl text-[11px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-between transition-all";
         hintEl.innerHTML = `
             <div class="flex items-center gap-1.5">
-                <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-emerald-400"></i>
+                <i data-lucide="shield-check" class="w-4 h-4 shrink-0 text-[#a1a1a1]"></i>
                 <span><strong>Live Delivery Active:</strong> Dispatches directly to real recipient inboxes via <code>${selectedConfig.host}:${selectedConfig.port}</code> and archives in Vault.</span>
             </div>
         `;
@@ -1705,7 +1707,7 @@ function setPreviewDevice(device) {
     const btnFull = document.getElementById('preview-btn-full');
 
     const inactiveClass = 'px-2.5 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-all';
-    const activeClass = 'px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-white flex items-center gap-1 transition-all';
+    const activeClass = 'px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 text-[#0a0a0a] flex items-center gap-1 transition-all';
 
     if (btnDesk) btnDesk.className = device === 'desktop' ? activeClass : inactiveClass;
     if (btnMob) btnMob.className = device === 'mobile' ? activeClass : inactiveClass;
@@ -2447,7 +2449,7 @@ function renderContactsPager() {
     const btn = (label, page, disabled, current = false, aria = '') => `
         <button type="button" ${disabled ? 'disabled' : ''} onclick="goToContactsPage(${page})"
                 ${aria ? `aria-label="${aria}"` : ''} ${current ? 'aria-current="page"' : ''}
-                class="min-w-[2rem] h-8 px-2 rounded-lg text-xs font-semibold tabular-nums ${current ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">${label}</button>`;
+                class="min-w-[2rem] h-8 px-2 rounded-lg text-xs font-semibold tabular-nums ${current ? 'bg-indigo-600 text-[#0a0a0a]' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'} disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">${label}</button>`;
 
     let html = btn('‹', c.page - 1, c.page <= 1, false, 'Previous page');
     pages.forEach((n, i) => {
@@ -2490,7 +2492,7 @@ function renderSubscribersTable(rows = App.subscribers) {
         const lists = (sub.lists || []).map(contactListName).filter(Boolean);
         const tags = Array.isArray(sub.tags) ? sub.tags : [];
         const chips = [
-            ...lists.map(n => `<span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-200 border border-amber-500/20 text-[10px] font-semibold max-w-[10rem] truncate" title="List: ${escapeHtml(n)}">${escapeHtml(n)}</span>`),
+            ...lists.map(n => `<span class="px-1.5 py-0.5 rounded bg-white/5 text-[#ededed] border border-[#2a2a2a] text-[10px] font-semibold max-w-[10rem] truncate" title="List: ${escapeHtml(n)}">${escapeHtml(n)}</span>`),
             ...tags.map(t => `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-white/5 text-[10px]">#${escapeHtml(t)}</span>`)
         ];
 
@@ -3484,10 +3486,10 @@ function renderCampaignsTable(rows = App.campaigns) {
                 <td class="py-3 px-4 text-right">
                     <div class="flex items-center justify-end gap-2">
                         ${camp.status === 'draft' ? `
-                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px]">Launch</button>
+                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-[#ededed] hover:bg-white text-[#0a0a0a] font-bold text-[11px]">Launch</button>
                         ` : ''}
                         ${camp.status === 'scheduled' ? `
-                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-[11px]" title="Launch immediately">Launch Now</button>
+                            <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-[#ededed] hover:bg-white text-[#0a0a0a] font-bold text-[11px]" title="Launch immediately">Launch Now</button>
                             <button onclick="rescheduleCampaign('${camp.id}')" class="p-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20" title="Reschedule delivery time">
                                 <i data-lucide="calendar-clock" class="w-3.5 h-3.5"></i>
                             </button>
@@ -4348,7 +4350,7 @@ function uiDialog(opts) {
 
     const confirmClass = danger
         ? 'bg-rose-600 hover:bg-rose-500 text-white'
-        : 'bg-indigo-600 hover:bg-indigo-500 text-white';
+        : 'bg-[#ededed] hover:bg-white text-[#0a0a0a]';
 
     const fieldClass = 'w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500';
     const inputHtml = input && input.options ? `
@@ -4922,7 +4924,7 @@ function switchAuthTab(tab) {
 
     if (tab === 'password') {
         if (btnPass) {
-            btnPass.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow';
+            btnPass.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-[#0a0a0a] shadow';
         }
         if (btnScan) {
             btnScan.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
@@ -4931,7 +4933,7 @@ function switchAuthTab(tab) {
         if (tabScan) tabScan.classList.add('hidden');
     } else {
         if (btnScan) {
-            btnScan.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow';
+            btnScan.className = 'flex-1 py-1.5 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-[#0a0a0a] shadow';
         }
         if (btnPass) {
             btnPass.className = 'flex-1 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition-all';
@@ -6189,7 +6191,7 @@ function filterBatchResults(filter) {
         const btn = document.getElementById(`btn-batch-filter-${f}`);
         if (btn) {
             if (f === filter) {
-                btn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-white cursor-pointer';
+                btn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-600 text-[#0a0a0a] cursor-pointer';
             } else {
                 btn.className = 'px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-800 text-slate-300 hover:text-white cursor-pointer';
             }
