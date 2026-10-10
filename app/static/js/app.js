@@ -1397,7 +1397,10 @@ function insertBroadcastTag(tag) {
 }
 
 async function promptAddCustomPlaceholder(context = 'broadcast') {
-    const raw = prompt('Enter a new placeholder tag name (e.g. phone, address, points, order_id):');
+    const raw = await promptDialog('Enter a new placeholder tag name (e.g. phone, address, points, order_id).', '', {
+        title: 'Add custom placeholder',
+        confirmText: 'Add tag'
+    });
     if (!raw) return;
 
     const clean = raw.trim().toLowerCase().replace(/[{}]/g, '').replace(/[^a-z0-9_]/g, '_');
@@ -2788,9 +2791,13 @@ async function handleEditGroupSubmit(e) {
 }
 
 async function deleteCustomerGroup(listId, groupName) {
-    if (!confirm(`Are you sure you want to delete the group "${groupName}"?\n\nCustomer contacts in this group will NOT be deleted; they will simply no longer belong to this group.`)) {
-        return;
-    }
+    const ok = await confirmDialog(`Delete the group "${groupName}"?`, {
+        title: 'Confirm delete',
+        detail: 'Customer contacts in this group will NOT be deleted; they will simply no longer belong to this group.',
+        confirmText: 'Delete group',
+        danger: true
+    });
+    if (!ok) return;
 
     try {
         const res = await fetch(`/api/lists/${listId}`, {
@@ -6728,7 +6735,13 @@ async function testWebhook(webhookId) {
 }
 
 async function deleteWebhook(webhookId) {
-    if (!confirm('Are you sure you want to delete this webhook endpoint and its delivery logs?')) return;
+    const ok = await confirmDialog('Delete this webhook endpoint and its delivery logs?', {
+        title: 'Confirm delete',
+        detail: 'This cannot be undone.',
+        confirmText: 'Delete webhook',
+        danger: true
+    });
+    if (!ok) return;
     try {
         const res = await fetch(`/api/webhooks/${webhookId}`, { method: 'DELETE' });
         if (res.ok) {
