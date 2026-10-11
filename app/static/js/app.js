@@ -5627,68 +5627,73 @@ function renderDnsDiagnosticResults(diag) {
     if (domainTag) domainTag.textContent = diag.domain;
     if (timestampTag) timestampTag.textContent = new Date(diag.checked_at).toLocaleTimeString();
 
+    // Headline comes from the server's summary, which is written from the actual
+    // findings - the score alone used to say "Missing SPF / DMARC" when both existed.
+    const summary = diag.summary || { level: diag.score >= 90 ? 'good' : 'warning', title: '', message: '', issues: [] };
+    const LEVEL_STYLE = {
+        good: ['bg-emerald-500/15', 'border-emerald-500/30', 'text-emerald-300'],
+        warning: ['bg-amber-500/15', 'border-amber-500/30', 'text-amber-300'],
+        unknown: ['bg-white/5', 'border-[#2a2a2a]', 'text-slate-300'],
+        critical: ['bg-rose-500/15', 'border-rose-500/30', 'text-rose-300'],
+    };
+    const [bg, border, text] = LEVEL_STYLE[summary.level] || LEVEL_STYLE.warning;
     if (scoreBadge) {
-        scoreBadge.className = 'w-16 h-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border ';
-        if (diag.score >= 90) {
-            scoreBadge.classList.add('bg-emerald-500/20', 'border-emerald-500/30');
-            if (scoreVal) scoreVal.className = 'text-2xl font-black text-emerald-400 font-mono';
-            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-emerald-300 tracking-wider';
-            if (scoreTitle) scoreTitle.textContent = 'Excellent Deliverability Configuration';
-            if (scoreDesc) scoreDesc.textContent = 'Domain meets Google & Yahoo 2024 bulk sender rules. Inboxes will trust outgoing messages.';
-        } else if (diag.score >= 70) {
-            scoreBadge.classList.add('bg-amber-500/20', 'border-amber-500/30');
-            if (scoreVal) scoreVal.className = 'text-2xl font-black text-amber-400 font-mono';
-            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-amber-300 tracking-wider';
-            if (scoreTitle) scoreTitle.textContent = 'Moderate Deliverability – Improvements Advised';
-            if (scoreDesc) scoreDesc.textContent = 'One or more authentication records are weak or missing. Messages may land in Spam.';
-        } else {
-            scoreBadge.classList.add('bg-rose-500/20', 'border-rose-500/30');
-            if (scoreVal) scoreVal.className = 'text-2xl font-black text-rose-400 font-mono';
-            if (scoreGrade) scoreGrade.className = 'text-[10px] font-bold text-rose-300 tracking-wider';
-            if (scoreTitle) scoreTitle.textContent = 'Critical Deliverability Issues Detected';
-            if (scoreDesc) scoreDesc.textContent = 'Missing essential authentication (SPF / DMARC). Outgoing mail risks direct rejection.';
-        }
+        scoreBadge.className = `w-16 h-16 rounded-2xl flex flex-col items-center justify-center shrink-0 border ${bg} ${border}`;
+        if (scoreVal) scoreVal.className = `text-2xl font-black font-mono ${text}`;
+        if (scoreGrade) scoreGrade.className = `text-[10px] font-bold tracking-wider ${text}`;
+    }
+    if (scoreTitle) scoreTitle.textContent = summary.title;
+    if (scoreDesc) scoreDesc.textContent = summary.message;
+    const issuesEl = document.getElementById('dns-score-issues');
+    if (issuesEl) {
+        const others = (summary.issues || []).filter(i => i.text !== summary.message);
+        const DOT = { critical: 'bg-rose-400', warning: 'bg-amber-400', unknown: 'bg-slate-400', info: 'bg-slate-600' };
+        issuesEl.innerHTML = others.map(i => `
+            <li class="flex items-start gap-2"><span class="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${DOT[i.level] || DOT.info}"></span><span>${escapeHtml(i.text)}</span></li>
+        `).join('');
+        issuesEl.classList.toggle('hidden', others.length === 0);
     }
 
+    // Status chips: "UNKNOWN" when a lookup failed, never "MISSING".
+    const chip = (el, label, state) => {
+        if (!el) return;
+        const style = { ok: LEVEL_STYLE.good, warn: LEVEL_STYLE.warning, bad: LEVEL_STYLE.critical, unknown: LEVEL_STYLE.unknown }[state];
+        el.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${style[0]} ${style[1]} ${style[2]}`;
+        el.textContent = label;
+    };
     const spfSummary = document.getElementById('dns-summary-spf');
     const dmarcSummary = document.getElementById('dns-summary-dmarc');
     const dkimSummary = document.getElementById('dns-summary-dkim');
     const mxSummary = document.getElementById('dns-summary-mx');
+    const st = r => r.lookup_failed ? 'unknown' : null;
 
-    if (spfSummary) {
-        const pass = diag.spf.status === 'pass' || diag.spf.status === 'softfail';
-        spfSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
-        spfSummary.textContent = `SPF: ${diag.spf.status.toUpperCase()}`;
-    }
-    if (dmarcSummary) {
-        const pass = diag.dmarc.status === 'pass' || diag.dmarc.status === 'warning';
-        dmarcSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
-        dmarcSummary.textContent = `DMARC: ${diag.dmarc.policy ? diag.dmarc.policy.toUpperCase() : diag.dmarc.status.toUpperCase()}`;
-    }
-    if (dkimSummary) {
-        const pass = diag.dkim.status === 'pass';
-        dkimSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'}`;
-        dkimSummary.textContent = `DKIM: ${pass ? 'FOUND' : 'MISSING'}`;
-    }
-    if (mxSummary) {
-        const pass = diag.mx.status === 'pass';
-        mxSummary.className = `px-2.5 py-1 rounded-lg text-xs font-semibold border ${pass ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`;
-        mxSummary.textContent = `MX: ${diag.mx.records && diag.mx.records.length ? `${diag.mx.records.length} ACTIVE` : 'NONE'}`;
-    }
+    chip(spfSummary, `SPF: ${diag.spf.lookup_failed ? 'UNKNOWN' : diag.spf.record ? (diag.spf.policy || 'FOUND').toUpperCase() : 'MISSING'}`,
+        st(diag.spf) || (diag.spf.status === 'pass' ? 'ok' : diag.spf.record ? 'warn' : 'bad'));
+    chip(dmarcSummary, `DMARC: ${diag.dmarc.lookup_failed ? 'UNKNOWN' : diag.dmarc.policy ? 'p=' + diag.dmarc.policy : 'MISSING'}`,
+        st(diag.dmarc) || (diag.dmarc.status === 'pass' ? 'ok' : diag.dmarc.record ? 'warn' : 'bad'));
+    chip(dkimSummary, `DKIM: ${diag.dkim.lookup_failed ? 'UNKNOWN' : diag.dkim.status === 'pass' ? (diag.dkim.selectors_found || []).join(', ') : 'NOT FOUND'}`,
+        st(diag.dkim) || (diag.dkim.status === 'pass' ? 'ok' : 'warn'));
+    chip(mxSummary, `MX: ${diag.mx.lookup_failed ? 'UNKNOWN' : diag.mx.records && diag.mx.records.length ? diag.mx.records.length + ' FOUND' : 'NONE'}`,
+        st(diag.mx) || (diag.mx.status === 'pass' ? 'ok' : 'unknown'));
 
     // Pillar 1: SPF
     const badgeSpf = document.getElementById('badge-dns-spf');
     const detailSpf = document.getElementById('detail-dns-spf');
     const recordBoxSpf = document.getElementById('record-box-spf');
     const recordTextSpf = document.getElementById('record-text-spf');
+    const CARD = {
+        pass: 'bg-emerald-500/20 text-emerald-300',
+        warn: 'bg-amber-500/20 text-amber-300',
+        warning: 'bg-amber-500/20 text-amber-300',
+        unknown: 'bg-slate-800 text-slate-300',
+    };
+    const cardClass = status => `px-2 py-0.5 rounded-md text-[11px] font-bold ${CARD[status] || 'bg-rose-500/20 text-rose-300'}`;
+    const reasonText = r => r.details || (r.reasons || []).join(' ');
     if (badgeSpf) {
         badgeSpf.textContent = diag.spf.status.toUpperCase();
-        badgeSpf.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
-            diag.spf.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' :
-            (diag.spf.status === 'softfail' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300')
-        }`;
+        badgeSpf.className = cardClass(diag.spf.status);
     }
-    if (detailSpf) detailSpf.textContent = diag.spf.details || 'SPF record check complete.';
+    if (detailSpf) detailSpf.textContent = reasonText(diag.spf) || 'SPF record check complete.';
     if (recordBoxSpf && recordTextSpf) {
         if (diag.spf.record) {
             recordTextSpf.textContent = diag.spf.record;
@@ -5706,17 +5711,10 @@ function renderDnsDiagnosticResults(diag) {
     if (badgeDmarc) {
         const pol = diag.dmarc.policy ? `p=${diag.dmarc.policy}` : diag.dmarc.status.toUpperCase();
         badgeDmarc.textContent = pol;
-        badgeDmarc.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
-            diag.dmarc.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' :
-            (diag.dmarc.status === 'warning' ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300')
-        }`;
+        badgeDmarc.className = cardClass(diag.dmarc.status);
     }
     if (detailDmarc) {
-        let msg = diag.dmarc.details || 'DMARC record check complete.';
-        if (diag.dmarc.meets_2024_bulk_requirements) {
-            msg += ' (Meets Google/Yahoo 2024 bulk sender rules)';
-        }
-        detailDmarc.textContent = msg;
+        detailDmarc.textContent = reasonText(diag.dmarc) || 'DMARC record check complete.';
     }
     if (recordBoxDmarc && recordTextDmarc) {
         if (diag.dmarc.record) {
@@ -5734,12 +5732,10 @@ function renderDnsDiagnosticResults(diag) {
     const recordTextDkim = document.getElementById('record-text-dkim');
     const dkimQueryLabel = document.getElementById('dkim-query-label');
     if (badgeDkim) {
-        badgeDkim.textContent = diag.dkim.status === 'pass' ? 'ACTIVE' : diag.dkim.status.toUpperCase();
-        badgeDkim.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
-            diag.dkim.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
-        }`;
+        badgeDkim.textContent = diag.dkim.status === 'pass' ? 'ACTIVE' : diag.dkim.status === 'warn' ? 'NOT FOUND' : diag.dkim.status.toUpperCase();
+        badgeDkim.className = cardClass(diag.dkim.status);
     }
-    if (detailDkim) detailDkim.textContent = diag.dkim.details || 'DKIM signature check complete.';
+    if (detailDkim) detailDkim.textContent = (diag.dkim.reasons || []).join(' ') || 'DKIM check complete.';
     if (dkimQueryLabel && diag.dkim.selector) {
         dkimQueryLabel.textContent = `Selector (${diag.dkim.selector}):`;
     }
@@ -5757,14 +5753,13 @@ function renderDnsDiagnosticResults(diag) {
     const detailMx = document.getElementById('detail-dns-mx');
     const recordBoxMx = document.getElementById('record-box-mx');
     if (badgeMx) {
-        badgeMx.textContent = diag.mx.status.toUpperCase();
-        badgeMx.className = `px-2 py-0.5 rounded-md text-[11px] font-bold ${
-            diag.mx.status === 'pass' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
-        }`;
+        badgeMx.textContent = diag.mx.status === 'fail' ? 'NONE' : diag.mx.status.toUpperCase();
+        // A sending domain without MX is not an authentication failure; show it neutrally.
+        badgeMx.className = cardClass(diag.mx.status === 'fail' ? 'unknown' : diag.mx.status);
     }
     if (detailMx) {
-        let msg = diag.mx.details || 'MX record probe complete.';
-        if (diag.mx.provider) msg = `Provider: ${diag.mx.provider}. ` + msg;
+        let msg = (diag.mx.reasons || []).join(' ') || 'MX record probe complete.';
+        if (diag.mx.provider && diag.mx.status === 'pass') msg = `Provider: ${diag.mx.provider}. ` + msg;
         detailMx.textContent = msg;
     }
     if (recordBoxMx) {
@@ -6802,11 +6797,25 @@ function renderBlacklistResults(data) {
     const listedEl = document.getElementById('blacklist-res-listed');
     const tbody = document.getElementById('blacklist-results-tbody');
 
-    if (targetEl) targetEl.textContent = `${data.target} ${data.resolved_ip ? `(${data.resolved_ip})` : ''}`;
+    if (targetEl) {
+        targetEl.textContent = data.target;
+        // Say which IP was checked and why, so a domain's website IP is never mistaken for its mail IP.
+        if (data.resolved_ip) targetEl.title = `${data.resolved_ip} — ${data.ip_source || ''}`;
+    }
+    const sourceEl = document.getElementById('blacklist-res-source');
+    if (sourceEl) {
+        sourceEl.textContent = data.resolved_ip
+            ? `IP checked: ${data.resolved_ip} (${data.ip_source || 'resolved'})`
+            : (data.target_type === 'domain' ? 'No mail server IP found; only domain lists were checked.' : '');
+    }
     if (totalEl) totalEl.textContent = `${data.total_zones_checked} Zones`;
-    if (cleanEl) cleanEl.textContent = `${data.clean_count} Clean`;
+    if (cleanEl) {
+        const extra = data.unknown_count ? ` · ${data.unknown_count} unknown` : '';
+        cleanEl.textContent = `${data.clean_count} Clean${extra}`;
+    }
     if (listedEl) {
-        listedEl.textContent = `${data.listed_count} Listed`;
+        const net = data.network_listed_count ? ` · ${data.network_listed_count} network-wide` : '';
+        listedEl.textContent = `${data.listed_count} Listed${net}`;
         listedEl.className = data.listed_count > 0 ? 'text-base font-bold text-rose-400 font-mono' : 'text-base font-bold text-emerald-400 font-mono';
     }
 
@@ -6816,29 +6825,46 @@ function renderBlacklistResults(data) {
             return;
         }
 
-        const sorted = [...data.results].sort((a, b) => (b.listed ? 1 : 0) - (a.listed ? 1 : 0));
+        // Real listings first, then network-wide, then unknown, then clean.
+        const rank = r => r.listed && r.scope !== 'network' ? 0 : r.listed ? 1 : r.error ? 2 : 3;
+        const sorted = [...data.results].sort((a, b) => rank(a) - rank(b));
 
         tbody.innerHTML = sorted.map(r => {
-            const isListed = r.listed;
-            const statusBadge = isListed
-                ? `<span class="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 text-[10px]">LISTED</span>`
-                : (r.error ? `<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]">INCONCLUSIVE</span>`
-                           : `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium text-[10px]">CLEAN</span>`);
+            const realListing = r.listed && r.scope !== 'network';
+            const networkListing = r.listed && r.scope === 'network';
 
-            const delistLink = r.delist_url
+            let statusBadge;
+            if (realListing) {
+                statusBadge = `<span class="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 text-[10px]">LISTED</span>`;
+            } else if (networkListing) {
+                statusBadge = `<span class="px-2 py-0.5 rounded-full bg-white/5 text-slate-300 font-bold border border-[#2a2a2a] text-[10px] whitespace-nowrap" title="${escapeHtml(r.note || '')}">NETWORK-WIDE</span>`;
+            } else if (r.error) {
+                statusBadge = `<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px]" title="${escapeHtml(r.error)}">UNKNOWN</span>`;
+            } else {
+                statusBadge = `<span class="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium text-[10px]">CLEAN</span>`;
+            }
+
+            const delistLink = realListing && r.delist_url
                 ? `<a href="${escapeHtml(r.delist_url)}" target="_blank" rel="noopener noreferrer" class="text-rose-400 hover:text-rose-300 underline font-semibold flex items-center justify-end gap-1">Delist ↗</a>`
                 : `<span class="text-slate-600">--</span>`;
 
-            const returnDesc = isListed
-                ? `<span class="text-rose-300 font-semibold">${escapeHtml(r.category || 'Listed')}</span> <span class="font-mono text-slate-500">(${escapeHtml(r.return_code || '')})</span>`
-                : `<span class="text-slate-500 font-mono">${r.response_time_ms}ms</span>`;
+            let returnDesc;
+            if (realListing) {
+                returnDesc = `<span class="text-rose-300 font-semibold">${escapeHtml(r.category || 'Listed')}</span> <span class="font-mono text-slate-500">(${escapeHtml(r.return_code || '')})</span>`;
+            } else if (networkListing) {
+                returnDesc = `<span class="text-slate-300">${escapeHtml(r.note || 'Lists whole provider ranges')}</span>`;
+            } else if (r.error) {
+                returnDesc = `<span class="text-slate-400">${escapeHtml(r.error)}</span>`;
+            } else {
+                returnDesc = `<span class="text-slate-500 font-mono">${r.response_time_ms}ms</span>`;
+            }
 
             return `
-                <tr class="hover:bg-white/[0.02] ${isListed ? 'bg-rose-950/20' : ''}">
+                <tr class="hover:bg-white/[0.02] ${realListing ? 'bg-rose-950/20' : ''}">
                     <td class="py-2.5 px-3 font-medium text-white">${escapeHtml(r.name)}</td>
                     <td class="py-2.5 px-3 font-mono text-slate-400 text-[10px]">${escapeHtml(r.zone)}</td>
                     <td class="py-2.5 px-3">${statusBadge}</td>
-                    <td class="py-2.5 px-3">${returnDesc}</td>
+                    <td class="py-2.5 px-3 text-[11px]">${returnDesc}</td>
                     <td class="py-2.5 px-3 text-right">${delistLink}</td>
                 </tr>
             `;

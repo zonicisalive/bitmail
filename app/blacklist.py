@@ -7,7 +7,7 @@ import asyncio
 import ipaddress
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import dns.asyncresolver
 import dns.resolver
@@ -16,6 +16,10 @@ from app.db import utc_now_iso
 from app.models import BlacklistReportResponse, BlacklistZoneResult
 
 logger = logging.getLogger("bitmail.blacklist")
+
+NETWORK_NOTE = (
+    "Lists whole hosting-provider ranges, not individual senders. Gmail, Outlook and Yahoo do not use it; a listing here usually just means your server is on a big cloud network."
+)
 
 # Comprehensive catalog of 30+ DNSBL and Domain Blacklists
 BLACKLIST_ZONES: List[Dict[str, Any]] = [
@@ -96,9 +100,11 @@ BLACKLIST_ZONES: List[Dict[str, Any]] = [
         "zone": "dnsbl-2.uceprotect.net",
         "name": "UCEPROTECT Level 2",
         "type": "ip",
-        "severity": "warning",
+        "severity": "info",
         "delist_url": "http://www.uceprotect.net/en/rblcheck.php",
-        "description": "Subnets and allocations with persistent spam problems"
+        "description": "Subnets and allocations with persistent spam problems",
+        "scope": "network",
+        "note": NETWORK_NOTE
     },
     {
         "zone": "dnsbl-3.uceprotect.net",
@@ -106,7 +112,9 @@ BLACKLIST_ZONES: List[Dict[str, Any]] = [
         "type": "ip",
         "severity": "info",
         "delist_url": "http://www.uceprotect.net/en/rblcheck.php",
-        "description": "Entire ASN / ISP ranges exhibiting widespread abuse"
+        "description": "Entire ASN / ISP ranges exhibiting widespread abuse",
+        "scope": "network",
+        "note": NETWORK_NOTE
     },
     {
         "zone": "cbl.abuseat.org",
@@ -186,7 +194,9 @@ BLACKLIST_ZONES: List[Dict[str, Any]] = [
         "type": "ip",
         "severity": "info",
         "delist_url": "http://korea.services.net/",
-        "description": "Monitors unauthenticated relay activity"
+        "description": "Monitors unauthenticated relay activity",
+        "scope": "network",
+        "note": NETWORK_NOTE
     },
     {
         "zone": "rbl.blockedservers.com",
@@ -258,7 +268,9 @@ BLACKLIST_ZONES: List[Dict[str, Any]] = [
         "type": "ip",
         "severity": "info",
         "delist_url": "https://rbldns.ru/",
-        "description": "Eastern European spam trap and scanner blocklist"
+        "description": "Eastern European spam trap and scanner blocklist",
+        "scope": "network",
+        "note": NETWORK_NOTE
     },
 
     # Domain Blacklists (DBL / URIBL)
@@ -327,6 +339,30 @@ BLACKLIST_ZONES: List[Dict[str, Any]] = [
         "description": "Domain-level reputation filter monitored across EU regions"
     }
 ]
+
+
+def classify_refusal(zone: str, code: str) -> Optional[str]:
+    """
+    Return a reason when a DNSBL answer is not a real listing, else None.
+
+    Real listings are addresses inside 127.0.0.0/8. Anything else is a resolver
+    hijacking NXDOMAIN (ISP "search" pages), not the list talking. Inside that range:
+    - 127.0.0.1 is reserved by RFC 5782 and is never a listing; URIBL and SURBL use it
+      to say "query blocked" (they refuse Google/Cloudflare public DNS).
+    - 127.255.255.252/254/255 are Spamhaus error codes (typo'd zone, public resolver,
+      over the free query limit).
+    """
+    try:
+        ip = ipaddress.ip_address(code)
+    except ValueError:
+        return f"Unexpected answer '{code}' (not a DNSBL code)."
+    if ip not in ipaddress.ip_network("127.0.0.0/8"):
+        return f"Answer {code} is outside 127.0.0.0/8, so it came from the DNS resolver, not the list."
+    if code == "127.0.0.1":
+        return "The list refused the query (it blocks public DNS resolvers). Result unknown, not a listing."
+    if code in ("127.255.255.252", "127.255.255.254", "127.255.255.255"):
+        return "Spamhaus refused the query (public resolver or query limit). Result unknown, not a listing."
+    return None
 
 
 def interpret_listing_code(zone: str, return_code: str) -> str:
@@ -422,6 +458,27 @@ class BlacklistMonitorService:
             pass
         return None
 
+    async def resolve_mail_ip(self, domain: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        IP whose reputation matters for a domain's email: its primary MX host.
+        A domain's A record is usually its website (often a CDN such as Cloudflare),
+        which says nothing about mail. Falls back to the A record only when there is
+        no MX (RFC 5321 implicit MX). Returns (ip, description of where it came from).
+        """
+        resolver = dns.asyncresolver.Resolver()
+        resolver.lifetime = self.query_timeout
+        try:
+            answers = await resolver.resolve(domain.strip(), "MX")
+            hosts = sorted(((r.preference, str(r.exchange).rstrip(".")) for r in answers))
+            for _, host in hosts:
+                ip = await self.resolve_domain_ip(host)
+                if ip:
+                    return ip, f"mail server {host} (MX)"
+        except Exception:
+            pass
+        ip = await self.resolve_domain_ip(domain)
+        return (ip, "domain A record (no MX found)") if ip else (None, None)
+
     async def _query_single_zone(
         self,
         query_hostname: str,
@@ -446,22 +503,24 @@ class BlacklistMonitorService:
             elapsed_ms = round((time.monotonic() - start_time) * 1000, 1)
 
             codes = [rdata.to_text() for rdata in answers]
-            primary_code = codes[0] if codes else "127.0.0.2"
+            primary_code = codes[0] if codes else ""
 
-            # Check for known DNSBL public-resolver refuser codes (e.g. 127.255.255.254/255)
-            # These mean the DNSBL blocked the DNS resolver from querying, not that the target is listed.
-            if primary_code in ("127.255.255.254", "127.255.255.255"):
+            refusal = classify_refusal(zone, primary_code)
+            if refusal:
+                # The list answered "I won't tell you", not "listed". Usually because the
+                # query came through a big public resolver (Google/Cloudflare DNS) that the
+                # list blocks. The result is unknown, so it must not count as a listing.
                 return BlacklistZoneResult(
                     zone=zone,
                     name=name,
                     target_type=target_type,
                     listed=False,
                     return_code=primary_code,
-                    category="Resolver rate-limited by DNSBL",
+                    category="Query refused",
                     delist_url=delist_url,
                     severity="info",
                     response_time_ms=elapsed_ms,
-                    error="Public DNS query refuser"
+                    error=refusal,
                 )
 
             # In Hostkarma, 127.0.0.1 signifies whitelist/trusted, not listed on blacklist
@@ -489,7 +548,9 @@ class BlacklistMonitorService:
                 category=category,
                 delist_url=delist_url,
                 severity=default_severity,
-                response_time_ms=elapsed_ms
+                response_time_ms=elapsed_ms,
+                scope=zone_info.get("scope", "sender"),
+                note=zone_info.get("note"),
             )
 
         except dns.resolver.NXDOMAIN:
@@ -556,6 +617,7 @@ class BlacklistMonitorService:
         target_type = "ip" if is_ip_address else "domain"
 
         resolved_ip: Optional[str] = None
+        ip_source: Optional[str] = "the IP you entered" if is_ip_address else None
         tasks = []
 
         if is_ip_address:
@@ -572,8 +634,8 @@ class BlacklistMonitorService:
                 query_host = f"{clean_target}.{z['zone']}"
                 tasks.append(self._query_single_zone(query_host, z))
 
-            # 2. Resolve domain's IP and check IP blocklists
-            resolved_ip = await self.resolve_domain_ip(clean_target)
+            # 2. Check the domain's mail server IP against IP blocklists
+            resolved_ip, ip_source = await self.resolve_mail_ip(clean_target)
             if resolved_ip and self.is_ip(resolved_ip):
                 reversed_ip = self.reverse_ip(resolved_ip)
                 ip_zones = [z for z in BLACKLIST_ZONES if z["type"] == "ip"]
@@ -583,22 +645,29 @@ class BlacklistMonitorService:
 
         results: List[BlacklistZoneResult] = await asyncio.gather(*tasks)
 
-        listed_count = sum(1 for r in results if r.listed)
-        clean_count = len(results) - listed_count
+        # Network-wide lists are reported but do not make a sender "blacklisted";
+        # refused/timed-out queries are unknown, neither listed nor clean.
+        listed_count = sum(1 for r in results if r.listed and r.scope != "network")
+        network_count = sum(1 for r in results if r.listed and r.scope == "network")
+        unknown_count = sum(1 for r in results if not r.listed and r.error)
+        clean_count = len(results) - listed_count - network_count - unknown_count
 
-        if listed_count == 0:
-            status = "clean"
-        elif any(r.listed and r.severity == "critical" for r in results):
+        if any(r.listed and r.scope != "network" and r.severity == "critical" for r in results):
             status = "blacklisted"
-        else:
+        elif listed_count:
             status = "warning"
+        else:
+            status = "clean"
 
         return BlacklistReportResponse(
             target=clean_target,
             target_type=target_type,
             resolved_ip=resolved_ip,
+            ip_source=ip_source,
             total_zones_checked=len(results),
             listed_count=listed_count,
+            network_listed_count=network_count,
+            unknown_count=unknown_count,
             clean_count=clean_count,
             is_blacklisted=(listed_count > 0),
             status=status,

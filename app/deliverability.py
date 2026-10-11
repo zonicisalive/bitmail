@@ -133,6 +133,48 @@ class DnsCache:
 
 
 _dns_cache = DnsCache(ttl_seconds=300)
+
+# DKIM selectors used by common providers and mail servers. A domain can only be
+# checked for DKIM by guessing selector names, so this list is what makes the check
+# useful: Brevo publishes brevo1/brevo2, Mailjet "mailjet", Google "google",
+# Microsoft selector1/2, Mailchimp k1-k3, Postmark pm, SendGrid s1/s2/smtpapi.
+COMMON_DKIM_SELECTORS: List[str] = [
+    "default", "dkim", "mail", "smtp", "key1", "dkim1", "sig1",
+    "brevo1", "brevo2", "sib", "mailjet", "google", "selector1", "selector2",
+    "k1", "k2", "k3", "s1", "s2", "smtpapi", "em", "sendgrid", "pm", "mte1", "mte2",
+    "mandrill", "mailgun", "mg", "zoho", "zmail", "protonmail", "protonmail2", "protonmail3",
+    "fm1", "fm2", "fm3", "mesmtp", "everlytickey1", "everlytickey2", "s2017", "s2020",
+]
+
+# Relay hostname fragment -> the SPF include that authorizes that provider.
+RELAY_SPF_INCLUDES: List[Tuple[str, str, str]] = [
+    ("brevo", "include:spf.brevo.com", "Brevo"),
+    ("sendinblue", "include:spf.brevo.com", "Brevo"),
+    ("mailjet", "include:spf.mailjet.com", "Mailjet"),
+    ("gmail", "include:_spf.google.com", "Google"),
+    ("google", "include:_spf.google.com", "Google"),
+    ("sendgrid", "include:sendgrid.net", "SendGrid"),
+    ("amazonaws", "include:amazonses.com", "Amazon SES"),
+    ("mailgun", "include:mailgun.org", "Mailgun"),
+    ("postmarkapp", "include:spf.mtasv.net", "Postmark"),
+    ("office365", "include:spf.protection.outlook.com", "Microsoft 365"),
+    ("outlook", "include:spf.protection.outlook.com", "Microsoft 365"),
+    ("zoho", "include:zoho.com", "Zoho"),
+    ("sparkpost", "include:sparkpostmail.com", "SparkPost"),
+    ("mandrill", "include:spf.mandrillapp.com", "Mailchimp Transactional"),
+]
+
+
+def relay_spf_requirements(relay_hosts: Optional[List[str]]) -> List[Tuple[str, str, str]]:
+    """(host, include, provider) for each configured relay that maps to a known provider."""
+    found: List[Tuple[str, str, str]] = []
+    for host in relay_hosts or []:
+        h = (host or "").lower()
+        for fragment, include, provider in RELAY_SPF_INCLUDES:
+            if fragment in h and include not in [f[1] for f in found]:
+                found.append((host, include, provider))
+                break
+    return found
 _mx_inflight: Dict[str, "asyncio.Task"] = {}
 
 
@@ -140,7 +182,9 @@ def get_async_resolver(timeout: float = 3.0) -> dns.asyncresolver.Resolver:
     """Instantiate a configured async DNS resolver."""
     resolver = dns.asyncresolver.Resolver()
     resolver.lifetime = timeout
-    resolver.timeout = timeout
+    # Per-server timeout must be shorter than the total budget, otherwise one slow or
+    # packet-dropping nameserver uses the whole budget and the next one is never tried.
+    resolver.timeout = min(1.5, timeout / 2)
     return resolver
 
 
@@ -404,6 +448,13 @@ class EmailValidatorService:
 # ==============================================================================
 # 2. Live DNS Authenticator Diagnostic Service (SPF, DKIM, DMARC, MX)
 # ==============================================================================
+class DnsLookupError(Exception):
+    """A DNS query failed (timeout, SERVFAIL, no reachable resolver) - the answer is unknown."""
+
+
+LOOKUP_FAILED_REASON = "DNS lookup failed or timed out, so this could not be checked. Run the check again."
+
+
 class DnsAuthenticatorService:
     """
     Executes live DNS audits for sending domains:
@@ -431,9 +482,12 @@ class DnsAuthenticatorService:
                 records.append(val)
             return records
         except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # The name genuinely has no TXT records.
             return []
-        except Exception:
-            return []
+        except Exception as exc:
+            # Anything else (timeout, SERVFAIL) means we do not know. Callers must not
+            # report "record missing" for this - that was a source of false alarms.
+            raise DnsLookupError(f"{clean_host}: {type(exc).__name__}") from exc
 
     @classmethod
     async def check_spf(cls, domain: str, timeout: float = 3.5) -> Dict[str, Any]:
@@ -448,10 +502,11 @@ class DnsAuthenticatorService:
             ]
         except Exception as exc:
             return {
-                "status": "error",
+                "status": "unknown",
                 "score": 0,
                 "record": None,
-                "reasons": [f"DNS TXT resolution failed: {str(exc)}"],
+                "lookup_failed": True,
+                "reasons": [LOOKUP_FAILED_REASON, f"Detail: {exc}"],
                 "recommendation": f"Add a valid TXT record for '{clean_domain}' with 'v=spf1 ... ~all'."
             }
 
@@ -462,7 +517,7 @@ class DnsAuthenticatorService:
                 "record": None,
                 "reasons": ["No SPF (Sender Policy Framework) TXT record found."],
                 "policy": None,
-                "recommendation": f"Create a TXT record for '@' (or '{clean_domain}') with value: 'v=spf1 include:_spf.google.com ~all' (or your SMTP IP/relay)."
+                "recommendation": f"Create one TXT record on '{clean_domain}' starting with 'v=spf1' that lists every service that sends your mail (your relay's include), ending in '~all'."
             }
 
         if len(spf_records) > 1:
@@ -532,24 +587,35 @@ class DnsAuthenticatorService:
         dmarc_host = f"_dmarc.{clean_domain}"
         queried_host = dmarc_host
 
-        txt_records = await cls._query_txt(dmarc_host, timeout)
-        dmarc_records = [
-            r for r in txt_records
-            if r.startswith("v=DMARC1")
-        ]
-
-        # Fallback to apex domain if this was a subdomain (e.g. mail.bitnade.com -> bitnade.com)
-        if not dmarc_records and clean_domain.count(".") >= 2:
-            parts = clean_domain.split(".")
-            apex_domain = ".".join(parts[-2:])
-            apex_dmarc = f"_dmarc.{apex_domain}"
-            apex_records = await cls._query_txt(apex_dmarc, timeout)
+        try:
+            txt_records = await cls._query_txt(dmarc_host, timeout)
             dmarc_records = [
-                r for r in apex_records
+                r for r in txt_records
                 if r.startswith("v=DMARC1")
             ]
-            if dmarc_records:
-                queried_host = apex_dmarc
+
+            # Fallback to apex domain if this was a subdomain (e.g. mail.bitnade.com -> bitnade.com)
+            if not dmarc_records and clean_domain.count(".") >= 2:
+                parts = clean_domain.split(".")
+                apex_domain = ".".join(parts[-2:])
+                apex_dmarc = f"_dmarc.{apex_domain}"
+                apex_records = await cls._query_txt(apex_dmarc, timeout)
+                dmarc_records = [
+                    r for r in apex_records
+                    if r.startswith("v=DMARC1")
+                ]
+                if dmarc_records:
+                    queried_host = apex_dmarc
+        except DnsLookupError as exc:
+            return {
+                "status": "unknown",
+                "score": 0,
+                "record": None,
+                "policy": None,
+                "lookup_failed": True,
+                "reasons": [LOOKUP_FAILED_REASON, f"Detail: {exc}"],
+                "recommendation": "Re-run the check.",
+            }
 
         if not dmarc_records:
             return {
@@ -618,60 +684,94 @@ class DnsAuthenticatorService:
     @classmethod
     async def check_dkim(cls, domain: str, selector: Optional[str] = None, timeout: float = 3.5) -> Dict[str, Any]:
         """
-        Query DKIM public key for domain.
-        If selector is not provided, probes standard common selectors:
-        'default', 'k1', 'mail', 'google', 'smtp', 's1', 's2017', 's2020'.
+        Look for DKIM public keys on the domain.
+
+        DKIM keys live at <selector>._domainkey.<domain> and there is no way to list
+        selectors, so this probes the selector you give plus every selector in
+        COMMON_DKIM_SELECTORS, in parallel, and reports all keys found.
         """
         clean_domain = domain.strip().lower()
+        wanted = [selector.strip()] if selector and selector.strip() else []
+        selectors = list(dict.fromkeys(wanted + COMMON_DKIM_SELECTORS))
 
-        selectors_to_try = [selector.strip()] if selector and selector.strip() else [
-            "default", "k1", "mail", "google", "smtp", "s1", "s2017", "s2020"
-        ]
+        # Dozens of simultaneous queries make many resolvers drop packets, which turned
+        # real keys into timeouts. A small window keeps the scan fast and reliable.
+        gate = asyncio.Semaphore(6)
+        # Provider keys are usually CNAMEs into the provider's zone (brevo1 -> *.dkim.brevo.com),
+        # which takes a resolver an extra round trip; give them room.
+        probe_timeout = max(timeout, 6.0)
 
-        found_record = None
-        found_selector = None
+        async def probe(sel: str) -> Optional[Dict[str, Any]]:
+            async with gate:
+                try:
+                    values = await cls._query_txt(f"{sel}._domainkey.{clean_domain}", probe_timeout)
+                except DnsLookupError:
+                    try:  # one retry: a single dropped UDP packet should not hide a key
+                        values = await cls._query_txt(f"{sel}._domainkey.{clean_domain}", probe_timeout)
+                    except DnsLookupError:
+                        return {"selector": sel, "failed": True}
+            for val in values:
+                if "p=" in val or "v=DKIM1" in val:
+                    key = ""
+                    for part in val.replace(" ", "").split(";"):
+                        if part.startswith("p="):
+                            key = part[2:]
+                    # An empty p= means the key was deliberately revoked (RFC 6376 3.6.1).
+                    return {"selector": sel, "record": val, "revoked": key == ""}
+            return None
 
-        for sel in selectors_to_try:
-            dkim_host = f"{sel}._domainkey.{clean_domain}"
-            txt_records = await cls._query_txt(dkim_host, timeout)
-            for val in txt_records:
-                if "v=DKIM1" in val or "p=" in val:
-                    found_record = val
-                    found_selector = sel
-                    break
-            if found_record:
-                break
+        probes = [k for k in await asyncio.gather(*(probe(sel) for sel in selectors)) if k]
+        failed = [k["selector"] for k in probes if k.get("failed")]
+        found = [k for k in probes if not k.get("failed")]
+        active = [k for k in found if not k["revoked"]]
 
-        if not found_record:
+        if not active and failed:
+            # Some selectors could not be checked, so "no DKIM" would be a guess.
+            return {
+                "status": "unknown",
+                "score": 0,
+                "selector": selector or None,
+                "selectors_checked": len(selectors) - len(failed),
+                "keys": found,
+                "record": None,
+                "lookup_failed": True,
+                "reasons": [LOOKUP_FAILED_REASON,
+                            f"{len(failed)} of {len(selectors)} selectors could not be queried (e.g. {', '.join(failed[:4])})."],
+                "recommendation": "Re-run the check.",
+            }
+
+        if not active:
+            reasons = [f"No DKIM key found for '{clean_domain}' under {len(selectors)} common selectors."]
+            if found:
+                reasons.append("Revoked (empty) keys found for: " + ", ".join(k["selector"] for k in found) + ".")
+            reasons.append("If your provider uses a custom selector, enter it in the selector box and check again.")
             return {
                 "status": "warn",
                 "score": 0,
-                "selector": selector or "default (scanned common selectors)",
+                "selector": selector or None,
+                "selectors_checked": len(selectors),
+                "keys": found,
                 "record": None,
-                "reasons": [
-                    f"No active DKIM key found for domain '{clean_domain}' using selector(s): {', '.join(selectors_to_try[:4])}."
-                ],
-                "recommendation": "Generate a 2048-bit DKIM key in your mail relay (e.g. Brevo/SendGrid/Google) and add the TXT record to your DNS."
+                "reasons": reasons,
+                "recommendation": "Turn on DKIM / domain authentication in your sending provider and publish the DNS records it gives you. Never publish a key you did not generate."
             }
 
-        # Parse key
-        key_valid = "p=" in found_record
-        reasons = [f"DKIM public key record found using selector '{found_selector}'."]
-
-        if "v=DKIM1" in found_record:
-            reasons.append("Standard DKIM version 1 header verified.")
-
-        score = 25 if key_valid else 10
-        status = "pass" if key_valid else "warn"
-
+        names = ", ".join(k["selector"] for k in active)
+        reasons = [f"Active DKIM key(s) found for selector(s): {names}."]
+        if failed:
+            reasons.append(f"{len(failed)} selector(s) could not be checked (DNS timeout): {', '.join(failed[:6])}. Re-run to check them.")
         return {
-            "status": status,
-            "score": score,
-            "selector": found_selector,
-            "record": found_record,
-            "is_valid": key_valid,
+            "status": "pass",
+            "score": 25,
+            "selector": active[0]["selector"],
+            "selectors_found": [k["selector"] for k in active],
+            "selectors_checked": len(selectors),
+            "keys": found,
+            "record": active[0]["record"],
+            "is_valid": True,
             "reasons": reasons,
-            "recommendation": f"DKIM authentication is active on selector '{found_selector}'."
+            "details": f"DKIM keys published for: {names}.",
+            "recommendation": "DKIM is set up. Make sure the provider you send through signs with one of these selectors."
         }
 
     @staticmethod
@@ -687,12 +787,22 @@ class DnsAuthenticatorService:
                 for r in answers
             ]
             records.sort(key=lambda x: x["priority"])
-        except Exception as exc:
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN) as exc:
             return {
                 "status": "fail",
                 "score": 0,
                 "records": [],
-                "provider": "None / Unresolved",
+                "provider": "None",
+                "reasons": [f"No MX record for '{clean_domain}'."],
+                "recommendation": f"Only needed if '{clean_domain}' should receive replies and bounces."
+            }
+        except Exception as exc:
+            return {
+                "status": "unknown",
+                "score": 0,
+                "records": [],
+                "lookup_failed": True,
+                "provider": "Unknown (lookup failed)",
                 "reasons": [f"No MX records found or resolution failed: {str(exc)}"],
                 "recommendation": f"Configure MX records for '{clean_domain}' so inboxes can receive bounces and replies."
             }
@@ -750,46 +860,120 @@ class DnsAuthenticatorService:
         return score, grade
 
     @classmethod
-    def generate_recommended_records(cls, domain: str, results: Dict[str, Any]) -> List[Dict[str, str]]:
-        """Generate copyable DNS records to fix missing or weak authentication."""
+    def generate_recommended_records(
+        cls, domain: str, results: Dict[str, Any], relay_hosts: Optional[List[str]] = None
+    ) -> List[Dict[str, str]]:
+        """
+        DNS records to publish, with values we can actually compute. DKIM keys are
+        never suggested: a DKIM record is only valid with the private key the sending
+        provider holds, so a made-up key would just make every signature fail.
+        """
         clean_domain = domain.strip().lower()
         records: List[Dict[str, str]] = []
+        required = relay_spf_requirements(relay_hosts)
+        includes = [inc for _, inc, _ in required]
 
-        # SPF Recommendation
         spf = results.get("spf", {})
-        if spf.get("status") in ("fail", "error") or not spf.get("record"):
+        spf_record = spf.get("record") or ""
+        if spf.get("lookup_failed"):
+            pass
+        elif not spf_record:
+            mechanisms = " ".join(includes) if includes else "mx"
             records.append({
                 "type": "TXT",
                 "name": "@",
                 "full_name": clean_domain,
-                "value": "v=spf1 include:_spf.google.com ~all",
-                "purpose": "Authorizes your sending relay to transmit mail for this domain."
+                "value": f"v=spf1 {mechanisms} ~all",
+                "purpose": ("Authorizes " + ", ".join(p for _, _, p in required) + " to send for this domain."
+                            if required else "Authorizes your own mail server (MX). Add your relay's include if you send through one."),
             })
+        else:
+            missing = [(h, inc, prov) for h, inc, prov in required if inc not in spf_record]
+            if missing and spf.get("status") != "error":
+                terms = spf_record.split()
+                tail = [t for t in terms if t.lstrip("+-~?") == "all"]
+                head = [t for t in terms if t not in tail]
+                fixed = " ".join(head + [inc for _, inc, _ in missing] + (tail or ["~all"]))
+                records.append({
+                    "type": "TXT",
+                    "name": "@",
+                    "full_name": clean_domain,
+                    "value": fixed,
+                    "purpose": "Replace your SPF record: it does not authorize " + ", ".join(p for _, _, p in missing) + ", which you have configured as a relay.",
+                })
 
-        # DMARC Recommendation
         dmarc = results.get("dmarc", {})
-        if dmarc.get("status") in ("fail", "error") or not dmarc.get("record") or dmarc.get("policy") == "none":
-            policy_val = "p=quarantine" if dmarc.get("policy") == "none" else "p=quarantine"
+        if not dmarc.get("record") and not dmarc.get("lookup_failed"):
+            # Start in monitoring mode unless DKIM is already in place; enforcing DMARC
+            # before DKIM works would block your own mail.
+            policy = "quarantine" if results.get("dkim", {}).get("status") == "pass" else "none"
             records.append({
                 "type": "TXT",
                 "name": "_dmarc",
                 "full_name": f"_dmarc.{clean_domain}",
-                "value": f"v=DMARC1; {policy_val}; rua=mailto:dmarc-reports@{clean_domain}; pct=100;",
-                "purpose": "Protects against domain spoofing and satisfies Google & Yahoo 2024 bulk requirements."
-            })
-
-        # DKIM Recommendation (template if not found)
-        dkim = results.get("dkim", {})
-        if dkim.get("status") != "pass":
-            records.append({
-                "type": "TXT",
-                "name": "default._domainkey",
-                "full_name": f"default._domainkey.{clean_domain}",
-                "value": "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC3...",
-                "purpose": "Cryptographically signs outbound emails to verify sender authenticity."
+                "value": f"v=DMARC1; p={policy}; rua=mailto:dmarc-reports@{clean_domain}",
+                "purpose": "Required by Gmail and Yahoo for bulk senders; protects the domain from spoofing.",
             })
 
         return records
+
+    @staticmethod
+    def build_summary(domain: str, results: Dict[str, Any], relay_hosts: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Headline for the report, written from the actual findings."""
+        issues: List[Dict[str, str]] = []
+        spf, dmarc, dkim, mx = (results.get(k, {}) for k in ("spf", "dmarc", "dkim", "mx"))
+        required = relay_spf_requirements(relay_hosts)
+        third_party = bool(required)
+        policy = (dmarc.get("policy") or "").lower()
+
+        unknown = [name for name, r in (("SPF", spf), ("DMARC", dmarc), ("DKIM", dkim), ("MX", mx)) if r.get("lookup_failed")]
+        if unknown:
+            issues.append({"level": "unknown", "text": f"Could not check {', '.join(unknown)}: the DNS lookup failed or timed out. Run the check again."})
+
+        if spf.get("lookup_failed"):
+            pass
+        elif not spf.get("record"):
+            issues.append({"level": "critical", "text": "No SPF record: receivers cannot tell which servers may send for this domain."})
+        elif spf.get("status") == "error":
+            issues.append({"level": "critical", "text": "SPF is broken (for example several SPF records), so receivers treat it as an error."})
+        elif spf.get("policy") == "+all":
+            issues.append({"level": "critical", "text": "SPF ends in '+all', which lets anyone send as you."})
+        else:
+            missing = [prov for _, inc, prov in required if inc not in (spf.get("record") or "")]
+            if missing:
+                issues.append({"level": "warning", "text": "SPF does not include " + ", ".join(missing) + ", which you send through."})
+
+        if dkim.get("lookup_failed"):
+            pass
+        elif dkim.get("status") != "pass":
+            if policy in ("reject", "quarantine") and third_party:
+                issues.append({"level": "critical", "text": f"No DKIM key found, and DMARC is p={policy}. Mail relayed through a provider passes DMARC only with DKIM, so it would be {'rejected' if policy == 'reject' else 'sent to spam'}."})
+            else:
+                issues.append({"level": "warning", "text": "No DKIM key found under common selectors. If your provider uses a custom selector, enter it and re-check."})
+
+        if dmarc.get("lookup_failed"):
+            pass
+        elif not dmarc.get("record"):
+            issues.append({"level": "warning", "text": "No DMARC record. Gmail and Yahoo require one for bulk senders."})
+        elif policy == "none":
+            issues.append({"level": "info", "text": "DMARC is in monitoring mode (p=none): it reports but does not block spoofing."})
+
+        if mx.get("status") == "fail":
+            issues.append({"level": "info", "text": "No MX record: this domain cannot receive replies or bounces."})
+
+        levels = [i["level"] for i in issues]
+        if "critical" in levels:
+            level, title = "critical", "Mail from this domain is likely to be rejected"
+        elif "unknown" in levels:
+            level, title = "unknown", "Some checks could not complete"
+        elif "warning" in levels:
+            level, title = "warning", "Authentication works but has gaps"
+        else:
+            level, title = "good", "Authentication is set up correctly"
+
+        actionable = [i["text"] for i in issues if i["level"] in ("critical", "unknown", "warning")]
+        message = actionable[0] if actionable else ("SPF, DKIM and DMARC are in place for " + domain + ".")
+        return {"level": level, "title": title, "message": message, "issues": issues}
 
     @classmethod
     async def check_bimi(cls, domain: str, selector: str = "default", timeout: float = 3.5) -> Dict[str, Any]:
@@ -802,7 +986,10 @@ class DnsAuthenticatorService:
             clean_domain = clean_domain.split("@")[-1]
 
         bimi_host = f"{selector}._bimi.{clean_domain}"
-        txt_records = await cls._query_txt(bimi_host, timeout)
+        try:
+            txt_records = await cls._query_txt(bimi_host, timeout)
+        except DnsLookupError:
+            txt_records = []
         bimi_records = [
             r for r in txt_records
             if r.startswith("v=BIMI1")
@@ -873,7 +1060,9 @@ class DnsAuthenticatorService:
         }
 
     @classmethod
-    async def check_domain_deliverability(cls, domain: str, dkim_selector: Optional[str] = None) -> Dict[str, Any]:
+    async def check_domain_deliverability(
+        cls, domain: str, dkim_selector: Optional[str] = None, relay_hosts: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
         """
         Comprehensive asynchronous domain deliverability check.
         Runs SPF, DMARC, DKIM, MX, and BIMI probes in parallel.
@@ -898,7 +1087,8 @@ class DnsAuthenticatorService:
             "mx": mx,
             "bimi": bimi,
         }
-        recommended_records = cls.generate_recommended_records(clean_domain, diagnostics)
+        recommended_records = cls.generate_recommended_records(clean_domain, diagnostics, relay_hosts)
+        summary = cls.build_summary(clean_domain, diagnostics, relay_hosts)
 
         return {
             "domain": clean_domain,
@@ -910,6 +1100,8 @@ class DnsAuthenticatorService:
             "mx": mx,
             "bimi": bimi,
             "recommended_records": recommended_records,
+            "summary": summary,
+            "relays": [h for h, _, _ in relay_spf_requirements(relay_hosts)],
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
 

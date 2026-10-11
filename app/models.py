@@ -960,14 +960,19 @@ class BlacklistZoneResult(BaseModel):
     severity: str = "clean"  # "clean", "critical", "warning", "info"
     response_time_ms: float = 0.0
     error: Optional[str] = None
+    scope: str = "sender"  # "sender" lists individual IPs/domains; "network" lists whole provider ranges
+    note: Optional[str] = None
 
 
 class BlacklistReportResponse(BaseModel):
     target: str
     target_type: str  # "ip" or "domain"
     resolved_ip: Optional[str] = None
+    ip_source: Optional[str] = None  # where resolved_ip came from, e.g. the MX host
     total_zones_checked: int
-    listed_count: int
+    listed_count: int  # real listings on sender-level lists
+    network_listed_count: int = 0  # listings on network-wide lists (whole provider ranges)
+    unknown_count: int = 0  # refused or timed-out queries
     clean_count: int
     is_blacklisted: bool
     status: str  # "clean", "warning", "blacklisted"

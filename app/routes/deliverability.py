@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.blacklist import BLACKLIST_ZONES, blacklist_service
+from app.db import get_db
 from app.deliverability import (
     DISPOSABLE_DOMAINS,
     DnsAuthenticatorService,
@@ -100,9 +101,14 @@ async def check_domain_dns(payload: DnsCheckRequest) -> Dict[str, Any]:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Domain cannot be empty."
         )
+    # Advice depends on which providers actually send the mail, so pass the configured relays.
+    async with get_db() as db:
+        async with db.execute("SELECT host FROM smtp_configs WHERE COALESCE(is_active, 1) = 1") as cur:
+            relay_hosts = [row[0] for row in await cur.fetchall() if row[0]]
     res = await DnsAuthenticatorService.check_domain_deliverability(
         domain=domain,
-        dkim_selector=payload.dkim_selector
+        dkim_selector=payload.dkim_selector,
+        relay_hosts=relay_hosts,
     )
     return {"status": "success", "result": res}
 

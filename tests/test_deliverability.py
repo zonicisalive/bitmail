@@ -245,11 +245,44 @@ class TestDeliverabilityEngine(unittest.IsolatedAsyncioTestCase):
             "mx": {"status": "fail"}
         }
         recs = DnsAuthenticatorService.generate_recommended_records("myclient.io", bad_results)
-        self.assertEqual(len(recs), 3)
-        types = [r["name"] for r in recs]
-        self.assertIn("@", types)
-        self.assertIn("_dmarc", types)
-        self.assertIn("default._domainkey", types)
+        names = [r["name"] for r in recs]
+        self.assertIn("@", names)
+        self.assertIn("_dmarc", names)
+        # A DKIM record is only valid with the provider's private key; never invent one.
+        self.assertFalse(any("_domainkey" in n for n in names))
+        self.assertFalse(any("MIGfMA0" in r["value"] for r in recs))
+
+    def test_spf_advice_follows_configured_relays(self):
+        results = {"spf": {"status": "pass", "record": "v=spf1 mx ~all"}, "dmarc": {"record": "v=DMARC1; p=none", "policy": "none"},
+                   "dkim": {"status": "pass"}, "mx": {"status": "pass"}}
+        recs = DnsAuthenticatorService.generate_recommended_records("myclient.io", results, ["smtp-relay.brevo.com"])
+        self.assertEqual([r["value"] for r in recs], ["v=spf1 mx include:spf.brevo.com ~all"])
+        summary = DnsAuthenticatorService.build_summary("myclient.io", results, ["smtp-relay.brevo.com"])
+        self.assertEqual(summary["level"], "warning")
+        self.assertIn("Brevo", summary["message"])
+
+    def test_failed_lookups_are_unknown_not_missing(self):
+        failed = {"status": "unknown", "record": None, "lookup_failed": True}
+        results = {"spf": dict(failed), "dmarc": dict(failed, policy=None), "dkim": dict(failed), "mx": {"status": "unknown", "lookup_failed": True}}
+        summary = DnsAuthenticatorService.build_summary("myclient.io", results, ["smtp-relay.brevo.com"])
+        self.assertEqual(summary["level"], "unknown")
+        self.assertFalse(any("No SPF" in i["text"] or "No DMARC" in i["text"] for i in summary["issues"]))
+        self.assertEqual(DnsAuthenticatorService.generate_recommended_records("myclient.io", results, ["smtp-relay.brevo.com"]), [])
+
+    def test_relayed_mail_without_dkim_under_reject_is_critical(self):
+        results = {"spf": {"status": "pass", "record": "v=spf1 include:spf.brevo.com -all"},
+                   "dmarc": {"status": "pass", "record": "v=DMARC1; p=reject", "policy": "reject"},
+                   "dkim": {"status": "warn"}, "mx": {"status": "pass"}}
+        summary = DnsAuthenticatorService.build_summary("myclient.io", results, ["smtp-relay.brevo.com"])
+        self.assertEqual(summary["level"], "critical")
+
+    def test_blacklist_refusal_codes_are_not_listings(self):
+        from app.blacklist import classify_refusal
+        self.assertIsNotNone(classify_refusal("black.uribl.com", "127.0.0.1"))       # URIBL "query refused"
+        self.assertIsNotNone(classify_refusal("zen.spamhaus.org", "127.255.255.254")) # Spamhaus public-resolver block
+        self.assertIsNotNone(classify_refusal("bl.example", "198.51.100.7"))          # resolver hijack, not 127/8
+        self.assertIsNone(classify_refusal("zen.spamhaus.org", "127.0.0.2"))          # real listing
+        self.assertIsNone(classify_refusal("dbl.spamhaus.org", "127.0.1.2"))
 
 
 class TestDeliverabilityApiEndpoints(unittest.TestCase):
