@@ -195,3 +195,47 @@ class TestContacts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQuickBroadcastWarmup(unittest.TestCase):
+    """Send Message -> Start Warmup Ramp-Up used to 500 (NameError: datetime)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        data_dir = Path(cls.tmp.name)
+        cls.orig = (settings.DATABASE_PATH, settings.EML_ARCHIVE_DIR, settings.EML_STORAGE_DIR)
+        settings.DATABASE_PATH = data_dir / "warmup_broadcast.db"
+        settings.EML_ARCHIVE_DIR = settings.EML_STORAGE_DIR = data_dir / "eml"
+        settings.EML_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        asyncio.run(init_db())
+        cls.client = TestClient(app)
+        res = cls.client.post("/api/auth/login", json={"login": "admin@bitmail.com", "password": "admin123"})
+        cls.client.headers["Authorization"] = f"Bearer {res.json()['token']}"
+
+    @classmethod
+    def tearDownClass(cls):
+        settings.DATABASE_PATH, settings.EML_ARCHIVE_DIR, settings.EML_STORAGE_DIR = cls.orig
+        cls.tmp.cleanup()
+
+    def test_custom_warmup_broadcast_is_scheduled(self):
+        recipients = ", ".join(f"warm{i}@example.com" for i in range(12))
+        res = self.client.post("/api/campaigns/quick-broadcast", json={
+            "subject": "Hello {{first_name}}",
+            "body_html": "<p>Hi</p>",
+            "recipients_text": recipients,
+            "warmup_enabled": True,
+            "warmup_strategy": "custom",
+            "warmup_custom_start_cap": 5,
+            "warmup_custom_growth_pct": 20,
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+        data = res.json()
+        self.assertTrue(data.get("success"), data)
+        self.assertTrue(data.get("warmup_enabled"), data)
+
+        schedules = self.client.get("/api/warmup/schedules").json()
+        self.assertTrue(schedules, "no warmup schedule was created")
+        s = schedules[0]
+        self.assertEqual(s["total_recipients"], 12)
+        self.assertEqual(s["daily_cap"], 5)  # custom day-1 volume was honoured
