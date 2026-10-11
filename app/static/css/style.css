@@ -554,3 +554,10 @@ select:-webkit-autofill {
         transition-duration: 0.01ms !important;
     }
 }
+
+/* Collapsible warmup plan: one rotation rule. (A Tailwind rotate utility is applied
+   by both the compiled v3 CSS and the v4 runtime, which stacked to 180deg.) */
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+.plan-chevron { transition: transform 0.15s ease; }
+details[open] > summary .plan-chevron { transform: rotate(90deg); }

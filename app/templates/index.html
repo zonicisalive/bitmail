@@ -38,7 +38,7 @@
     <link rel="stylesheet" href="/static/css/tailwind.min.css?v=2.7.0">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.7.0">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.10.0">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
     <script src="/static/js/lucide.min.js"></script>
@@ -552,6 +552,32 @@
                                         <div id="broadcast-warmup-hint" class="text-[11px] text-orange-200/80 bg-slate-950/60 p-2 rounded-lg border border-orange-500/20 leading-relaxed">
                                             Recipients will be partitioned into daily drops with multi-relay rotation and provider balancing.
                                         </div>
+                                        <details id="broadcast-warmup-plan" class="group rounded-lg border border-[#2a2a2a] bg-slate-950/60">
+                                            <summary class="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-slate-300 cursor-pointer select-none">
+                                                <span class="flex items-center gap-1.5">
+                                                    <i data-lucide="chevron-right" class="plan-chevron w-3.5 h-3.5 text-[#a1a1a1]"></i>
+                                                    <span class="font-semibold text-[#ededed]">Day-by-day plan</span>
+                                                </span>
+                                                <span id="broadcast-warmup-plan-summary" class="text-slate-400 tabular-nums">Add recipients to see the plan</span>
+                                            </summary>
+                                            <div class="overflow-x-auto max-h-64 overflow-y-auto border-t border-[#2a2a2a]">
+                                                <table class="w-full text-left text-[11px]">
+                                                    <thead class="sticky top-0 bg-slate-900 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                                                        <tr>
+                                                            <th class="px-3 py-2">Day</th>
+                                                            <th class="px-3 py-2">Date</th>
+                                                            <th class="px-3 py-2">Send</th>
+                                                            <th class="px-3 py-2">Total so far</th>
+                                                            <th class="px-3 py-2" id="bw-col-gmail">Gmail</th>
+                                                            <th class="px-3 py-2" id="bw-col-microsoft">Outlook</th>
+                                                            <th class="px-3 py-2" id="bw-col-yahoo">Yahoo</th>
+                                                            <th class="px-3 py-2" id="bw-col-corporate">Other</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody id="broadcast-warmup-plan-body" class="divide-y divide-white/5 tabular-nums"></tbody>
+                                                </table>
+                                            </div>
+                                        </details>
                                     </div>
                                 </div>
 
@@ -3130,6 +3156,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.9.0"></script>
+    <script src="/static/js/app.js?v=2.10.0"></script>
 </body>
 </html>

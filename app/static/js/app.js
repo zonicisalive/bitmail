@@ -1066,6 +1066,7 @@ function updateBroadcastEmailCount() {
         }
         badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
     }
+    refreshBroadcastWarmupPlan();
 }
 
 function loadSampleCustomerEmails() {
@@ -6691,6 +6692,102 @@ function updateBroadcastWarmupHint() {
         hint.innerHTML = `<strong>Custom:</strong> ${c.custom_start_cap} emails on Day 1, then ${c.custom_growth_pct}% more each day`
             + (c.custom_max_daily ? `, never more than ${c.custom_max_daily} a day` : '')
             + ', until everyone has been sent to.';
+    }
+    refreshBroadcastWarmupPlan();
+}
+
+// Mirrors WarmupSlicer.identify_provider on the server (Apple counts as "other" here).
+function mailboxProvider(email) {
+    const d = String(email).split('@').pop().toLowerCase();
+    if (/(^|\.)(gmail\.com|googlemail\.com)$/.test(d)) return 'gmail';
+    if (/(^|\.)(outlook\.com|hotmail\.com|live\.com|msn\.com|office365\.com)$/.test(d)) return 'microsoft';
+    if (/(^|\.)(yahoo\.com|ymail\.com|aol\.com)$/.test(d)) return 'yahoo';
+    return 'corporate';
+}
+
+// Same rounding as split_by_mix on the server: whole emails, remainder to the largest fractions.
+function splitByMix(cap, mix) {
+    const keys = ['gmail', 'microsoft', 'yahoo', 'corporate'];
+    const exact = Object.fromEntries(keys.map(k => [k, cap * (mix[k] || 0)]));
+    const out = Object.fromEntries(keys.map(k => [k, Math.floor(exact[k])]));
+    let left = cap - keys.reduce((a, k) => a + out[k], 0);
+    keys.slice().sort((a, b) => (exact[b] - out[b]) - (exact[a] - out[a])).forEach(k => { if (left-- > 0) out[k] += 1; });
+    return out;
+}
+
+// Day-by-day preview for the audience of THIS send: pasted addresses are split
+// exactly in the browser; a list's split comes from the server for that list.
+let _warmupPlanTimer = null;
+let _warmupPlanSeq = 0;
+function refreshBroadcastWarmupPlan() {
+    clearTimeout(_warmupPlanTimer);
+    _warmupPlanTimer = setTimeout(renderBroadcastWarmupPlan, 250);
+}
+
+async function renderBroadcastWarmupPlan() {
+    const body = document.getElementById('broadcast-warmup-plan-body');
+    const summary = document.getElementById('broadcast-warmup-plan-summary');
+    if (!body || !summary) return;
+    if (document.getElementById('broadcast-warmup-wrap')?.classList.contains('hidden')) return;
+
+    const strategy = document.getElementById('broadcast-warmup-strategy')?.value || 'conservative_30';
+    let total = 0, listId = null, mix = null;
+    if (App.audienceMode === 'paste') {
+        const emails = parseEmailsFromString(document.getElementById('broadcast-raw-emails')?.value || '').map(p => p.email);
+        total = emails.length;
+        mix = {};
+        emails.forEach(e => { const k = mailboxProvider(e); mix[k] = (mix[k] || 0) + 1 / total; });
+    } else {
+        listId = document.getElementById('broadcast-list-select')?.value || 'all';
+        const list = App.lists.find(l => l.id === listId);
+        total = listId === 'all' ? Number(App.contactSummary?.active ?? App.stats.activeSubscribers ?? 0) : (list ? list.active_count : 0);
+    }
+
+    if (!total) {
+        summary.textContent = 'Add recipients to see the plan';
+        body.innerHTML = '';
+        return;
+    }
+
+    const seq = ++_warmupPlanSeq;
+    try {
+        const res = await fetch('/api/warmup/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                total_recipients: total,
+                strategy,
+                list_id: listId,
+                ...(strategy === 'custom' ? warmupCustomParams('broadcast-warmup') : {})
+            })
+        });
+        const data = await safeJson(res);
+        if (seq !== _warmupPlanSeq || !res.ok || !data.slices) return;
+
+        const useMix = mix || data.provider_mix || {};
+        [['gmail', 'Gmail'], ['microsoft', 'Outlook'], ['yahoo', 'Yahoo'], ['corporate', 'Other']].forEach(([k, label]) => {
+            const th = document.getElementById(`bw-col-${k}`);
+            if (th) th.textContent = `${label} ${Math.round((useMix[k] || 0) * 100)}%`;
+        });
+
+        const days = data.slices.length;
+        const last = data.slices[days - 1];
+        summary.textContent = `${total.toLocaleString()} recipient${total === 1 ? '' : 's'} · ${days} day${days === 1 ? '' : 's'} · Day 1: ${data.slices[0].daily_cap.toLocaleString()} · ends ${last.date}`;
+        body.innerHTML = data.slices.map(s => {
+            const split = mix ? splitByMix(s.daily_cap, mix) : (s.recommended_providers || {});
+            return `<tr class="hover:bg-white/[0.02]">
+                <td class="px-3 py-1.5 font-semibold text-[#ededed]">${s.day}</td>
+                <td class="px-3 py-1.5 text-slate-400">${s.date}</td>
+                <td class="px-3 py-1.5 font-semibold text-white">${s.daily_cap.toLocaleString()}</td>
+                <td class="px-3 py-1.5 text-slate-300">${s.cumulative_volume.toLocaleString()}</td>
+                <td class="px-3 py-1.5 text-slate-300">${(split.gmail || 0).toLocaleString()}</td>
+                <td class="px-3 py-1.5 text-slate-300">${(split.microsoft || 0).toLocaleString()}</td>
+                <td class="px-3 py-1.5 text-slate-300">${(split.yahoo || 0).toLocaleString()}</td>
+                <td class="px-3 py-1.5 text-slate-300">${(split.corporate || 0).toLocaleString()}</td>
+            </tr>`;
+        }).join('');
+    } catch (err) {
+        console.warn('Warmup plan preview failed:', err);
     }
 }
 
