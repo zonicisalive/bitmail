@@ -710,7 +710,10 @@ class QuickBroadcastPayload(BaseModel):
     track_clicks: bool = Field(default=True, description="Rewrite hyperlinks for click tracking")
     scheduled_at: Optional[str] = Field(default=None, description="Target ISO timestamp for scheduled dispatch")
     warmup_enabled: bool = Field(default=False, description="Enable automated 14-30 day warmup ramp-up")
-    warmup_strategy: str = Field(default="conservative_30", description="Warmup curve profile: conservative_30, standard_14, aggressive_7")
+    warmup_strategy: str = Field(default="conservative_30", description="Warmup curve profile: conservative_30, standard_14, aggressive_7, custom")
+    warmup_custom_start_cap: Optional[int] = Field(default=None, ge=1, description="Custom warmup: emails on day 1")
+    warmup_custom_growth_pct: Optional[float] = Field(default=None, ge=0, le=300, description="Custom warmup: % more each day")
+    warmup_custom_max_daily: Optional[int] = Field(default=None, ge=1, description="Custom warmup: max emails per day")
 
 
 
@@ -869,7 +872,10 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
         from app.warmup import WarmupScheduleCurves, WarmupSlicer
         daily_caps = WarmupScheduleCurves.get_curve_caps(
             strategy=payload.warmup_strategy,
-            total_recipients=len(target_subscribers)
+            total_recipients=len(target_subscribers),
+            custom_start_cap=payload.warmup_custom_start_cap or 50,
+            custom_growth_pct=payload.warmup_custom_growth_pct,
+            custom_max_daily=payload.warmup_custom_max_daily,
         )
         total_days = len(daily_caps)
         now_ts = utc_now_iso()

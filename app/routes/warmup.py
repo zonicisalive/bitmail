@@ -4,10 +4,10 @@ Provides endpoints for previewing ramp-up curves, managing warmup schedules,
 monitoring daily slices, and controlling the active SMTP relay rotation pool.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -36,44 +36,86 @@ router = APIRouter(prefix="/api/warmup", tags=["Email Warmup & Relay Rotation"])
 # ==============================================================================
 # 1. Warmup Preview Simulator Endpoint
 # ==============================================================================
+# Used only when there are no contacts to measure: a rough consumer-list average.
+TYPICAL_PROVIDER_MIX = {"gmail": 0.45, "microsoft": 0.30, "yahoo": 0.15, "corporate": 0.10}
+
+
+async def contacts_provider_mix(list_id: Optional[str]) -> Tuple[Dict[str, float], int]:
+    """Share of each mailbox provider among the active contacts (optionally one list)."""
+    sql = "SELECT s.email FROM subscribers s WHERE s.status = 'active'"
+    params: List[Any] = []
+    if list_id and list_id != "all":
+        sql += " AND EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id AND m.list_id = ?)"
+        params.append(list_id)
+    async with get_db() as db:
+        async with db.execute(sql, params) as cur:
+            emails = [r[0] for r in await cur.fetchall()]
+    if not emails:
+        return {}, 0
+    counts: Dict[str, int] = {}
+    for e in emails:
+        prov = WarmupSlicer.identify_provider(e)
+        # The table has four columns; Apple mail is grouped with corporate/other.
+        prov = "corporate" if prov == "apple" else prov
+        counts[prov] = counts.get(prov, 0) + 1
+    return {k: v / len(emails) for k, v in counts.items()}, len(emails)
+
+
+def split_by_mix(cap: int, mix: Dict[str, float]) -> Dict[str, int]:
+    """Split a day's cap by provider share; rounding remainder goes to the largest shares."""
+    keys = ["gmail", "microsoft", "yahoo", "corporate"]
+    exact = {k: cap * mix.get(k, 0.0) for k in keys}
+    out = {k: int(exact[k]) for k in keys}
+    leftover = cap - sum(out.values())
+    for k in sorted(keys, key=lambda k: exact[k] - out[k], reverse=True)[:leftover]:
+        out[k] += 1
+    return out
+
+
 @router.post("/preview", response_model=WarmupPreviewResponse)
 async def preview_warmup_curve(payload: WarmupPreviewRequest):
     """
     Simulate a warmup ramp-up schedule for a given audience size and curve strategy.
-    Returns the day-by-day allocation, cumulative volumes, and ISP provider recommendations.
+
+    The per-provider columns use the real provider mix of your active contacts (or of
+    payload.list_id) when there are any; the old fixed 45/30/15/10 split made a list
+    of 50 Gmail addresses look like only 22 would go to Gmail on day 1.
     """
     daily_caps = WarmupScheduleCurves.get_curve_caps(
         strategy=payload.strategy,
         total_recipients=payload.total_recipients,
         custom_days=payload.custom_days or 14,
-        custom_start_cap=payload.custom_start_cap or 50
+        custom_start_cap=payload.custom_start_cap or 50,
+        custom_growth_pct=payload.custom_growth_pct,
+        custom_max_daily=payload.custom_max_daily,
     )
 
-    now = datetime.now(timezone.utc)
+    mix, sample = await contacts_provider_mix(payload.list_id)
+    source = "contacts" if sample else "typical"
+    if not sample:
+        mix = dict(TYPICAL_PROVIDER_MIX)
+
+    today = datetime.now(timezone.utc)
     cumulative = 0
     slices: List[WarmupPreviewSlice] = []
-
     for day_idx, cap in enumerate(daily_caps, start=1):
         cumulative += cap
-        # Recommended provider ratio
         slices.append(WarmupPreviewSlice(
             day=day_idx,
-            date=(now.replace(hour=9, minute=0, second=0) + (now - now) + (day_idx - 1) * (now - now + __import__("datetime").timedelta(days=1))).strftime("%Y-%m-%d"),
+            date=(today + timedelta(days=day_idx - 1)).strftime("%Y-%m-%d"),
             daily_cap=cap,
             cumulative_volume=cumulative,
-            recommended_providers={
-                "gmail": round(cap * 0.45),
-                "microsoft": round(cap * 0.30),
-                "yahoo": round(cap * 0.15),
-                "corporate": max(1, cap - round(cap * 0.90))
-            }
+            recommended_providers=split_by_mix(cap, mix),
         ))
 
     return WarmupPreviewResponse(
         strategy=payload.strategy,
         total_days=len(daily_caps),
         total_recipients=payload.total_recipients,
-        slices=slices
+        slices=slices,
+        provider_mix={k: round(v, 4) for k, v in mix.items()},
+        provider_mix_source=source,
+        provider_mix_sample=sample,
     )
 
 
@@ -167,23 +209,29 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
     recipients_list: List[Dict[str, Any]] = []
     if payload.recipient_emails:
         recipients_list = [{"email": e.strip()} for e in payload.recipient_emails if "@" in e]
-    elif payload.list_id:
+    elif payload.list_id or payload.total_recipients is None:
+        # No list means "all active contacts". It used to fall through to made-up
+        # warmup_N@example.com placeholders.
+        sql = "SELECT s.id, s.email, s.first_name, s.last_name, s.custom_fields FROM subscribers s WHERE s.status = 'active'"
+        params: List[Any] = []
+        if payload.list_id and payload.list_id != "all":
+            sql += " AND EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id AND m.list_id = ?)"
+            params.append(payload.list_id)
         async with get_db() as db:
-            async with db.execute("""
-                SELECT s.id, s.email, s.first_name, s.last_name, s.custom_fields
-                FROM subscribers s
-                LEFT JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                WHERE m.list_id = ? AND s.status = 'active'
-            """, (payload.list_id,)) as cur:
-                rows = await cur.fetchall()
-                recipients_list = [dict(r) for r in rows]
+            async with db.execute(sql, params) as cur:
+                recipients_list = [dict(r) for r in await cur.fetchall()]
+        if not recipients_list:
+            raise HTTPException(status_code=400, detail="No active contacts to warm up. Add contacts or pick another list.")
 
     total_recipients = len(recipients_list) if recipients_list else (payload.total_recipients or 100)
 
     # 2. Generate curve
     daily_caps = WarmupScheduleCurves.get_curve_caps(
         strategy=payload.strategy,
-        total_recipients=total_recipients
+        total_recipients=total_recipients,
+        custom_start_cap=payload.custom_start_cap or 50,
+        custom_growth_pct=payload.custom_growth_pct,
+        custom_max_daily=payload.custom_max_daily,
     )
     total_days = len(daily_caps)
     day_1_cap = daily_caps[0] if daily_caps else 50

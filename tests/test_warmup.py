@@ -437,3 +437,32 @@ class TestWarmupAPIAndPages(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCustomGrowthCurve(unittest.TestCase):
+    """Custom strategy: day-1 volume, % growth per day, optional daily maximum."""
+
+    def test_growth_with_ceiling_covers_everyone(self):
+        caps = WarmupScheduleCurves.get_curve_caps("custom", 1000, custom_start_cap=50, custom_growth_pct=30, custom_max_daily=200)
+        self.assertEqual(caps[0], 50)
+        self.assertEqual(sum(caps), 1000)
+        self.assertLessEqual(max(caps), 200)
+        self.assertTrue(all(b >= a for a, b in zip(caps, caps[1:-1])))  # ramps up until the final remainder
+
+    def test_flat_rate_and_small_audience(self):
+        self.assertEqual(WarmupScheduleCurves.get_curve_caps("custom", 100, custom_start_cap=20, custom_growth_pct=0), [20] * 5)
+        self.assertEqual(WarmupScheduleCurves.get_curve_caps("custom", 30, custom_start_cap=50, custom_growth_pct=30), [30])
+
+    def test_never_drops_recipients_on_very_slow_ramps(self):
+        caps = WarmupScheduleCurves.get_curve_caps("custom", 100000, custom_start_cap=1, custom_growth_pct=0)
+        self.assertEqual(sum(caps), 100000)
+        self.assertLessEqual(len(caps), WarmupScheduleCurves.MAX_CUSTOM_DAYS)
+
+
+class TestPreviewProviderSplit(unittest.TestCase):
+    def test_split_follows_real_mix(self):
+        from app.routes.warmup import split_by_mix
+        # 50 Gmail contacts: all 50 go to Gmail on day 1, not a fixed 45%.
+        self.assertEqual(split_by_mix(50, {"gmail": 1.0})["gmail"], 50)
+        split = split_by_mix(51, {"gmail": 0.45, "microsoft": 0.30, "yahoo": 0.15, "corporate": 0.10})
+        self.assertEqual(sum(split.values()), 51)

@@ -531,12 +531,24 @@
                                             <span class="text-[#ededed] font-semibold flex items-center gap-1.5">
                                                 <i data-lucide="flame" class="w-3.5 h-3.5 text-[#a1a1a1]"></i> Warmup Ramp-Up Curve:
                                             </span>
-                                            <select id="broadcast-warmup-strategy" onchange="updateBroadcastWarmupHint()" class="px-2.5 py-1 bg-slate-900 border border-orange-500/30 rounded-lg text-xs text-white focus:outline-none focus:border-orange-400">
+                                            <select id="broadcast-warmup-strategy" onchange="toggleWarmupCustomFields('broadcast-warmup', this.value); updateBroadcastWarmupHint()" class="px-2.5 py-1 bg-slate-900 border border-orange-500/30 rounded-lg text-xs text-white focus:outline-none focus:border-orange-400">
                                                 <option value="conservative_30" selected>Conservative (30 Days - 50 Day 1, gradual)</option>
                                                 <option value="standard_14">Standard (14 Days - 100 Day 1, balanced)</option>
                                                 <option value="aggressive_7">Aggressive (7 Days - 250 Day 1, fast ramp)</option>
+                                                <option value="custom">Custom (set your own ramp)</option>
                                             </select>
                                         </div>
+                                        <div id="broadcast-warmup-custom-fields" class="hidden grid grid-cols-3 gap-2 ">
+                            <label class="block text-[11px] text-slate-400">Day 1 emails
+                                <input type="number" id="broadcast-warmup-custom-start" value="50" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="updateBroadcastWarmupHint()">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Increase / day (%)
+                                <input type="number" id="broadcast-warmup-custom-growth" value="30" min="0" max="300" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="updateBroadcastWarmupHint()">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Max per day <span class="text-slate-600">(optional)</span>
+                                <input type="number" id="broadcast-warmup-custom-max" placeholder="No limit" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="updateBroadcastWarmupHint()">
+                            </label>
+                        </div>
                                         <div id="broadcast-warmup-hint" class="text-[11px] text-orange-200/80 bg-slate-950/60 p-2 rounded-lg border border-orange-500/20 leading-relaxed">
                                             Recipients will be partitioned into daily drops with multi-relay rotation and provider balancing.
                                         </div>
@@ -1967,10 +1979,11 @@
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-slate-300 mb-1">Warmup Strategy:</label>
-                            <select id="sim-strategy" onchange="runWarmupSimulation()" class="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
+                            <select id="sim-strategy" onchange="toggleWarmupCustomFields('sim', this.value); runWarmupSimulation()" class="w-full px-3 py-2 bg-slate-950 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500">
                                 <option value="conservative_30" selected>Conservative 30-Day (Gmail / Outlook strict)</option>
                                 <option value="standard_14">Standard 14-Day (Balanced corporate / newsletter)</option>
                                 <option value="aggressive_7">Aggressive 7-Day (Fast ramp-up)</option>
+                                <option value="custom">Custom (set your own ramp)</option>
                             </select>
                         </div>
                         <div class="flex items-end">
@@ -1979,6 +1992,19 @@
                             </button>
                         </div>
                     </div>
+
+                    <div id="sim-custom-fields" class="hidden grid grid-cols-3 gap-2 bg-slate-900/80 p-4 rounded-xl border border-white/5">
+                            <label class="block text-[11px] text-slate-400">Day 1 emails
+                                <input type="number" id="sim-custom-start" value="50" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="runWarmupSimulation()">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Increase / day (%)
+                                <input type="number" id="sim-custom-growth" value="30" min="0" max="300" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="runWarmupSimulation()">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Max per day <span class="text-slate-600">(optional)</span>
+                                <input type="number" id="sim-custom-max" placeholder="No limit" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]" oninput="runWarmupSimulation()">
+                            </label>
+                        </div>
+                    <p id="sim-mix-note" class="text-[11px] text-slate-500"></p>
 
                     <!-- Simulator Preview Table -->
                     <div class="overflow-x-auto rounded-xl border border-white/5 bg-slate-950/60 max-h-80 overflow-y-auto">
@@ -1989,10 +2015,10 @@
                                     <th class="px-4 py-2.5">Target Date</th>
                                     <th class="px-4 py-2.5">Daily Cap</th>
                                     <th class="px-4 py-2.5">Cumulative Volume</th>
-                                    <th class="px-4 py-2.5">Gmail (45%)</th>
-                                    <th class="px-4 py-2.5">Outlook (30%)</th>
-                                    <th class="px-4 py-2.5">Yahoo (15%)</th>
-                                    <th class="px-4 py-2.5">Corporate (10%)</th>
+                                    <th class="px-4 py-2.5" id="sim-col-gmail">Gmail</th>
+                                    <th class="px-4 py-2.5" id="sim-col-microsoft">Outlook</th>
+                                    <th class="px-4 py-2.5" id="sim-col-yahoo">Yahoo</th>
+                                    <th class="px-4 py-2.5" id="sim-col-corporate">Other</th>
                                 </tr>
                             </thead>
                             <tbody id="sim-table-tbody" class="divide-y divide-white/5 font-mono text-[11px]">
@@ -2115,10 +2141,11 @@
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-medium text-slate-300 mb-1">Curve Strategy:</label>
-                        <select id="modal-warmup-strategy" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
+                        <select id="modal-warmup-strategy" onchange="toggleWarmupCustomFields('modal-warmup', this.value)" class="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-orange-500">
                             <option value="conservative_30" selected>Conservative (30 Days)</option>
                             <option value="standard_14">Standard (14 Days)</option>
                             <option value="aggressive_7">Aggressive (7 Days)</option>
+                            <option value="custom">Custom (set your own ramp)</option>
                         </select>
                     </div>
                     <div>
@@ -2129,6 +2156,17 @@
                         </select>
                     </div>
                 </div>
+                <div id="modal-warmup-custom-fields" class="hidden grid grid-cols-3 gap-2 ">
+                            <label class="block text-[11px] text-slate-400">Day 1 emails
+                                <input type="number" id="modal-warmup-custom-start" value="50" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Increase / day (%)
+                                <input type="number" id="modal-warmup-custom-growth" value="30" min="0" max="300" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]">
+                            </label>
+                            <label class="block text-[11px] text-slate-400">Max per day <span class="text-slate-600">(optional)</span>
+                                <input type="number" id="modal-warmup-custom-max" placeholder="No limit" min="1" class="mt-1 w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-xs text-white focus:outline-none focus:border-[#a1a1a1]">
+                            </label>
+                        </div>
 
                 <div>
                     <label class="block text-xs font-medium text-slate-300 mb-1">Recipient Audience Source:</label>
@@ -3092,6 +3130,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.8.0"></script>
+    <script src="/static/js/app.js?v=2.9.0"></script>
 </body>
 </html>

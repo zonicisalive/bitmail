@@ -1874,6 +1874,12 @@ async function launchQuickBroadcast() {
     } else if (isWarmup) {
         payload.warmup_enabled = true;
         payload.warmup_strategy = document.getElementById('broadcast-warmup-strategy')?.value || 'conservative_30';
+        if (payload.warmup_strategy === 'custom') {
+            const c = warmupCustomParams('broadcast-warmup');
+            payload.warmup_custom_start_cap = c.custom_start_cap;
+            payload.warmup_custom_growth_pct = c.custom_growth_pct;
+            payload.warmup_custom_max_daily = c.custom_max_daily;
+        }
     }
 
     if (App.audienceMode === 'paste') {
@@ -6598,11 +6604,32 @@ async function deleteWarmupSchedule(scheduleId) {
     }
 }
 
+// Custom warmup ramp: Day 1 emails, % increase per day, optional daily maximum.
+// The same three inputs exist in the simulator ("sim"), the new-schedule modal
+// ("modal-warmup") and Quick Broadcast ("broadcast-warmup").
+function toggleWarmupCustomFields(prefix, strategy) {
+    document.getElementById(`${prefix}-custom-fields`)?.classList.toggle('hidden', strategy !== 'custom');
+}
+
+function warmupCustomParams(prefix) {
+    const num = id => {
+        const v = parseFloat(document.getElementById(`${prefix}-custom-${id}`)?.value);
+        return Number.isFinite(v) ? v : null;
+    };
+    const start = num('start'), growth = num('growth'), max = num('max');
+    return {
+        custom_start_cap: start && start >= 1 ? Math.round(start) : 50,
+        custom_growth_pct: growth !== null && growth >= 0 ? growth : 30,
+        custom_max_daily: max && max >= 1 ? Math.round(max) : null,
+    };
+}
+
 async function runWarmupSimulation() {
     const size = parseInt(document.getElementById('sim-audience-size')?.value || '5000', 10);
     const strat = document.getElementById('sim-strategy')?.value || 'conservative_30';
     const tbody = document.getElementById('sim-table-tbody');
     if (!tbody) return;
+    toggleWarmupCustomFields('sim', strat);
 
     try {
         const res = await fetch('/api/warmup/preview', {
@@ -6610,11 +6637,26 @@ async function runWarmupSimulation() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 total_recipients: size,
-                strategy: strat
+                strategy: strat,
+                ...(strat === 'custom' ? warmupCustomParams('sim') : {})
             })
         });
         const data = await safeJson(res);
         if (!res.ok || !data.slices) return;
+
+        // Label the provider columns with the mix actually used for the split.
+        const mix = data.provider_mix || {};
+        const pct = k => `${Math.round((mix[k] || 0) * 100)}%`;
+        [['gmail', 'Gmail'], ['microsoft', 'Outlook'], ['yahoo', 'Yahoo'], ['corporate', 'Other']].forEach(([k, label]) => {
+            const th = document.getElementById(`sim-col-${k}`);
+            if (th) th.textContent = `${label} (${pct(k)})`;
+        });
+        const note = document.getElementById('sim-mix-note');
+        if (note) {
+            note.textContent = data.provider_mix_source === 'contacts'
+                ? `Provider split measured on your ${data.provider_mix_sample.toLocaleString()} active contacts. The daily cap is a total for all providers; the real send splits your actual addresses the same way.`
+                : 'No contacts yet, so the provider split uses a typical list (45% Gmail, 30% Outlook, 15% Yahoo, 10% other). The daily cap is a total for all providers.';
+        }
 
         tbody.innerHTML = data.slices.map(s => `
             <tr class="hover:bg-white/[0.02] transition-colors">
@@ -6644,6 +6686,11 @@ function updateBroadcastWarmupHint() {
         hint.innerHTML = '<strong>Standard (14 Days):</strong> Starts at 100 emails on Day 1, ramping to 20k+. Balanced progression for established domains warming a new SMTP IP.';
     } else if (strat === 'aggressive_7') {
         hint.innerHTML = '<strong>Aggressive (7 Days):</strong> Starts at 250 emails on Day 1, ramping rapidly to 20k+. Best for trusted transactional lists.';
+    } else if (strat === 'custom') {
+        const c = warmupCustomParams('broadcast-warmup');
+        hint.innerHTML = `<strong>Custom:</strong> ${c.custom_start_cap} emails on Day 1, then ${c.custom_growth_pct}% more each day`
+            + (c.custom_max_daily ? `, never more than ${c.custom_max_daily} a day` : '')
+            + ', until everyone has been sent to.';
     }
 }
 
@@ -6683,7 +6730,8 @@ async function submitNewWarmupSchedule(event) {
     const payload = {
         name: name,
         strategy: strat,
-        rotation_mode: rotation
+        rotation_mode: rotation,
+        ...(strat === 'custom' ? warmupCustomParams('modal-warmup') : {})
     };
 
     if (mode === 'paste') {
@@ -6695,8 +6743,8 @@ async function submitNewWarmupSchedule(event) {
         }
         payload.recipient_emails = parsed.map(p => p.email);
     } else {
-        const lid = document.getElementById('modal-warmup-list-id')?.value;
-        payload.list_id = lid === 'all' ? null : lid;
+        // "all" is understood by the server as every active contact.
+        payload.list_id = document.getElementById('modal-warmup-list-id')?.value || 'all';
     }
 
     const btn = document.getElementById('btn-submit-warmup');

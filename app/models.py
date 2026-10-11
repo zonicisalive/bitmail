@@ -811,6 +811,9 @@ class WarmupPreviewRequest(BaseModel):
     strategy: str = Field(default="conservative_30", description="conservative_30, standard_14, aggressive_7, custom")
     custom_start_cap: Optional[int] = Field(default=50, ge=1, description="Day 1 starting cap for custom curve")
     custom_days: Optional[int] = Field(default=14, ge=2, le=90, description="Duration in days for custom curve")
+    custom_growth_pct: Optional[float] = Field(default=None, ge=0, le=300, description="Custom curve: % more emails each day (e.g. 30)")
+    custom_max_daily: Optional[int] = Field(default=None, ge=1, description="Custom curve: never send more than this per day")
+    list_id: Optional[str] = Field(default=None, description="Use this list's real provider mix for the split ('all' = all contacts)")
 
 
 class WarmupPreviewSlice(BaseModel):
@@ -826,6 +829,9 @@ class WarmupPreviewResponse(BaseModel):
     total_days: int
     total_recipients: int
     slices: List[WarmupPreviewSlice]
+    provider_mix: Dict[str, float] = Field(default_factory=dict, description="Share of each provider used for the split")
+    provider_mix_source: str = Field(default="typical", description="'contacts' when taken from your real contacts, else 'typical'")
+    provider_mix_sample: int = Field(default=0, description="How many contacts the mix was measured on")
 
 
 class WarmupScheduleCreate(BaseModel):
@@ -838,6 +844,9 @@ class WarmupScheduleCreate(BaseModel):
     relay_ids: Optional[List[str]] = Field(default=None, description="SMTP relay profile IDs in rotation pool")
     rotation_mode: str = Field(default="round_robin", description="round_robin, failover, weighted")
     start_date: Optional[str] = Field(default=None, description="Target launch timestamp (defaults to now)")
+    custom_start_cap: Optional[int] = Field(default=50, ge=1, description="Custom curve: emails on day 1")
+    custom_growth_pct: Optional[float] = Field(default=None, ge=0, le=300, description="Custom curve: % more emails each day (e.g. 30)")
+    custom_max_daily: Optional[int] = Field(default=None, ge=1, description="Custom curve: never send more than this per day")
 
 
 class WarmupSliceResponse(BaseModel):

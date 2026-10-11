@@ -43,18 +43,64 @@ class WarmupScheduleCurves:
         250, 500, 1000, 2500, 5000, 10000, 20000
     ]
 
+    MAX_CUSTOM_DAYS = 365
+
+    @classmethod
+    def growth_caps(
+        cls,
+        total_recipients: int,
+        start_cap: int,
+        growth_pct: float,
+        max_daily: Optional[int] = None,
+    ) -> List[int]:
+        """Day 1 = start_cap, then +growth_pct each day (capped at max_daily) until total is reached."""
+        total = max(0, int(total_recipients))
+        if total == 0:
+            return []
+        cap = max(1, int(start_cap))
+        ceiling = int(max_daily) if max_daily else None
+        if ceiling:
+            cap = min(cap, ceiling)
+        growth = max(0.0, float(growth_pct)) / 100.0
+
+        caps: List[int] = []
+        remaining = total
+        while remaining > 0:
+            today = min(cap, remaining)
+            caps.append(today)
+            remaining -= today
+            if len(caps) >= cls.MAX_CUSTOM_DAYS and remaining > 0:
+                # A tiny start with no growth could take years; finish on the last day
+                # rather than silently dropping recipients.
+                caps[-1] += remaining
+                break
+            # Always grow by at least one email so a small start with a low rate still ramps.
+            cap = max(cap + 1, math.ceil(cap * (1 + growth))) if growth > 0 else cap
+            if ceiling:
+                cap = min(cap, ceiling)
+        return caps
+
     @classmethod
     def get_curve_caps(
         cls,
         strategy: str,
         total_recipients: int,
         custom_days: int = 14,
-        custom_start_cap: int = 50
+        custom_start_cap: int = 50,
+        custom_growth_pct: Optional[float] = None,
+        custom_max_daily: Optional[int] = None,
     ) -> List[int]:
         """
         Compute daily recipient caps for each day of the warmup schedule.
+
+        "custom" with custom_growth_pct: start at custom_start_cap emails on day 1, grow
+        by custom_growth_pct per day, never above custom_max_daily, until everyone is
+        covered. "custom" without a growth rate keeps the older behaviour of fitting an
+        exponential curve to exactly custom_days days.
         """
         strat = strategy.lower().strip()
+        if strat == "custom" and custom_growth_pct is not None:
+            return cls.growth_caps(total_recipients, custom_start_cap, custom_growth_pct, custom_max_daily)
         if strat in ["conservative_30", "conservative"]:
             base_caps = cls.CONSERVATIVE_30_CAPS.copy()
         elif strat in ["standard_14", "standard"]:
