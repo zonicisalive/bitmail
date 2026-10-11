@@ -38,7 +38,7 @@
     <link rel="stylesheet" href="/static/css/tailwind.min.css?v=2.7.0">
 
     <!-- Master CSS -->
-    <link rel="stylesheet" href="/static/css/style.css?v=2.10.0">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.11.0">
 
     <!-- Icons & Charts (Offline-Ready & Zero Latency) -->
     <script src="/static/js/lucide.min.js"></script>
@@ -154,6 +154,11 @@
                     <i data-lucide="webhook" class="w-4 h-4 text-violet-400"></i>
                     <span>Webhooks & API</span>
                     <span id="nav-webhooks-badge" class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-300 border border-violet-500/30">REST</span>
+                </a>
+
+                <a href="/settings" data-tab="settings" class="nav-item flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all">
+                    <i data-lucide="settings" class="w-4 h-4 text-[#a1a1a1]"></i>
+                    <span>Settings</span>
                 </a>
 
 
@@ -489,7 +494,14 @@
                                 </div>
 
                                 <div>
-                                    <label class="block text-xs font-medium text-slate-300 mb-1.5">Message Body (HTML & Merge Variables Supported):</label>
+                                    <div class="flex items-center justify-between gap-3 mb-1.5">
+                                        <label for="broadcast-html" id="broadcast-body-label" class="block text-xs font-medium text-slate-300">Message Body (HTML & Merge Variables Supported):</label>
+                                        <div class="flex rounded-lg bg-[#0a0a0a] border border-[#2a2a2a] p-0.5 shrink-0" role="radiogroup" aria-label="Email format">
+                                            <button type="button" data-broadcast-format="html" onclick="setBroadcastFormat('html')" class="format-option px-2.5 py-1 rounded-md text-[11px] font-semibold">HTML</button>
+                                            <button type="button" data-broadcast-format="text" onclick="setBroadcastFormat('text')" class="format-option px-2.5 py-1 rounded-md text-[11px] font-semibold">Plain text</button>
+                                        </div>
+                                    </div>
+                                    <p id="broadcast-text-note" class="hidden text-[11px] text-slate-400 mb-1.5">Plain-text email: sent exactly as written, like a personal message. No design, no tracking; merge tags such as &#123;&#123;first_name&#125;&#125; still work and an unsubscribe line is added at the end.</p>
                                     <textarea id="broadcast-html" rows="10" class="w-full px-3.5 py-2.5 bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 leading-relaxed"><div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; padding: 20px;">
     <h2 style="color: #4f46e5;">Hello {{ '{{' }}first_name{{ '}}' }},</h2>
     <p>We are delighted to share our latest product updates with you today!</p>
@@ -2058,6 +2070,78 @@
             <!-- ========================================================================== -->
             <!-- 11. Outbound Webhooks & Integrations Panel                                 -->
             <!-- ========================================================================== -->
+            <!-- SETTINGS PANEL                                                             -->
+            <!-- ========================================================================== -->
+            <div id="panel-settings" class="app-panel hidden space-y-6 max-w-3xl">
+                <div>
+                    <h1 class="text-2xl font-bold text-white tracking-tight">Settings</h1>
+                    <p class="text-sm text-slate-400 mt-1">Switch sending features on or off for every email Bitmail sends. Changes save instantly.</p>
+                </div>
+
+                <section class="space-y-3">
+                    <h2 class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Composing</h2>
+                    <div class="p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] flex items-start justify-between gap-4">
+                        <span class="min-w-0">
+                            <span class="block text-sm font-semibold text-[#ededed]">Default email format</span>
+                            <span class="block text-xs text-slate-400 mt-0.5">What Send Message starts in. Plain text looks like a personal email and is more likely to reach Gmail's Primary tab; HTML allows design, images and buttons.</span>
+                        </span>
+                        <div class="flex rounded-lg bg-[#0a0a0a] border border-[#2a2a2a] p-0.5 shrink-0" role="radiogroup" aria-label="Default email format">
+                            <button type="button" data-format-option="html" onclick="saveSetting('default_format', 'html')" class="format-option px-3 py-1.5 rounded-md text-xs font-semibold">HTML</button>
+                            <button type="button" data-format-option="text" onclick="saveSetting('default_format', 'text')" class="format-option px-3 py-1.5 rounded-md text-xs font-semibold">Plain text</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="space-y-3">
+                    <h2 class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Tracking</h2>
+                        <label class="flex items-start justify-between gap-4 p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] cursor-pointer">
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-[#ededed]">Track opens</span>
+                                <span class="block text-xs text-slate-400 mt-0.5">Adds an invisible 1&times;1 image to HTML emails to count opens. Starting value of the checkbox on Send Message.</span>
+                                <p class="text-[11px] text-amber-300/90 mt-1 hidden" data-setting-warning="track_opens">Open tracking off: open rates will show 0.</p>
+                            </span>
+                            <input type="checkbox" class="setting-switch" data-setting="track_opens" onchange="saveSetting('track_opens', this.checked)" aria-label="Track opens">
+                        </label>
+                        <label class="flex items-start justify-between gap-4 p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] cursor-pointer">
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-[#ededed]">Track link clicks</span>
+                                <span class="block text-xs text-slate-400 mt-0.5">Sends links through your tracking domain to count clicks. Redirected links are a strong &quot;marketing email&quot; signal for Gmail.</span>
+                            </span>
+                            <input type="checkbox" class="setting-switch" data-setting="track_clicks" onchange="saveSetting('track_clicks', this.checked)" aria-label="Track link clicks">
+                        </label>
+                    <p class="text-[11px] text-slate-500">Plain-text emails are never tracked: there is nowhere to put a pixel and their links stay as written.</p>
+                </section>
+
+                <section class="space-y-3">
+                    <h2 class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Compliance &amp; safety</h2>
+                        <label class="flex items-start justify-between gap-4 p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] cursor-pointer">
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-[#ededed]">Unsubscribe footer</span>
+                                <span class="block text-xs text-slate-400 mt-0.5">Adds your company name, address and an unsubscribe link to the end of every campaign email, HTML and plain text.</span>
+                                <p class="text-[11px] text-amber-300/90 mt-1 hidden" data-setting-warning="compliance_footer">Footer off: put &#123;&#123;unsubscribe_url&#125;&#125; in your emails yourself. Anti-spam laws (CAN-SPAM, GDPR) require a working opt-out in marketing email.</p>
+                            </span>
+                            <input type="checkbox" class="setting-switch" data-setting="compliance_footer" onchange="saveSetting('compliance_footer', this.checked)" aria-label="Unsubscribe footer">
+                        </label>
+                        <label class="flex items-start justify-between gap-4 p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] cursor-pointer">
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-[#ededed]">One-click unsubscribe header</span>
+                                <span class="block text-xs text-slate-400 mt-0.5">Adds List-Unsubscribe headers so Gmail and Yahoo show an Unsubscribe button next to your name.</span>
+                                <p class="text-[11px] text-amber-300/90 mt-1 hidden" data-setting-warning="list_unsubscribe_header">Header off: Gmail and Yahoo require it for senders of 5,000+ emails a day, and without it people mark you as spam instead.</p>
+                            </span>
+                            <input type="checkbox" class="setting-switch" data-setting="list_unsubscribe_header" onchange="saveSetting('list_unsubscribe_header', this.checked)" aria-label="One-click unsubscribe header">
+                        </label>
+                        <label class="flex items-start justify-between gap-4 p-4 rounded-xl bg-[#141414] border border-[#2a2a2a] cursor-pointer">
+                            <span class="min-w-0">
+                                <span class="block text-sm font-semibold text-[#ededed]">Pre-send safety check</span>
+                                <span class="block text-xs text-slate-400 mt-0.5">Before each email, checks the address can receive mail (MX), and skips disposable or risky addresses.</span>
+                                <p class="text-[11px] text-amber-300/90 mt-1 hidden" data-setting-warning="pre_send_safety">Safety check off: dead and risky addresses will be sent to and bounce. Unsubscribed and bounced contacts are still always skipped.</p>
+                            </span>
+                            <input type="checkbox" class="setting-switch" data-setting="pre_send_safety" onchange="saveSetting('pre_send_safety', this.checked)" aria-label="Pre-send safety check">
+                        </label>
+                </section>
+            </div>
+
+            <!-- ========================================================================== -->
             <div id="panel-webhooks" class="app-panel hidden space-y-6">
                 <!-- Header -->
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -3156,6 +3240,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.10.0"></script>
+    <script src="/static/js/app.js?v=2.11.0"></script>
 </body>
 </html>

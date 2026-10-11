@@ -183,7 +183,15 @@ def build_mime_message(
     Construct a standards-compliant MIME Multipart email message.
     Returns (msg_object, raw_eml_string).
     """
-    msg = MIMEMultipart("alternative")
+    if body_html and body_text:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+    elif body_html:
+        msg = MIMEText(body_html, "html", "utf-8")
+    else:
+        # Text-only email: one plain part, nothing else.
+        msg = MIMEText(body_text or "", "plain", "utf-8")
 
     from_header = email.utils.formataddr((sender_name or "", sender_email)) if sender_name else sender_email
     to_header = email.utils.formataddr((recipient_name or "", recipient_email)) if recipient_name else recipient_email
@@ -211,14 +219,6 @@ def build_mime_message(
         for k, v in headers_dict.items():
             if k.lower() not in ["from", "to", "subject", "date", "message-id"]:
                 msg[k] = str(v)
-
-    if body_text:
-        part_text = MIMEText(body_text, "plain", "utf-8")
-        msg.attach(part_text)
-
-    if body_html:
-        part_html = MIMEText(body_html, "html", "utf-8")
-        msg.attach(part_html)
 
     raw_eml_str = msg.as_string()
     return msg, raw_eml_str
@@ -509,17 +509,29 @@ async def send_single_email(
     sender_email = sender_email or settings.DEFAULT_SENDER_EMAIL
     sender_name = sender_name or settings.DEFAULT_SENDER_NAME
 
+    from app.app_settings import get_settings
+    app_cfg = await get_settings()
+
     # ------------------------------------------------------------------
     # Pre-Send Safety Gate: Intercept dead, non-existent, or suppressed mailboxes
     # ------------------------------------------------------------------
     if pre_send_safety:
         try:
             from app.deliverability import PreSendSafetyGuard
-            safety_eval = await PreSendSafetyGuard.evaluate_sendability(
-                email=recipient_email,
-                probe_smtp=False,
-                strict_mode=strict_safety
-            )
+            if app_cfg["pre_send_safety"]:
+                safety_eval = await PreSendSafetyGuard.evaluate_sendability(
+                    email=recipient_email,
+                    probe_smtp=False,
+                    strict_mode=strict_safety
+                )
+            else:
+                # Safety checks switched off in Settings: skip MX / risk checks, but an
+                # unsubscribed or bounced address is still never mailed.
+                is_suppressed, supp_reason = await PreSendSafetyGuard.check_suppression(recipient_email)
+                safety_eval = (
+                    {"is_safe_to_send": False, "verdict": "do_not_send", "primary_reason": supp_reason or "Address is suppressed"}
+                    if is_suppressed else {"is_safe_to_send": True, "verdict": "send"}
+                )
             if not safety_eval.get("is_safe_to_send", True) or safety_eval.get("verdict") == "do_not_send":
                 primary_reason = safety_eval.get("primary_reason", "Safety check failed")
                 reason_detail = f"Pre-send Safety Guard blocked send: {primary_reason}"
@@ -618,6 +630,15 @@ async def send_single_email(
     rendered_subject = interpolate_template(subject or "No Subject", merge_vars)
     rendered_html = interpolate_template(body_html or "", merge_vars) if body_html else None
     rendered_text = interpolate_template(body_text or "", merge_vars) if body_text else None
+    if not rendered_text and rendered_html:
+        # Every HTML email gets a plain-text alternative, made before tracking rewrites links.
+        from app.template_engine import template_engine
+        rendered_text = template_engine.html_to_plain_text(rendered_html)
+    if rendered_text and campaign_id and app_cfg["compliance_footer"] and "/unsubscribe" not in rendered_text:
+        # Campaign mail must offer an opt-out in the text too (campaign renders already
+        # include it; this covers direct sends).
+        from app.template_engine import template_engine
+        rendered_text = template_engine.plain_text_footer(rendered_text, unsub_url)
 
     if rendered_html:
         rendered_html = inject_tracking(
@@ -628,8 +649,8 @@ async def send_single_email(
             base_url=settings.TRACKING_BASE_URL
         )
 
-    if campaign_id:
-        headers_dict["X-Campaign-ID"] = str(campaign_id)
+    # No X-Campaign-ID: receivers do not need it and it marks the message as bulk.
+    # The campaign is still recorded on the sent_emails row.
 
     mime_msg, raw_eml_str = build_mime_message(
         sender_name=sender_name,
@@ -641,7 +662,7 @@ async def send_single_email(
         body_text=rendered_text,
         headers_dict=headers_dict,
         email_id=email_id,
-        unsubscribe_url=unsub_url
+        unsubscribe_url=unsub_url if app_cfg["list_unsubscribe_header"] else None
     )
 
     raw_eml_path = persist_raw_eml(email_id, raw_eml_str)
@@ -792,7 +813,9 @@ class EmailSender:
 
         subject = rendered.subject if hasattr(rendered, "subject") else getattr(rendered, "rendered_subject", "No Subject")
         html_body = rendered.rendered_html if hasattr(rendered, "rendered_html") else getattr(rendered, "html", "")
-        text_body = getattr(rendered, "rendered_text", None) or getattr(rendered, "text", None) or ""
+        # RenderedEmailContent calls it body_text; reading "rendered_text" dropped the
+        # plain-text part from every campaign email (HTML-only mail scores worse).
+        text_body = getattr(rendered, "body_text", None) or getattr(rendered, "rendered_text", None) or ""
 
         start_time = time.monotonic()
         

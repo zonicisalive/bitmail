@@ -143,6 +143,11 @@ class CampaignWorker:
             # Load campaign details
             subject_tmpl = getattr(self.campaign, "subject", "")
             html_tmpl = getattr(self.campaign, "template_html", "") or getattr(self.campaign, "body_html", "") or getattr(self.campaign, "custom_html", "") or ""
+            # Plain-text body: the whole email for text-only campaigns, otherwise the
+            # text alternative (generated from the HTML when not given).
+            text_tmpl = getattr(self.campaign, "template_text", None) or None
+            from app.app_settings import get_settings
+            inject_footer = (await get_settings())["compliance_footer"]
             sender_name = getattr(self.campaign, "sender_name", settings.DEFAULT_SENDER_NAME)
             sender_email = getattr(self.campaign, "sender_email", settings.DEFAULT_SENDER_EMAIL)
             reply_to = getattr(self.campaign, "reply_to", None)
@@ -163,6 +168,8 @@ class CampaignWorker:
                     rendered = self.templates.render_email(
                         subject_template=subject_tmpl,
                         html_template=html_tmpl,
+                        text_template=text_tmpl,
+                        inject_footer=inject_footer,
                         subscriber=sub,
                         email_storage_id=storage_id,
                         campaign_id=self.campaign_id,

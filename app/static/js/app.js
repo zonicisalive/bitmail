@@ -575,9 +575,133 @@ async function refreshAllData() {
         fetchTemplates(),
         fetchSmtpConfigs(),
         fetchLogs(),
-        fetchAvailablePlaceholders()
+        fetchAvailablePlaceholders(),
+        loadAppSettings()
     ]);
     updateBroadcastEmailCount();
+}
+
+// --------------------------------------------------------------------------
+// Settings page: account-wide sending switches (stored server-side).
+// --------------------------------------------------------------------------
+let _composerDefaultsApplied = false;
+
+async function loadAppSettings() {
+    try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) return;
+        App.appSettings = (await res.json()).settings;
+        renderSettingsPanel();
+        // Defaults only seed the composer once per page load, so they never
+        // overwrite a choice made on Send Message.
+        if (!_composerDefaultsApplied) {
+            _composerDefaultsApplied = true;
+            const opens = document.getElementById('broadcast-track-opens');
+            const clicks = document.getElementById('broadcast-track-clicks');
+            if (opens) opens.checked = !!App.appSettings.track_opens;
+            if (clicks) clicks.checked = !!App.appSettings.track_clicks;
+            setBroadcastFormat(App.appSettings.default_format || 'html', { convert: false });
+        }
+    } catch (err) {
+        console.warn('Settings load failed:', err);
+    }
+}
+
+function renderSettingsPanel() {
+    const cfg = App.appSettings || {};
+    document.querySelectorAll('.setting-switch').forEach(cb => {
+        cb.checked = !!cfg[cb.dataset.setting];
+    });
+    document.querySelectorAll('[data-setting-warning]').forEach(el => {
+        el.classList.toggle('hidden', !!cfg[el.dataset.settingWarning]);
+    });
+    document.querySelectorAll('[data-format-option]').forEach(btn => {
+        btn.classList.toggle('format-option-active', btn.dataset.formatOption === (cfg.default_format || 'html'));
+        btn.setAttribute('aria-checked', btn.dataset.formatOption === cfg.default_format ? 'true' : 'false');
+    });
+}
+
+async function saveSetting(key, value) {
+    try {
+        const res = await fetch('/api/settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ [key]: value })
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(data.detail || 'Could not save setting', 'error');
+            renderSettingsPanel();
+            return;
+        }
+        App.appSettings = data.settings;
+        renderSettingsPanel();
+        showToast('Setting saved', 'success');
+    } catch (err) {
+        showToast('Could not save setting: ' + err.message, 'error');
+        renderSettingsPanel();
+    }
+}
+
+// --------------------------------------------------------------------------
+// Send Message format: HTML or plain text. Plain text is sent as a single
+// text/plain part with no tracking; switching keeps the HTML draft so it can
+// be switched back without losing work.
+// --------------------------------------------------------------------------
+function htmlToPlainText(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('style, script, head').forEach(el => el.remove());
+    doc.querySelectorAll('a[href]').forEach(a => {
+        const href = a.getAttribute('href');
+        const label = a.textContent.trim();
+        if (href && !href.startsWith('#') && label && label !== href) a.textContent = `${label} (${href})`;
+    });
+    doc.querySelectorAll('br').forEach(br => br.replaceWith('\n'));
+    // Paragraphs and headings get a blank line after them, list items and rows a line break.
+    doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6').forEach(el => el.append('\n\n'));
+    doc.querySelectorAll('div, li, tr').forEach(el => el.append('\n'));
+    return (doc.body.textContent || '').split('\n').map(l => l.trim()).join('\n')
+        .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function setBroadcastFormat(format, opts = {}) {
+    const textarea = document.getElementById('broadcast-html');
+    const prev = App.broadcastFormat || 'html';
+    App.broadcastFormat = format === 'text' ? 'text' : 'html';
+
+    if (textarea && opts.convert !== false && prev !== App.broadcastFormat) {
+        if (App.broadcastFormat === 'text') {
+            App.broadcastHtmlDraft = textarea.value;
+            if (/<[a-z][\s\S]*>/i.test(textarea.value)) textarea.value = htmlToPlainText(textarea.value);
+        } else if (App.broadcastHtmlDraft !== undefined) {
+            textarea.value = App.broadcastHtmlDraft;
+        }
+    }
+
+    const isText = App.broadcastFormat === 'text';
+    document.querySelectorAll('[data-broadcast-format]').forEach(btn => {
+        btn.classList.toggle('format-option-active', btn.dataset.broadcastFormat === App.broadcastFormat);
+        btn.setAttribute('aria-checked', btn.dataset.broadcastFormat === App.broadcastFormat ? 'true' : 'false');
+    });
+    const label = document.getElementById('broadcast-body-label');
+    if (label) label.textContent = isText ? 'Message (plain text, merge tags supported):' : 'Message Body (HTML & Merge Variables Supported):';
+    document.getElementById('broadcast-text-note')?.classList.toggle('hidden', !isText);
+    if (textarea) textarea.classList.toggle('font-mono', !isText);
+
+    // Tracking cannot apply to plain text; show that rather than pretending.
+    ['broadcast-track-opens', 'broadcast-track-clicks'].forEach(id => {
+        const cb = document.getElementById(id);
+        if (!cb) return;
+        cb.disabled = isText;
+        cb.closest('label')?.classList.toggle('opacity-50', isText);
+    });
+}
+
+function broadcastBodyPayload(content) {
+    // Text mode sends no HTML at all; the server then builds a text/plain-only email.
+    return App.broadcastFormat === 'text'
+        ? { body_html: '', body_text: content }
+        : { body_html: content };
 }
 
 function toggleMobileSidebar() {
@@ -1664,7 +1788,7 @@ async function sendBroadcastTestPreview() {
                 recipient_email: testEmail,
                 recipient_name: 'Test Reviewer',
                 subject: subject,
-                body_html: html,
+                ...broadcastBodyPayload(html),
                 sender_name: senderName,
                 sender_email: senderEmail,
                 smtp_config_id: smtpId,
@@ -1674,8 +1798,8 @@ async function sendBroadcastTestPreview() {
                     email: testEmail,
                     company: 'Acme Testing Corp'
                 },
-                track_opens: true,
-                track_clicks: true
+                track_opens: App.broadcastFormat !== 'text' && (document.getElementById('broadcast-track-opens')?.checked ?? true),
+                track_clicks: App.broadcastFormat !== 'text' && (document.getElementById('broadcast-track-clicks')?.checked ?? true)
             })
         });
 
@@ -1735,7 +1859,11 @@ async function refreshLivePreview() {
     const htmlEl = isStudio ? document.getElementById('studio-tpl-html') : document.getElementById('broadcast-html');
 
     const rawSubject = subjectEl?.value || (isStudio ? 'Welcome {{first_name}} to Bitmail!' : 'Important Update for {{first_name}}');
-    const rawHtml = htmlEl?.value || '<div style="font-family: Arial, sans-serif; padding: 20px;"><h3>Hello {{first_name}}</h3><p>Previewing your email message.</p></div>';
+    let rawHtml = htmlEl?.value || '<div style="font-family: Arial, sans-serif; padding: 20px;"><h3>Hello {{first_name}}</h3><p>Previewing your email message.</p></div>';
+    if (!isStudio && App.broadcastFormat === 'text') {
+        // Show a plain-text email the way a mail client does: monospace-free plain text, no styling.
+        rawHtml = `<pre style="white-space:pre-wrap;word-wrap:break-word;font:14px/1.6 -apple-system,Segoe UI,Arial,sans-serif;color:#111;margin:16px;">${escapeHtml(htmlEl?.value || '')}</pre>`;
+    }
 
     // Rich sample variables for preview interpolation
     const sampleContext = {
@@ -1841,19 +1969,19 @@ async function launchQuickBroadcast() {
         return;
     }
     if (!html) {
-        showToast('Please enter message HTML content.', 'warning');
+        showToast(App.broadcastFormat === 'text' ? 'Please write your message.' : 'Please enter message HTML content.', 'warning');
         return;
     }
 
     let payload = {
         subject: subject,
-        body_html: html,
+        ...broadcastBodyPayload(html),
         sender_name: senderName,
         sender_email: senderEmail,
         smtp_config_id: smtpId,
         rate_limit_per_second: rateLimit,
-        track_opens: trackOpens,
-        track_clicks: trackClicks
+        track_opens: App.broadcastFormat === 'text' ? false : trackOpens,
+        track_clicks: App.broadcastFormat === 'text' ? false : trackClicks
     };
 
     let scheduledIso = null;

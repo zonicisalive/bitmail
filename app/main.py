@@ -21,6 +21,7 @@ from app.routes import (
     auth_scan,
     bounces,
     bulk,
+    settings_routes,
     campaigns,
     dashboard,
     deliverability,
@@ -101,6 +102,7 @@ app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 app.include_router(deliverability.router, dependencies=[Depends(get_current_user)])
 app.include_router(warmup.router, dependencies=[Depends(get_current_user)])
 app.include_router(webhooks.router, dependencies=[Depends(get_current_user)])
+app.include_router(settings_routes.router, dependencies=[Depends(get_current_user)])
 
 
 

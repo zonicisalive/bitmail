@@ -254,7 +254,8 @@ class TestAsyncComponents(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(headers["Subject"], "Hello Alice!")
         self.assertIn("List-Unsubscribe", headers)
         self.assertEqual(headers.get("List-Unsubscribe-Post"), "List-Unsubscribe=One-Click")
-        self.assertEqual(headers.get("X-Campaign-ID"), campaign.id)
+        # The campaign is tracked in the database, not advertised in a bulk-mail header.
+        self.assertNotIn("X-Campaign-ID", headers)
 
     async def test_rate_limiter(self):
         limiter = AsyncTokenBucketRateLimiter(rate_per_second=20, capacity=5)

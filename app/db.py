@@ -532,6 +532,14 @@ async def init_db() -> None:
         await add_column_if_missing("smtp_configs", "warmup_day", "INTEGER DEFAULT 1")
 
 
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+        """)
+
         await _consolidate_duplicate_tables(db)
 
         # Indexes

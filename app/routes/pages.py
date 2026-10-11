@@ -242,6 +242,13 @@ async def page_warmup(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+async def page_settings(request: Request):
+    """Account-wide sending settings."""
+    ctx = await get_initial_page_context(request, active_tab="settings")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
 @router.get("/webhooks", response_class=HTMLResponse)
 async def page_webhooks(request: Request):
     """Dynamic Outbound Webhooks & Integrations Page."""

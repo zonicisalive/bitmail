@@ -330,6 +330,17 @@ class TemplateEngine:
 
         return f"{html_content}\n{footer_html}"
 
+    def plain_text_footer(self, text_content: str, unsubscribe_url: str) -> str:
+        """Plain-text counterpart of the compliance footer (unless the text already links to unsubscribe)."""
+        if unsubscribe_url and unsubscribe_url in (text_content or ""):
+            return text_content
+        footer = (
+            "\n\n--\n"
+            f"{self.company_name} - {self.company_address}\n"
+            f"Unsubscribe: {unsubscribe_url}"
+        )
+        return (text_content or "").rstrip() + footer
+
     def html_to_plain_text(self, html_content: str) -> str:
         """Convert HTML to clean plain text format for multipart/alternative fallback."""
         if not html_content:
@@ -407,6 +418,18 @@ class TemplateEngine:
             interpolated_text = self.interpolate_tags(text_template, context)
         else:
             interpolated_text = self.html_to_plain_text(interpolated_html)
+        if inject_footer:
+            interpolated_text = self.plain_text_footer(interpolated_text, unsubscribe_url)
+
+        # Text-only email: no HTML body at all, so no footer HTML, tracked links or pixel.
+        if not (html_template or "").strip():
+            return RenderedEmailContent(
+                subject=interpolated_subject,
+                body_text=interpolated_text,
+                body_html="",
+                rendered_html="",
+                unsubscribe_url=unsubscribe_url,
+            )
 
         rendered_html = interpolated_html
 
