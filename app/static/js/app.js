@@ -578,7 +578,117 @@ async function refreshAllData() {
         fetchAvailablePlaceholders(),
         loadAppSettings()
     ]);
+    // After the dropdowns are filled and the Settings defaults applied, bring back the
+    // last sent form so its choices win over the defaults.
+    restoreBroadcastState();
     updateBroadcastEmailCount();
+}
+
+// --------------------------------------------------------------------------
+// Remember the Send Message form between visits (this browser only).
+// Saved after each successful send or test send. Pasted recipients and the
+// schedule time are deliberately not kept: restoring them would make it easy
+// to mail the same people twice or schedule into the past.
+// --------------------------------------------------------------------------
+const BROADCAST_STATE_KEY = 'bitmail_last_send_v1';
+const BROADCAST_STATE_VALUES = [
+    'broadcast-subject', 'broadcast-html', 'broadcast-sender-name', 'broadcast-sender-email',
+    'broadcast-smtp-select', 'broadcast-list-select', 'broadcast-rate-limit', 'broadcast-rate-limit-custom',
+    'broadcast-warmup-strategy', 'broadcast-warmup-custom-start', 'broadcast-warmup-custom-growth', 'broadcast-warmup-custom-max',
+];
+const BROADCAST_STATE_CHECKS = ['broadcast-track-opens', 'broadcast-track-clicks'];
+let _broadcastStateRestored = false;
+
+function saveBroadcastState() {
+    const state = {
+        values: {},
+        checks: {},
+        format: App.broadcastFormat || 'html',
+        htmlDraft: App.broadcastHtmlDraft,
+        audienceMode: App.audienceMode,
+        timingMode: App.broadcastTimingMode === 'warmup' ? 'warmup' : 'now',
+        savedAt: new Date().toISOString(),
+    };
+    BROADCAST_STATE_VALUES.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) state.values[id] = el.value;
+    });
+    BROADCAST_STATE_CHECKS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) state.checks[id] = el.checked;
+    });
+    try {
+        localStorage.setItem(BROADCAST_STATE_KEY, JSON.stringify(state));
+        document.getElementById('btn-reset-broadcast-form')?.classList.remove('hidden');
+    } catch (e) { /* storage full or blocked: nothing to remember */ }
+}
+
+function restoreBroadcastState() {
+    if (_broadcastStateRestored) return;
+    _broadcastStateRestored = true;
+    let state;
+    try { state = JSON.parse(localStorage.getItem(BROADCAST_STATE_KEY) || 'null'); } catch (e) { state = null; }
+    if (!state || !state.values) return;
+
+    // Format first, without converting, so the saved body lands in the right mode.
+    setBroadcastFormat(state.format || 'html', { convert: false });
+    if (state.htmlDraft !== undefined) App.broadcastHtmlDraft = state.htmlDraft;
+
+    Object.entries(state.values).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (!el || value === undefined || value === null) return;
+        // A saved list or mail server that was since deleted is skipped, not forced.
+        if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === value)) return;
+        el.value = value;
+    });
+    Object.entries(state.checks || {}).forEach(([id, checked]) => {
+        const el = document.getElementById(id);
+        if (el && !el.disabled) el.checked = !!checked;
+    });
+
+    if (state.audienceMode) setBroadcastAudienceMode(state.audienceMode);
+    handleRateLimitChange(document.getElementById('broadcast-rate-limit'));
+    toggleWarmupCustomFields('broadcast-warmup', document.getElementById('broadcast-warmup-strategy')?.value);
+    if (state.timingMode === 'warmup') setBroadcastTimingMode('warmup');
+    updateSmtpStatusHint();
+    document.getElementById('btn-reset-broadcast-form')?.classList.remove('hidden');
+}
+
+async function resetBroadcastForm() {
+    const ok = await confirmDialog('Clear the saved Send Message form and start blank?', {
+        title: 'Reset form',
+        detail: 'Only the remembered form is cleared. Nothing that was sent is affected.',
+        confirmText: 'Reset form'
+    });
+    if (!ok) return;
+    try { localStorage.removeItem(BROADCAST_STATE_KEY); } catch (e) {}
+    // Put every field back to the page's original value. (A reload is not enough:
+    // Firefox restores typed form values on reload.)
+    [...BROADCAST_STATE_VALUES, ...BROADCAST_STATE_CHECKS, 'broadcast-raw-emails'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.type === 'checkbox') el.checked = el.defaultChecked;
+        else if (el.tagName === 'SELECT') {
+            const def = [...el.options].find(o => o.defaultSelected) || el.options[0];
+            if (def) el.value = def.value;
+        } else el.value = el.defaultValue;
+    });
+    App.broadcastHtmlDraft = undefined;
+    setBroadcastFormat((App.appSettings && App.appSettings.default_format) || 'html', { convert: false });
+    if (App.appSettings) {
+        const opens = document.getElementById('broadcast-track-opens');
+        const clicks = document.getElementById('broadcast-track-clicks');
+        if (opens && !opens.disabled) opens.checked = !!App.appSettings.track_opens;
+        if (clicks && !clicks.disabled) clicks.checked = !!App.appSettings.track_clicks;
+    }
+    setBroadcastAudienceMode('paste');
+    setBroadcastTimingMode('now');
+    handleRateLimitChange(document.getElementById('broadcast-rate-limit'));
+    toggleWarmupCustomFields('broadcast-warmup', document.getElementById('broadcast-warmup-strategy')?.value);
+    updateBroadcastEmailCount();
+    updateSmtpStatusHint();
+    document.getElementById('btn-reset-broadcast-form')?.classList.add('hidden');
+    showToast('Form reset', 'info');
 }
 
 // --------------------------------------------------------------------------
@@ -1806,6 +1916,7 @@ async function sendBroadcastTestPreview() {
         const data = await safeJson(res);
         if (res.ok && data.success && data.status !== 'failed') {
             showToast(`✓ Test preview sent successfully! Storage ID: ${data.sent_email_id}`, 'success');
+            saveBroadcastState();
             await fetchVaultEmails();
             await fetchDashboardStats();
         } else {
@@ -2058,6 +2169,7 @@ async function launchQuickBroadcast() {
             showToast(`Broadcast failed: ${data.detail || data.message || 'Unknown error'}`, 'error');
             return;
         }
+        saveBroadcastState();
 
         if (data.warmup_enabled) {
             showToast(`🔥 Warmup Ramp-Up started: ${data.day_1_cap} emails today across ${data.total_days} days!`, 'success');

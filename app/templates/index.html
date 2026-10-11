@@ -612,6 +612,7 @@
                                     </div>
 
                                     <div class="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                                        <button type="button" id="btn-reset-broadcast-form" onclick="resetBroadcastForm()" class="hidden text-[11px] text-slate-400 hover:text-white underline underline-offset-2 cursor-pointer" title="Forget the saved form and start blank">Reset form</button>
                                         <button type="button" onclick="sendBroadcastTestPreview()" class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-white/10 transition-colors whitespace-nowrap flex-shrink-0 cursor-pointer">
                                             Send Test Preview
                                         </button>
@@ -3240,6 +3241,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.11.0"></script>
+    <script src="/static/js/app.js?v=2.12.0"></script>
 </body>
 </html>
