@@ -387,6 +387,20 @@ class CampaignWorker:
 
 
 
+def effective_rate_limit(campaign: Any) -> int:
+    """
+    Messages per second for a campaign: its own speed setting, but never faster than
+    the relay it sends through allows (the relay's "rate limit per second"). Sending
+    faster gets the excess dropped - Stalwart, for one, throttles at 5/second.
+    """
+    rate = getattr(campaign, "rate_limit_per_sec", None) or settings.DEFAULT_RATE_LIMIT_PER_SEC
+    relay = getattr(campaign, "smtp_config", None)
+    relay_rate = getattr(relay, "rate_limit_per_second", None) if relay is not None else None
+    if relay_rate and not getattr(relay, "is_sandbox", False):
+        rate = min(int(rate), int(relay_rate))
+    return max(1, int(rate))
+
+
 class CampaignQueueManager:
     """
     Manages background execution tasks for mass email campaigns.
@@ -610,7 +624,7 @@ class CampaignQueueManager:
 
             worker = CampaignWorker(
                 campaign=campaign,
-                rate_limit_per_sec=getattr(campaign, "rate_limit_per_sec", settings.DEFAULT_RATE_LIMIT_PER_SEC),
+                rate_limit_per_sec=effective_rate_limit(campaign),
                 concurrency_limit=getattr(campaign, "concurrency_limit", settings.MAX_CONCURRENT_SENDS),
                 sender=self.sender,
                 storage=self.storage,

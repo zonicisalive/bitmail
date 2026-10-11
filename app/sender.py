@@ -7,6 +7,7 @@ import email.utils
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import socket
@@ -294,6 +295,37 @@ def resolve_mx_host(domain: str) -> Optional[str]:
     return None
 
 
+logger = logging.getLogger("bitmail.sender")
+
+SMTP_RETRY_DELAYS = (2.0, 4.0, 8.0)
+
+
+def retry_delay(exc: Exception, phase: str, attempt: int) -> Optional[float]:
+    """
+    Seconds to wait before retrying a relay send, or None to give up.
+
+    Retried: anything before the message was handed over (connect / TLS / login),
+    except bad credentials, and 4xx answers to MAIL FROM / RCPT TO / end of DATA,
+    which mean "not accepted, try later". Not retried: a dropped connection while
+    the message was being transmitted - the relay may already have it.
+    """
+    if attempt > len(SMTP_RETRY_DELAYS):
+        return None
+    code = getattr(exc, "code", None)
+    if phase in ("connect", "login"):
+        if isinstance(code, int) and 500 <= code < 600:
+            return None  # e.g. 535 authentication failed: retrying will not help
+        return SMTP_RETRY_DELAYS[attempt - 1]
+    refused = isinstance(exc, (aiosmtplib.SMTPSenderRefused, aiosmtplib.SMTPRecipientsRefused, aiosmtplib.SMTPDataError))
+    if refused and isinstance(code, int) and 400 <= code < 500:
+        return SMTP_RETRY_DELAYS[attempt - 1]
+    if isinstance(exc, aiosmtplib.SMTPRecipientsRefused):
+        codes = [getattr(r, "code", 0) for r in getattr(exc, "recipients", [])]
+        if codes and all(400 <= c < 500 for c in codes):
+            return SMTP_RETRY_DELAYS[attempt - 1]
+    return None
+
+
 async def dispatch_smtp_message(
     msg: MIMEMultipart,
     sender_email: str,
@@ -348,73 +380,94 @@ async def dispatch_smtp_message(
 
     # For explicit sandbox mode, simulate transmission
     if is_sandbox_config(smtp_config):
-        import asyncio
         delay = float(smtp_config.get("simulated_delay_sec", 0.02) or 0.02)
         await asyncio.sleep(min(0.2, max(0.005, delay)))
         return True, "250 2.0.0 OK: Sandbox message queued and archived", msg["Message-ID"]
 
-    try:
-        client = aiosmtplib.SMTP(
-            hostname=host,
-            port=port,
-            use_tls=use_ssl,
-            timeout=settings.SMTP_CONNECTION_TIMEOUT_SECONDS
-        )
-
-        await client.connect()
-
-        if use_tls and not use_ssl:
-            try:
-                await client.starttls()
-            except Exception as tls_e:
-                if "already using tls" not in str(tls_e).lower():
-                    raise tls_e
-
-        if username and password:
-            await client.login(username, password)
-
-        response = await client.send_message(
-            msg,
-            sender=sender_email,
-            recipients=[recipient_email]
-        )
+    # Relays throttle bursts (Stalwart's default is 5 messages/second per sender) and
+    # answer by dropping the connection or with a 4xx. Retry those with backoff - but
+    # only when the relay certainly did not accept the message, so nobody gets two.
+    attempt = 0
+    last_exc: Optional[Exception] = None
+    while True:
+        attempt += 1
+        phase = "connect"
         try:
-            await client.quit()
+            client = aiosmtplib.SMTP(
+                hostname=host,
+                port=port,
+                use_tls=use_ssl,
+                timeout=settings.SMTP_CONNECTION_TIMEOUT_SECONDS
+            )
+
+            await client.connect()
+
+            if use_tls and not use_ssl:
+                try:
+                    await client.starttls()
+                except Exception as tls_e:
+                    if "already using tls" not in str(tls_e).lower():
+                        raise tls_e
+
+            if username and password:
+                phase = "login"
+                await client.login(username, password)
+
+            phase = "send"
+            response = await client.send_message(
+                msg,
+                sender=sender_email,
+                recipients=[recipient_email]
+            )
+            try:
+                await client.quit()
+            except Exception:
+                pass
+
+            resp_text = str(response) if response else "250 2.0.0 OK Delivered via SMTP Relay"
+            if smtp_config and smtp_config.get("id"):
+                try:
+                    from app.warmup import RelayPoolManager
+                    asyncio.create_task(RelayPoolManager.mark_success(smtp_config["id"]))
+                except Exception:
+                    pass
+            return True, resp_text, msg["Message-ID"]
+
+        except Exception as e:
+            last_exc = e
+            delay = retry_delay(e, phase, attempt)
+            if delay is None:
+                break
+            logger.info("Relay %s refused temporarily (%s, attempt %d); retrying in %.1fs", host, e, attempt, delay)
+            await asyncio.sleep(delay)
+
+    # Not retryable, or retries used up: record the failure, try a backup relay, or give up.
+    err_str = str(last_exc)
+    if smtp_config and smtp_config.get("id"):
+        try:
+            from app.warmup import RelayPoolManager
+            asyncio.create_task(RelayPoolManager.mark_failure(smtp_config["id"], err_str))
         except Exception:
             pass
 
-        resp_text = str(response) if response else "250 2.0.0 OK Delivered via SMTP Relay"
-        if smtp_config and smtp_config.get("id"):
-            try:
-                from app.warmup import RelayPoolManager
-                asyncio.create_task(RelayPoolManager.mark_success(smtp_config["id"]))
-            except Exception:
-                pass
-        return True, resp_text, msg["Message-ID"]
+    # Failover to another pooled relay for temporary problems. This called a
+    # non-existent send_message_smtp(), so the NameError was swallowed and
+    # failover never happened.
+    is_temp = retry_delay(last_exc, phase, 1) is not None or any(
+        c in err_str.lower() for c in ["421", "451", "timeout", "timed out", "too many connections", "rate limit", "service unavailable"]
+    )
+    if is_temp and smtp_config.get("allow_failover", True):
+        try:
+            from app.warmup import RelayPoolManager
+            backup_relay = await RelayPoolManager.select_relay(rotation_mode="failover")
+            if backup_relay and backup_relay.get("id") != smtp_config.get("id"):
+                backup_config = dict(backup_relay)
+                backup_config["allow_failover"] = False  # Avoid infinite recursion
+                return await dispatch_smtp_message(msg, sender_email, recipient_email, backup_config)
+        except Exception as failover_err:
+            logger.warning("Relay failover failed: %s", failover_err)
 
-    except Exception as e:
-        err_str = str(e)
-        if smtp_config and smtp_config.get("id"):
-            try:
-                from app.warmup import RelayPoolManager
-                asyncio.create_task(RelayPoolManager.mark_failure(smtp_config["id"], err_str))
-            except Exception:
-                pass
-
-        # Automatic failover: if temporary rate-limiting, timeout, or greylist error occurs
-        is_temp = any(c in err_str.lower() for c in ["421", "451", "timeout", "timed out", "too many connections", "rate limit", "service unavailable"])
-        if is_temp and smtp_config and smtp_config.get("allow_failover", True):
-            try:
-                from app.warmup import RelayPoolManager
-                backup_relay = await RelayPoolManager.select_relay(rotation_mode="failover")
-                if backup_relay and backup_relay.get("id") != smtp_config.get("id"):
-                    backup_config = dict(backup_relay)
-                    backup_config["allow_failover"] = False  # Avoid infinite recursion
-                    return await send_message_smtp(msg, sender_email, recipient_email, backup_config)
-            except Exception:
-                pass
-
-        return False, err_str, msg.get("Message-ID")
+    return False, err_str, msg.get("Message-ID")
 
 
 
