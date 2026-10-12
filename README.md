@@ -15,32 +15,32 @@
 ```mermaid
 flowchart TD
     subgraph Clients["Clients & Entrypoints"]
-        UI["🖥️ Web Dashboard (Tailwind & JS)"]
-        API["⚡ Transactional REST API"]
-        MOB["📱 Mobile QR Scan-to-Login"]
+        UI["Web Dashboard (Tailwind & JS)"]
+        API["Transactional REST API"]
+        MOB["Mobile QR Scan-to-Login"]
     end
 
     subgraph Core["Bitmail Core Engine (FastAPI & Asyncio)"]
-        AUTH["🔐 Fernet Credential Encryption & Auth"]
-        ROUTERS["🚦 Route Controllers (Broadcasts, Campaigns, Vault, DNS)"]
-        GUARD["🛡️ Pre-Send Safety Guard<br/>• Syntax & Burner Domain Filter<br/>• Live MX DNS Verification<br/>• Active Suppression Sync"]
-        TPL["📝 Sandboxed Jinja2 Template Engine<br/>• Dynamic Placeholders ({{Business_Name}})<br/>• Open Beacon & Click Rewriter"]
-        QUEUE["⚡ Asynchronous Queue & Worker Pool<br/>• Token-Bucket Speed Governor (10-100/s)<br/>• Concurrency Semaphore Cap"]
+        AUTH["Fernet Credential Encryption & Auth"]
+        ROUTERS["Route Controllers (Broadcasts, Campaigns, Vault, DNS)"]
+        GUARD["Pre-Send Safety Guard<br/>• Syntax & Burner Domain Filter<br/>• Live MX DNS Verification<br/>• Active Suppression Sync"]
+        TPL["Sandboxed Jinja2 Template Engine<br/>• Dynamic Placeholders ({{Business_Name}})<br/>• Open Beacon & Click Rewriter"]
+        QUEUE["Asynchronous Queue & Worker Pool<br/>• Token-Bucket Speed Governor (10-100/s)<br/>• Concurrency Semaphore Cap"]
     end
 
     subgraph Storage["Persistence & Vault"]
-        DB[("🗄️ SQLite Database<br/>(WAL Mode, Pragmas, Busy Timeout)")]
-        VAULT[("📦 Storage Vault<br/>(Local RFC 822 .EML Files)")]
+        DB[("SQLite Database<br/>(WAL Mode, Pragmas, Busy Timeout)")]
+        VAULT[("Storage Vault<br/>(Local RFC 822 .EML Files)")]
     end
 
     subgraph Relays["Delivery Relays & Outbound"]
-        SMTP["📬 Remote SMTP Relay<br/>(Stalwart Mail Server / Postfix / SES)"]
-        DMX["🌐 Direct MX DNS Delivery"]
-        WH["🪝 Outbound Webhook Dispatcher"]
+        SMTP["Remote SMTP Relay<br/>(Stalwart Mail Server / Postfix / SES)"]
+        DMX["Direct MX DNS Delivery"]
+        WH["Outbound Webhook Dispatcher"]
     end
 
     subgraph Inboxes["Recipient Inboxes"]
-        RECP["📥 Customer Mailbox (250 OK Delivered)"]
+        RECP["Customer Mailbox (250 OK Delivered)"]
     end
 
     UI --> ROUTERS
@@ -106,25 +106,25 @@ sequenceDiagram
 
 ## Key Features & Workflows
 
-### 🚀 High-Throughput Asynchronous Delivery Engine
+### High-Throughput Asynchronous Delivery Engine
 - **Non-blocking Dispatch**: Asynchronous queue-based sending engine capable of handling high-volume broadcasts with configurable rate limits.
 - **Speed Governors**: Select from preset throughputs (10, 25, 50, 100 emails/sec) or set custom user-defined rates to prevent ISP throttling.
 - **Production Relay Verified**: Tested and verified with remote **Stalwart Mail Server**, Postfix, SendGrid, Amazon SES, and Direct MX DNS delivery (ports 587/465/25, STARTTLS, TLS, and DSN delivery confirmations `250 OK`).
 
-### 📡 Quick Broadcast & Live Execution Console
+### Quick Broadcast & Live Execution Console
 - **Flexible Audience Targeting**: Dispatch to all active customers, selected customer lists/groups, or directly pasted raw email addresses.
 - **Real-Time Terminal**: Live streaming execution monitor displaying active delivery counts, throughput, relay responses, and failures in real-time.
 - **Immediate Failure Telemetry**: Relay rejections (e.g. `501`, `550`, `421`) surface directly on the dashboard with actionable error messages and target recipient details.
 - **Live Controls**: Pause, resume, and cancel active broadcasts on demand.
 
-### 🛡️ Storage Vault & Local EML Archiving
+### Storage Vault & Local EML Archiving
 - **Full Message Archiving**: Every single dispatched message is persisted to the local filesystem in standard RFC 822 `.eml` format.
 - **Audit & Inspection**: View raw MIME headers, sanitized sandboxed HTML previews, plain-text fallback, and download `.eml` files.
 - **Complete Event Timeline**: Detailed audit trail tracking `queued`, `sent`, `delivered`, `opened`, `clicked`, `bounced`, and `unsubscribed` events.
 
 ---
 
-### ⚖️ RFC 8058 1-Click Unsubscribe & Instant Resubscribe
+### RFC 8058 1-Click Unsubscribe & Instant Resubscribe
 
 ```mermaid
 sequenceDiagram
@@ -157,20 +157,20 @@ sequenceDiagram
 
 ---
 
-### 🔍 Pre-Send Safety Guard & Deliverability
+### Pre-Send Safety Guard & Deliverability
 
 ```mermaid
 flowchart LR
-    INPUT["📥 Recipient Email"] --> S1{"1. Syntax Check"}
-    S1 -->|Invalid| DROP["❌ Rejected (Invalid Syntax)"]
+    INPUT["Recipient Email"] --> S1{"1. Syntax Check"}
+    S1 -->|Invalid| DROP["Rejected (Invalid Syntax)"]
     S1 -->|Valid| S2{"2. Burner Domain"}
-    S2 -->|Disposable Provider| DROP2["❌ Dropped (Burner Domain)"]
+    S2 -->|Disposable Provider| DROP2["Dropped (Burner Domain)"]
     S2 -->|Clean Domain| S3{"3. Live DNS MX Check"}
-    S3 -->|No MX / NXDOMAIN| DROP3["❌ Dropped (Unroutable Domain)"]
+    S3 -->|No MX / NXDOMAIN| DROP3["Dropped (Unroutable Domain)"]
     S3 -->|Valid MX| S4{"4. Global Suppressions"}
-    S4 -->|Suppressed / Bounced| DROP4["❌ Skipped (Suppressed)"]
+    S4 -->|Suppressed / Bounced| DROP4["Skipped (Suppressed)"]
     S4 -->|Active| S5["5. Role Account Check"]
-    S5 --> PASS["✅ Approved for Safe Dispatch"]
+    S5 --> PASS["Approved for Safe Dispatch"]
 
     style PASS fill:#059669,stroke:#10b981,color:#ffffff
     style DROP fill:#e11d48,stroke:#f43f5e,color:#ffffff
@@ -184,11 +184,11 @@ flowchart LR
 
 ---
 
-### 🔥 Automated IP & Domain Warmup Engine
+### Automated IP & Domain Warmup Engine
 
 ```mermaid
 flowchart TD
-    CONFIG["🔥 Warmup Campaign Configured<br/>(Standard 14d / Conservative 30d / Aggressive 7d)"] --> SLICE["Daily Recipient Slicer"]
+    CONFIG["Warmup Campaign Configured<br/>(Standard 14d / Conservative 30d / Aggressive 7d)"] --> SLICE["Daily Recipient Slicer"]
     
     subgraph DayCycle["Daily Execution Loop"]
         SLICE --> DAY["Day N Slice Dispatched"]
@@ -196,8 +196,8 @@ flowchart TD
         ROTATE --> SEND["Dispatch with Speed Limiter"]
         SEND --> TELEMETRY["Collect Delivery & Bounce Metrics"]
         TELEMETRY --> CB{"Bounce Rate Check<br/>(Threshold: 2.0%)"}
-        CB -->|Rate < 2%| NEXT["✅ Advance to Day N+1 (Higher Daily Cap)"]
-        CB -->|Rate >= 2%| TRIP["🚨 Circuit Breaker Tripped!<br/>• Auto-Pause Warmup Schedule<br/>• Cooldown Unhealthy Relay<br/>• Notify Operator"]
+        CB -->|Rate < 2%| NEXT["Advance to Day N+1 (Higher Daily Cap)"]
+        CB -->|Rate >= 2%| TRIP["Circuit Breaker Tripped!<br/>• Auto-Pause Warmup Schedule<br/>• Cooldown Unhealthy Relay<br/>• Notify Operator"]
     end
 
     NEXT --> SLICE
@@ -212,19 +212,19 @@ flowchart TD
 
 ---
 
-### 🏷️ Dynamic Merge Variables & Custom Attributes
+### Dynamic Merge Variables & Custom Attributes
 - **Built-in Merge Placeholders**: Personalize subjects and bodies with `{{first_name}}`, `{{last_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, `{{unsubscribe_url}}`, and `{{year}}`.
 - **Dynamic Dataset Discovery**: Upload CSV customer lists with arbitrary columns (e.g. `Business_Name`, `City`, `Plan`)—Bitmail automatically extracts them into usable template tags (e.g. `{{Business_Name}}`).
 
-### 🎨 Interactive Template Studio & Live Preview
+### Interactive Template Studio & Live Preview
 - **Visual Template Designer**: Author responsive HTML and plain-text emails with syntax highlighting.
 - **Device Viewport Simulation**: Preview templates live across desktop and mobile screens before broadcasting.
 - **Preset Library**: Ready-to-use templates for product launches, newsletters, invoices, and transactional announcements.
 
-### 📱 Desktop-to-Mobile Instant Scan-to-Login
+### Desktop-to-Mobile Instant Scan-to-Login
 - **Secure QR Authorization**: Link mobile devices or authenticate desktops instantly via dynamic QR code generation.
 
-### 🪝 Outbound Webhooks & Transactional REST API
+### Outbound Webhooks & Transactional REST API
 - **Event-Driven Webhooks**: Subscribe external webhooks to `email.sent`, `email.delivered`, `email.bounced`, `email.opened`, `email.clicked`, and `subscriber.unsubscribed`.
 - **Transactional Dispatch**: Programmatic REST API to trigger individual transactional messages with custom merge variables.
 
