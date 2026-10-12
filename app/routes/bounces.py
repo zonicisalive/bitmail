@@ -13,7 +13,7 @@ from app.auth import current_user_id, get_current_user, get_current_user_optiona
 from app.bounce import BounceClassifier
 from app.config import settings
 from app.db import get_db
-from app.models import InboundBouncePayload, InboundBounceResponse
+from app.models import BounceType, InboundBouncePayload, InboundBounceResponse
 
 router = APIRouter(prefix="/api/bounces", tags=["Bounces & Deliverability"])
 
@@ -113,6 +113,52 @@ async def handle_inbound_raw_dsn(
         diagnostic_code=parsed.get("diagnostic_code"),
         only_user_id=only_user_id
     )
+
+
+# Brevo transactional webhook events -> bounce type. Anything else (delivered,
+# opened, clicked, deferred-then-delivered...) is acknowledged and ignored.
+BREVO_EVENTS = {
+    "hard_bounce": BounceType.HARD,
+    "invalid_email": BounceType.HARD,
+    "blocked": BounceType.HARD,  # Brevo refuses the address (it bounced or complained before)
+    "spam": BounceType.COMPLAINT,
+    "complaint": BounceType.COMPLAINT,
+    "soft_bounce": BounceType.SOFT,
+}
+
+
+@router.post("/brevo")
+async def handle_brevo_webhook(
+    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Dict[str, Any]:
+    """
+    Brevo (Transactional > Settings > Webhooks) posts one event, or a list when
+    "batched" is on. Bounces and spam complaints suppress the address for the account
+    that sent the email.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expected a JSON body.")
+    events = body if isinstance(body, list) else [body]
+
+    results = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        bounce_type = BREVO_EVENTS.get(str(event.get("event", "")).lower())
+        email = str(event.get("email") or "").strip()
+        if not bounce_type or not email:
+            continue
+        reason = event.get("reason") or f"Brevo: {event.get('event')}"
+        common = dict(recipient_email=email, bounce_type=bounce_type, reason=reason, only_user_id=only_user_id)
+        res = await BounceClassifier.process_bounce(message_id=event.get("message-id") or None, **common)
+        if not res.suppressed and event.get("message-id") and bounce_type != BounceType.SOFT:
+            # Brevo may report its own Message-ID; fall back to the latest email to that address.
+            res = await BounceClassifier.process_bounce(**common)
+        results.append({"email": email, "event": event.get("event"), "suppressed": res.suppressed})
+
+    return {"success": True, "processed": len(results), "results": results}
 
 
 @router.get("/stats", dependencies=[Depends(get_current_user)])

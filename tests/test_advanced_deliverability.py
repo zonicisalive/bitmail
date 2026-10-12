@@ -565,6 +565,25 @@ class TestDeliverabilityIntegrationRoutes(unittest.TestCase):
         self.assertTrue(data["suppressed"])
         self.assertEqual(data["bounce_type"], "hard")
 
+    def test_brevo_webhook_suppresses_bounces(self):
+        asyncio.run(seed_sent_email("brevo_dead@example.com"))
+        asyncio.run(seed_sent_email("brevo_full@example.com"))
+        anon = TestClient(app)
+        events = [
+            {"event": "hard_bounce", "email": "brevo_dead@example.com", "message-id": "<brevo-own-id@smtp-relay.mailin.fr>", "reason": "550 5.1.1 unknown user"},
+            {"event": "soft_bounce", "email": "brevo_full@example.com", "reason": "452 mailbox full"},
+            {"event": "delivered", "email": "brevo_dead@example.com"},
+        ]
+        self.assertEqual(anon.post("/api/bounces/brevo", json=events).status_code, 401)
+        with patch.object(settings, "BOUNCE_WEBHOOK_SECRET", "s3cret"):
+            res = anon.post("/api/bounces/brevo?secret=s3cret", json=events)
+            self.assertEqual(res.status_code, 200, res.text)
+            single = anon.post("/api/bounces/brevo?secret=s3cret", json={"event": "opened", "email": "x@example.com"})
+        self.assertEqual(single.json()["processed"], 0)
+        by_email = {r["email"]: r["suppressed"] for r in res.json()["results"]}
+        # Brevo's own Message-ID doesn't match ours; the latest email to the address decides.
+        self.assertEqual(by_email, {"brevo_dead@example.com": True, "brevo_full@example.com": False})
+
     def test_page_routes_render_ok(self):
         # Deliverability page
         deliv_res = self.client.get("/deliverability")
