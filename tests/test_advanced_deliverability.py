@@ -586,6 +586,32 @@ class TestDeliverabilityIntegrationRoutes(unittest.TestCase):
         # Brevo's own Message-ID doesn't match ours; the latest email to the address decides.
         self.assertEqual(by_email, {"brevo_dead@example.com": True, "brevo_full@example.com": False, "brevo_dead2@example.com": True})
 
+    def test_mailjet_and_resend_webhooks_suppress_bounces(self):
+        for addr in ("mj_dead@example.com", "mj_soft@example.com", "mj_content@example.com",
+                     "rs_dead@example.com", "rs_spam@example.com"):
+            asyncio.run(seed_sent_email(addr))
+        anon = TestClient(app)
+        mailjet = [
+            {"event": "bounce", "email": "mj_dead@example.com", "hard_bounce": True, "error_related_to": "recipient", "error": "user unknown"},
+            {"event": "bounce", "email": "mj_soft@example.com", "hard_bounce": False, "error": "mailbox full"},
+            {"event": "blocked", "email": "mj_content@example.com", "error_related_to": "content", "error": "spam"},
+            {"event": "open", "email": "mj_dead@example.com"},
+        ]
+        resend = {"type": "email.bounced", "data": {"to": ["rs_dead@example.com"], "bounce": {"type": "Permanent", "message": "550 no such user"}}}
+        complaint = {"type": "email.complained", "data": {"to": ["rs_spam@example.com"]}}
+        self.assertEqual(anon.post("/api/bounces/mailjet", json=mailjet).status_code, 401)
+        self.assertEqual(anon.post("/api/bounces/resend", json=resend).status_code, 401)
+        with patch.object(settings, "BOUNCE_WEBHOOK_SECRET", "s3cret"):
+            mj = anon.post("/api/bounces/mailjet?secret=s3cret", json=mailjet).json()
+            rs = anon.post("/api/bounces/resend?secret=s3cret", json=resend).json()
+            rc = anon.post("/api/bounces/resend?secret=s3cret", json=complaint).json()
+            delayed = anon.post("/api/bounces/resend?secret=s3cret", json={"type": "email.delivered", "data": {"to": ["x@example.com"]}}).json()
+        self.assertEqual({r["email"]: r["suppressed"] for r in mj["results"]},
+                         {"mj_dead@example.com": True, "mj_soft@example.com": False})
+        self.assertTrue(rs["results"][0]["suppressed"])
+        self.assertTrue(rc["results"][0]["suppressed"])
+        self.assertEqual(delayed["processed"], 0)
+
     def test_page_routes_render_ok(self):
         # Deliverability page
         deliv_res = self.client.get("/deliverability")

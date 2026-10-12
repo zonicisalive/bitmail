@@ -130,43 +130,102 @@ BREVO_EVENTS = {
 }
 
 
-@router.post("/brevo")
-async def handle_brevo_webhook(
-    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
-) -> Dict[str, Any]:
+def _letters(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalpha())
+
+
+def _parse_brevo(event: Dict[str, Any]):
+    # Classic webhooks say "hard_bounce"; the newer builder may say "hardBounce" or "Hard Bounced".
+    bounce_type = BREVO_EVENTS.get(_letters(event.get("event")))
+    reason = event.get("reason") or f"Brevo: {event.get('event')}"
+    return event.get("email"), bounce_type, reason, event.get("message-id")
+
+
+def _parse_mailjet(event: Dict[str, Any]):
+    # https://dev.mailjet.com/email/guides/webhooks/ - "bounce" carries hard_bounce true/false;
+    # "blocked" is only about the address when error_related_to is "recipient".
+    kind = _letters(event.get("event"))
+    reason = f"Mailjet: {event.get('event')} {event.get('error_related_to') or ''} {event.get('error') or ''}".strip()
+    if kind == "bounce":
+        bounce_type = BounceType.HARD if event.get("hard_bounce") in (True, "true", 1) else BounceType.SOFT
+    elif kind == "blocked" and event.get("error_related_to") == "recipient":
+        bounce_type = BounceType.HARD
+    elif kind == "spam":
+        bounce_type = BounceType.COMPLAINT
+    else:
+        bounce_type = None
+    return event.get("email"), bounce_type, reason, None
+
+
+def _parse_resend(event: Dict[str, Any]):
+    # https://resend.com/docs/dashboard/webhooks/event-types - data.to is a list of addresses.
+    data = event.get("data") or {}
+    to = data.get("to") or []
+    email = to[0] if isinstance(to, list) and to else to
+    kind = event.get("type")
+    bounce = data.get("bounce") or {}
+    if kind == "email.bounced":
+        bounce_type = BounceType.HARD if bounce.get("type") == "Permanent" else BounceType.SOFT
+    elif kind == "email.complained":
+        bounce_type = BounceType.COMPLAINT
+    else:
+        bounce_type = None
+    reason = bounce.get("message") or f"Resend: {kind}"
+    return email, bounce_type, reason, None
+
+
+async def _process_provider_events(request: Request, provider: str, parse, only_user_id: Optional[str]) -> Dict[str, Any]:
     """
-    Brevo (Transactional > Settings > Webhooks) posts one event, or a list when
-    "batched" is on. Bounces and spam complaints suppress the address for the account
-    that sent the email.
+    Relay providers post one event or a list. Bounces and spam complaints suppress the
+    address for the account that sent the email; soft bounces are only logged.
     """
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expected a JSON body.")
-    events = body if isinstance(body, list) else [body]
-    # Keys only (no addresses): lets us see the payload shape Brevo actually sends.
-    logger.info("Brevo webhook: %d event(s): %s", len(events),
-                [(e.get("event"), sorted(e)) for e in events if isinstance(e, dict)][:5])
+    events = [e for e in (body if isinstance(body, list) else [body]) if isinstance(e, dict)]
+    # Keys only (no addresses): lets us see the payload shape the provider actually sends.
+    logger.info("%s webhook: %d event(s): %s", provider, len(events),
+                [(e.get("event") or e.get("type"), sorted(e)) for e in events][:5])
 
     results = []
     for event in events:
-        if not isinstance(event, dict):
-            continue
-        # Classic webhooks say "hard_bounce"; the newer builder may say "hardBounce" or "Hard Bounced".
-        name = "".join(ch for ch in str(event.get("event", "")).lower() if ch.isalpha())
-        bounce_type = BREVO_EVENTS.get(name)
-        email = str(event.get("email") or "").strip()
+        email, bounce_type, reason, message_id = parse(event)
+        email = str(email or "").strip()
         if not bounce_type or not email:
             continue
-        reason = event.get("reason") or f"Brevo: {event.get('event')}"
         common = dict(recipient_email=email, bounce_type=bounce_type, reason=reason, only_user_id=only_user_id)
-        res = await BounceClassifier.process_bounce(message_id=event.get("message-id") or None, **common)
-        if not res.suppressed and event.get("message-id") and bounce_type != BounceType.SOFT:
-            # Brevo may report its own Message-ID; fall back to the latest email to that address.
+        res = await BounceClassifier.process_bounce(message_id=message_id or None, **common)
+        if not res.suppressed and message_id and bounce_type != BounceType.SOFT:
+            # The provider may report its own Message-ID; fall back to the latest email to that address.
             res = await BounceClassifier.process_bounce(**common)
-        results.append({"email": email, "event": event.get("event"), "suppressed": res.suppressed})
+        results.append({"email": email, "event": event.get("event") or event.get("type"), "suppressed": res.suppressed})
 
     return {"success": True, "processed": len(results), "results": results}
+
+
+@router.post("/brevo")
+async def handle_brevo_webhook(
+    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Dict[str, Any]:
+    """Brevo transactional webhook (single event, or a list when "batched" is on)."""
+    return await _process_provider_events(request, "Brevo", _parse_brevo, only_user_id)
+
+
+@router.post("/mailjet")
+async def handle_mailjet_webhook(
+    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Dict[str, Any]:
+    """Mailjet event webhook (single event, or a list when grouping is on)."""
+    return await _process_provider_events(request, "Mailjet", _parse_mailjet, only_user_id)
+
+
+@router.post("/resend")
+async def handle_resend_webhook(
+    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Dict[str, Any]:
+    """Resend webhook (email.bounced / email.complained)."""
+    return await _process_provider_events(request, "Resend", _parse_resend, only_user_id)
 
 
 @router.get("/stats", dependencies=[Depends(get_current_user)])
