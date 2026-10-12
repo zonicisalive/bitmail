@@ -239,3 +239,60 @@ class TestQuickBroadcastWarmup(unittest.TestCase):
         s = schedules[0]
         self.assertEqual(s["total_recipients"], 12)
         self.assertEqual(s["daily_cap"], 5)  # custom day-1 volume was honoured
+
+
+class TestWarmupDaySurvivesRestart(unittest.TestCase):
+    """A later warmup day must mail only its own recipients, even after a restart."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        data_dir = Path(cls.tmp.name)
+        cls.orig = (settings.DATABASE_PATH, settings.EML_ARCHIVE_DIR, settings.EML_STORAGE_DIR)
+        settings.DATABASE_PATH = data_dir / "warmup_restart.db"
+        settings.EML_ARCHIVE_DIR = settings.EML_STORAGE_DIR = data_dir / "eml"
+        settings.EML_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+        asyncio.run(init_db())
+        cls.client = TestClient(app)
+        res = cls.client.post("/api/auth/login", json={"login": "admin@bitmail.com", "password": "admin123"})
+        cls.client.headers["Authorization"] = f"Bearer {res.json()['token']}"
+        cls.client.post("/api/smtp", json={"name": "Sandbox", "host": "sandbox", "port": 25, "is_default": True})
+
+    @classmethod
+    def tearDownClass(cls):
+        settings.DATABASE_PATH, settings.EML_ARCHIVE_DIR, settings.EML_STORAGE_DIR = cls.orig
+        cls.tmp.cleanup()
+
+    def test_day_two_after_restart_mails_only_its_slice(self):
+        import sqlite3
+        from app.queue import campaign_queue
+        list_id = self.client.post("/api/lists", json={"name": "Warm list"}).json()["id"]
+        for i in range(10):
+            self.client.post("/api/subscribers", json={"email": f"w{i}@example.com", "list_ids": [list_id]})
+        res = self.client.post("/api/campaigns/quick-broadcast", json={
+            "subject": "Hi", "body_html": "", "body_text": "Hello", "list_id": list_id,
+            "warmup_enabled": True, "warmup_strategy": "custom",
+            "warmup_custom_start_cap": 4, "warmup_custom_growth_pct": 0,
+        })
+        self.assertEqual(res.status_code, 200, res.text)
+
+        con = sqlite3.connect(settings.DATABASE_PATH)
+        day2_id, day2_json = con.execute(
+            "SELECT campaign_id, recipients_json FROM warmup_slices WHERE day_number = 2").fetchone()
+        import json as _json
+        day2_emails = {r["email"] for r in _json.loads(day2_json)}
+        self.assertEqual(len(day2_emails), 4)
+
+        # Simulate a restart: the in-memory recipient lists are gone.
+        campaign_queue._campaign_recipients.clear()
+        worker = asyncio.run(self._launch(day2_id))
+        mailed = {r[0] for r in con.execute("SELECT recipient_email FROM sent_emails WHERE campaign_id = ?", (day2_id,))}
+        con.close()
+        self.assertEqual(mailed, day2_emails, "Day 2 must mail exactly its own recipients, not the whole list")
+
+    @staticmethod
+    async def _launch(campaign_id):
+        from app.queue import campaign_queue
+        worker = await campaign_queue.start_campaign(campaign_id)
+        await worker.task
+        return worker

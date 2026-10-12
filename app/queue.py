@@ -258,7 +258,7 @@ class CampaignWorker:
             async with db.execute("SELECT email FROM suppressions") as cur:
                 suppressed = {row["email"].strip().lower() for row in await cur.fetchall()}
 
-            if explicit_recipients:
+            if explicit_recipients is not None:
                 return [
                     sub for sub in explicit_recipients
                     if sub.email and sub.email.strip().lower() not in suppressed
@@ -628,6 +628,11 @@ class CampaignQueueManager:
                 raise ValueError(f"Campaign not found: {campaign_id}")
 
             target_recipients = recipients or self._campaign_recipients.get(campaign_id)
+            if target_recipients is None:
+                # Warmup days keep their own recipients in warmup_slices. The in-memory
+                # copy is lost on every restart, and without this the day would fall back
+                # to the campaign's whole list and re-mail earlier days' recipients.
+                target_recipients = await self._load_slice_recipients(campaign_id)
 
             worker = CampaignWorker(
                 campaign=campaign,
@@ -643,6 +648,45 @@ class CampaignQueueManager:
             self._running_tasks[campaign_id] = worker.task
             self._pause_events[campaign_id] = worker.pause_event
             return worker
+
+    async def _load_slice_recipients(self, campaign_id: str) -> Optional[List[Subscriber]]:
+        """
+        Recipients saved for a warmup day, or None when the campaign is not a warmup day.
+        Each address is re-checked against Contacts so current status and custom fields
+        apply; anyone no longer active is dropped.
+        """
+        async with get_db() as db:
+            async with db.execute("SELECT recipients_json FROM warmup_slices WHERE campaign_id = ?", (campaign_id,)) as cur:
+                row = await cur.fetchone()
+            if not row:
+                return None
+            try:
+                entries = json.loads(row["recipients_json"] or "[]")
+            except Exception:
+                entries = []
+
+            recipients: List[Subscriber] = []
+            for entry in entries:
+                email = (entry.get("email") if isinstance(entry, dict) else str(entry or "")).strip()
+                if not email:
+                    continue
+                async with db.execute("SELECT * FROM subscribers WHERE email = ? COLLATE NOCASE", (email,)) as cur:
+                    sub = await cur.fetchone()
+                if sub is not None:
+                    if (sub["status"] or "active") != "active":
+                        continue
+                    try:
+                        cf = json.loads(sub["custom_fields"] or "{}")
+                    except Exception:
+                        cf = {}
+                    recipients.append(Subscriber(id=sub["id"], email=sub["email"], first_name=sub["first_name"] or "",
+                                                 last_name=sub["last_name"] or "", custom_fields=cf, custom_attributes=cf))
+                elif isinstance(entry, dict):
+                    cf = entry.get("custom_attributes") or entry.get("custom_fields") or {}
+                    recipients.append(Subscriber(id=entry.get("id"), email=email, first_name=entry.get("first_name") or "",
+                                                 last_name=entry.get("last_name") or "", custom_fields=cf, custom_attributes=cf))
+            logger.info("Campaign %s: loaded %d saved warmup-day recipients", campaign_id, len(recipients))
+            return recipients
 
     async def launch_campaign(self, campaign_id: str) -> Dict[str, Any]:
         """Alias method for route compatibility."""
