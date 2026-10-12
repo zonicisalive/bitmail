@@ -2,7 +2,7 @@
 Contacts and Lists API.
 
 Data model (the same one commercial senders use):
-- A contact (``subscribers`` row) exists once per email address. It carries the
+- A contact (``subscribers`` row) exists once per email address per user. It carries the
   standard fields, free-form ``tags`` and account-wide ``custom_fields`` that are
   created automatically from CSV column headings.
 - A list (``subscriber_lists`` row) is only a membership group. A contact can be
@@ -26,6 +26,7 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, Field, model_validator
 
+from app.auth import current_user_id
 from app.db import get_db, utc_now_iso
 from app.models import (
     SubscriberBulkImportResponse,
@@ -96,8 +97,8 @@ def _filter_sql(
     tag: Optional[str],
 ) -> Tuple[str, List[Any]]:
     """WHERE clause shared by listing, export and select-all-matching bulk actions."""
-    where = ["1=1"]
-    params: List[Any] = []
+    where = ["s.user_id = ?"]
+    params: List[Any] = [current_user_id()]
 
     if search and search.strip():
         term = _like(search.strip().lower())
@@ -167,20 +168,21 @@ async def _sync_suppressions(db, emails: List[str], new_status: str, now: str) -
     suppressions, so a contact marked unsubscribed/bounced here is blocked on every
     path (lists, pasted recipients, transactional), and reactivating removes the block.
     """
+    uid = current_user_id()
     for chunk in _chunks(emails):
         if new_status == SubscriberStatus.ACTIVE.value:
             await db.execute(
-                f"DELETE FROM suppressions WHERE email IN ({_placeholders(len(chunk))})", chunk
+                f"DELETE FROM suppressions WHERE user_id = ? AND email IN ({_placeholders(len(chunk))})", [uid, *chunk]
             )
         else:
             await db.executemany(
-                "INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at) VALUES (?, ?, NULL, ?, ?)",
-                [(f"sup_{uuid.uuid4().hex[:10]}", e, f"manual_{new_status}", now) for e in chunk],
+                "INSERT OR IGNORE INTO suppressions (id, user_id, email, campaign_id, reason, created_at) VALUES (?, ?, ?, NULL, ?, ?)",
+                [(f"sup_{uuid.uuid4().hex[:10]}", uid, e, f"manual_{new_status}", now) for e in chunk],
             )
 
 
 async def _require_list(db, list_id: str) -> None:
-    async with db.execute("SELECT 1 FROM subscriber_lists WHERE id = ?", (list_id,)) as cur:
+    async with db.execute("SELECT 1 FROM subscriber_lists WHERE id = ? AND user_id = ?", (list_id, current_user_id())) as cur:
         if not await cur.fetchone():
             raise HTTPException(status_code=404, detail="List not found")
 
@@ -245,7 +247,9 @@ async def create_subscriber(payload: SubscriberCreate):
     custom_fields = {clean_field_key(k): v for k, v in payload.custom_fields.items() if clean_field_key(k)}
 
     async with get_db() as db:
-        async with db.execute("SELECT id FROM subscribers WHERE email = ?", (email_clean,)) as cursor:
+        async with db.execute(
+            "SELECT id FROM subscribers WHERE email = ? AND user_id = ?", (email_clean, current_user_id())
+        ) as cursor:
             if await cursor.fetchone():
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
@@ -256,10 +260,10 @@ async def create_subscriber(payload: SubscriberCreate):
             await _require_list(db, l_id)
 
         await db.execute("""
-            INSERT INTO subscribers (id, email, first_name, last_name, tags, custom_fields, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO subscribers (id, user_id, email, first_name, last_name, tags, custom_fields, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            sub_id, email_clean, payload.first_name, payload.last_name,
+            sub_id, current_user_id(), email_clean, payload.first_name, payload.last_name,
             json.dumps(payload.tags), json.dumps(custom_fields), payload.status.value, now, now,
         ))
         await _sync_suppressions(db, [email_clean], payload.status.value, now)
@@ -290,18 +294,20 @@ async def create_subscriber(payload: SubscriberCreate):
 async def subscribers_summary():
     """Contact counts per status, for headers and audience pickers."""
     counts = {s.value: 0 for s in SubscriberStatus}
+    uid = current_user_id()
     async with get_db() as db:
-        async with db.execute("SELECT status, COUNT(*) AS n FROM subscribers GROUP BY status") as cur:
+        async with db.execute("SELECT status, COUNT(*) AS n FROM subscribers WHERE user_id = ? GROUP BY status", (uid,)) as cur:
             for r in await cur.fetchall():
                 counts[r["status"] or "active"] = counts.get(r["status"] or "active", 0) + r["n"]
         async with db.execute("""
             SELECT COUNT(*) FROM subscribers s
-            WHERE NOT EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id)
-        """) as cur:
+            WHERE s.user_id = ?
+              AND NOT EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id)
+        """, (uid,)) as cur:
             no_list = (await cur.fetchone())[0]
         async with db.execute(f"""
-            SELECT DISTINCT value FROM subscribers s, json_each({SAFE_TAGS}) ORDER BY value
-        """) as cur:
+            SELECT DISTINCT value FROM subscribers s, json_each({SAFE_TAGS}) WHERE s.user_id = ? ORDER BY value
+        """, (uid,)) as cur:
             tags = [r[0] for r in await cur.fetchall()]
 
     return {
@@ -327,15 +333,15 @@ async def export_subscribers_csv(
     """
     if ids:
         id_list = [i for i in ids.split(",") if i.strip()]
-        where = f"s.id IN ({_placeholders(len(id_list))})" if id_list else "0"
-        params: List[Any] = id_list
+        where = f"s.user_id = ? AND s.id IN ({_placeholders(len(id_list))})" if id_list else "0"
+        params: List[Any] = [current_user_id(), *id_list] if id_list else []
     else:
         where, params = _filter_sql(search, list_id, status, tag)
 
     async with get_db() as db:
         async with db.execute(f"SELECT s.* FROM subscribers s WHERE {where} ORDER BY s.created_at DESC", params) as cur:
             rows = await cur.fetchall()
-        async with db.execute("SELECT id, name FROM subscriber_lists") as cur:
+        async with db.execute("SELECT id, name FROM subscriber_lists WHERE user_id = ?", (current_user_id(),)) as cur:
             list_names = {r["id"]: r["name"] for r in await cur.fetchall()}
         memberships = await _lists_for(db, [r["id"] for r in rows])
 
@@ -417,7 +423,16 @@ async def bulk_subscriber_action(payload: SubscriberBulkAction):
             async with db.execute(f"SELECT s.id FROM subscribers s WHERE {where}", params) as cur:
                 ids = [r[0] for r in await cur.fetchall()]
         else:
-            ids = list(dict.fromkeys(payload.ids or []))
+            # Only the caller's own contacts; other users' ids act like unknown ids.
+            requested = list(dict.fromkeys(payload.ids or []))
+            owned = set()
+            for chunk in _chunks(requested):
+                async with db.execute(
+                    f"SELECT id FROM subscribers WHERE user_id = ? AND id IN ({_placeholders(len(chunk))})",
+                    [current_user_id(), *chunk],
+                ) as cur:
+                    owned.update(r[0] for r in await cur.fetchall())
+            ids = [i for i in requested if i in owned]
 
         if payload.list_id and payload.action in ("add_to_list", "remove_from_list"):
             await _require_list(db, payload.list_id)
@@ -557,9 +572,9 @@ async def import_subscribers_csv(
             created_list_name = new_list_name.strip()
             target_list_id = f"list_{uuid.uuid4().hex[:10]}"
             await db.execute("""
-                INSERT INTO subscriber_lists (id, name, description, schema_fields, created_at, updated_at)
-                VALUES (?, ?, ?, '[]', ?, ?)
-            """, (target_list_id, created_list_name, f"Imported from {file.filename or 'CSV'}", now, now))
+                INSERT INTO subscriber_lists (id, user_id, name, description, schema_fields, created_at, updated_at)
+                VALUES (?, ?, ?, ?, '[]', ?, ?)
+            """, (target_list_id, current_user_id(), created_list_name, f"Imported from {file.filename or 'CSV'}", now, now))
         elif target_list_id:
             await _require_list(db, target_list_id)
 
@@ -589,7 +604,9 @@ async def import_subscribers_csv(
                     if key not in detected_custom_fields:
                         detected_custom_fields.append(key)
 
-            async with db.execute("SELECT id, custom_fields, tags FROM subscribers WHERE email = ?", (raw_email,)) as cursor:
+            async with db.execute(
+                "SELECT id, custom_fields, tags FROM subscribers WHERE email = ? AND user_id = ?", (raw_email, current_user_id())
+            ) as cursor:
                 existing = await cursor.fetchone()
 
             if existing:
@@ -610,24 +627,26 @@ async def import_subscribers_csv(
             else:
                 sub_id = f"sub_{uuid.uuid4().hex[:10]}"
                 await db.execute("""
-                    INSERT INTO subscribers (id, email, first_name, last_name, tags, custom_fields, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)
-                """, (sub_id, raw_email, first_name, last_name, json.dumps(import_tags), json.dumps(custom_fields), now, now))
+                    INSERT INTO subscribers (id, user_id, email, first_name, last_name, tags, custom_fields, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                """, (sub_id, current_user_id(), raw_email, first_name, last_name, json.dumps(import_tags), json.dumps(custom_fields), now, now))
                 added_count += 1
 
             if target_list_id:
                 await _add_memberships(db, [sub_id], target_list_id, now)
 
         if target_list_id and detected_custom_fields:
-            async with db.execute("SELECT schema_fields FROM subscriber_lists WHERE id = ?", (target_list_id,)) as cur:
+            async with db.execute(
+                "SELECT schema_fields FROM subscriber_lists WHERE id = ? AND user_id = ?", (target_list_id, current_user_id())
+            ) as cur:
                 list_row = await cur.fetchone()
             if list_row:
                 existing_schema = _json(list_row["schema_fields"], [])
                 merged = list(dict.fromkeys([*existing_schema, *detected_custom_fields]))
                 if merged != existing_schema:
                     await db.execute(
-                        "UPDATE subscriber_lists SET schema_fields = ?, updated_at = ? WHERE id = ?",
-                        (json.dumps(merged), now, target_list_id),
+                        "UPDATE subscriber_lists SET schema_fields = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                        (json.dumps(merged), now, target_list_id, current_user_id()),
                     )
 
         await db.commit()
@@ -654,10 +673,13 @@ async def get_available_placeholders(list_id: Optional[str] = Query(default=None
     custom_tags = set()
     table_fields: List[str] = []
     selected_list_name = None
+    uid = current_user_id()
 
     async with get_db() as db:
         if list_id and list_id.lower() != "all":
-            async with db.execute("SELECT name, schema_fields FROM subscriber_lists WHERE id = ?", (list_id,)) as cur:
+            async with db.execute(
+                "SELECT name, schema_fields FROM subscriber_lists WHERE id = ? AND user_id = ?", (list_id, uid)
+            ) as cur:
                 l_row = await cur.fetchone()
             if l_row:
                 selected_list_name = l_row["name"]
@@ -670,12 +692,12 @@ async def get_available_placeholders(list_id: Optional[str] = Query(default=None
                 SELECT DISTINCT j.key FROM subscribers s
                 JOIN subscriber_list_memberships m ON m.subscriber_id = s.id,
                 json_each({SAFE_FIELDS}) j
-                WHERE m.list_id = ?
+                WHERE m.list_id = ? AND s.user_id = ?
             """
-            params: List[Any] = [list_id]
+            params: List[Any] = [list_id, uid]
         else:
-            sql = f"SELECT DISTINCT j.key FROM subscribers s, json_each({SAFE_FIELDS}) j"
-            params = []
+            sql = f"SELECT DISTINCT j.key FROM subscribers s, json_each({SAFE_FIELDS}) j WHERE s.user_id = ?"
+            params = [uid]
 
         async with db.execute(sql, params) as cur:
             for r in await cur.fetchall():
@@ -683,7 +705,7 @@ async def get_available_placeholders(list_id: Optional[str] = Query(default=None
                 if key:
                     custom_tags.add(key)
 
-        async with db.execute("SELECT name FROM subscriber_lists") as cur:
+        async with db.execute("SELECT name FROM subscriber_lists WHERE user_id = ?", (uid,)) as cur:
             list_names = [r["name"] for r in await cur.fetchall() if r["name"]]
 
     return {
@@ -787,7 +809,9 @@ async def bulk_add_subscribers_text(payload: BulkTextImportPayload):
         for item in parsed:
             email_str = item["email"]
 
-            async with db.execute("SELECT id, status, tags FROM subscribers WHERE email = ?", (email_str,)) as cur:
+            async with db.execute(
+                "SELECT id, status, tags FROM subscribers WHERE email = ? AND user_id = ?", (email_str, current_user_id())
+            ) as cur:
                 existing = await cur.fetchone()
 
             if existing:
@@ -809,9 +833,9 @@ async def bulk_add_subscribers_text(payload: BulkTextImportPayload):
                 sub_id = f"sub_{uuid.uuid4().hex[:10]}"
                 sub_status = "active"
                 await db.execute("""
-                    INSERT INTO subscribers (id, email, first_name, last_name, status, tags, custom_fields, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, 'active', ?, '{}', ?, ?)
-                """, (sub_id, email_str, item["first_name"], item["last_name"], json.dumps(tags), now, now))
+                    INSERT INTO subscribers (id, user_id, email, first_name, last_name, status, tags, custom_fields, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'active', ?, '{}', ?, ?)
+                """, (sub_id, current_user_id(), email_str, item["first_name"], item["last_name"], json.dumps(tags), now, now))
                 imported += 1
 
             if payload.list_id:
@@ -870,7 +894,7 @@ def _list_response(r) -> SubscriberListResponse:
 
 
 async def _fetch_list(db, list_id: str) -> SubscriberListResponse:
-    async with db.execute(f"{LIST_COUNTS_SQL} WHERE l.id = ?", (list_id,)) as cur:
+    async with db.execute(f"{LIST_COUNTS_SQL} WHERE l.id = ? AND l.user_id = ?", (list_id, current_user_id())) as cur:
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="List not found")
@@ -886,7 +910,9 @@ def _clean_schema(fields: Optional[List[str]]) -> List[str]:
 async def list_subscriber_lists():
     """All lists with total and mailable (active) member counts."""
     async with get_db() as db:
-        async with db.execute(f"{LIST_COUNTS_SQL} ORDER BY l.name COLLATE NOCASE") as cur:
+        async with db.execute(
+            f"{LIST_COUNTS_SQL} WHERE l.user_id = ? ORDER BY l.name COLLATE NOCASE", (current_user_id(),)
+        ) as cur:
             return [_list_response(r) for r in await cur.fetchall()]
 
 
@@ -899,13 +925,15 @@ async def create_subscriber_list(payload: SubscriberListCreate):
     name = payload.name.strip()
 
     async with get_db() as db:
-        async with db.execute("SELECT 1 FROM subscriber_lists WHERE name = ? COLLATE NOCASE", (name,)) as cur:
+        async with db.execute(
+            "SELECT 1 FROM subscriber_lists WHERE name = ? COLLATE NOCASE AND user_id = ?", (name, current_user_id())
+        ) as cur:
             if await cur.fetchone():
                 raise HTTPException(status_code=409, detail=f"A list named '{name}' already exists.")
         await db.execute("""
-            INSERT INTO subscriber_lists (id, name, description, schema_fields, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (list_id, name, payload.description, json.dumps(_clean_schema(payload.schema_fields)), now, now))
+            INSERT INTO subscriber_lists (id, user_id, name, description, schema_fields, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (list_id, current_user_id(), name, payload.description, json.dumps(_clean_schema(payload.schema_fields)), now, now))
         await db.commit()
         return await _fetch_list(db, list_id)
 
@@ -921,9 +949,9 @@ async def get_subscriber_list(list_id: str):
         async with db.execute("""
             SELECT s.* FROM subscribers s
             JOIN subscriber_list_memberships m ON m.subscriber_id = s.id
-            WHERE m.list_id = ?
+            WHERE m.list_id = ? AND s.user_id = ?
             ORDER BY s.created_at DESC
-        """, (list_id,)) as cur:
+        """, (list_id, current_user_id())) as cur:
             rows = await cur.fetchall()
         memberships = await _lists_for(db, [r["id"] for r in rows])
 
@@ -943,19 +971,21 @@ async def update_subscriber_list(list_id: str, payload: SubscriberListUpdate):
         new_name = payload.name.strip() if payload.name is not None else current.name
         if new_name.lower() != current.name.lower():
             async with db.execute(
-                "SELECT 1 FROM subscriber_lists WHERE name = ? COLLATE NOCASE AND id != ?", (new_name, list_id)
+                "SELECT 1 FROM subscriber_lists WHERE name = ? COLLATE NOCASE AND id != ? AND user_id = ?",
+                (new_name, list_id, current_user_id()),
             ) as cur:
                 if await cur.fetchone():
                     raise HTTPException(status_code=409, detail=f"A list named '{new_name}' already exists.")
 
         await db.execute("""
-            UPDATE subscriber_lists SET name = ?, description = ?, schema_fields = ?, updated_at = ? WHERE id = ?
+            UPDATE subscriber_lists SET name = ?, description = ?, schema_fields = ?, updated_at = ? WHERE id = ? AND user_id = ?
         """, (
             new_name,
             payload.description if payload.description is not None else current.description,
             json.dumps(_clean_schema(payload.schema_fields) if payload.schema_fields is not None else current.schema_fields),
             now,
             list_id,
+            current_user_id(),
         ))
         await db.commit()
         return await _fetch_list(db, list_id)
@@ -968,7 +998,7 @@ async def delete_subscriber_list(list_id: str):
     async with get_db() as db:
         await _require_list(db, list_id)
         await db.execute("DELETE FROM subscriber_list_memberships WHERE list_id = ?", (list_id,))
-        await db.execute("DELETE FROM subscriber_lists WHERE id = ?", (list_id,))
+        await db.execute("DELETE FROM subscriber_lists WHERE id = ? AND user_id = ?", (list_id, current_user_id()))
         await db.commit()
     return {"success": True, "message": f"Subscriber list {list_id} deleted successfully."}
 
@@ -981,7 +1011,9 @@ async def delete_subscriber_list(list_id: str):
 async def get_subscriber(subscriber_id: str):
     """Get a single contact by ID."""
     async with get_db() as db:
-        async with db.execute("SELECT * FROM subscribers WHERE id = ?", (subscriber_id,)) as cursor:
+        async with db.execute(
+            "SELECT * FROM subscribers WHERE id = ? AND user_id = ?", (subscriber_id, current_user_id())
+        ) as cursor:
             row = await cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Subscriber not found")
@@ -998,14 +1030,18 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
     """
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT * FROM subscribers WHERE id = ?", (subscriber_id,)) as cursor:
+        async with db.execute(
+            "SELECT * FROM subscribers WHERE id = ? AND user_id = ?", (subscriber_id, current_user_id())
+        ) as cursor:
             row = await cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Subscriber not found")
 
         new_email = payload.email.strip().lower() if payload.email is not None else row["email"]
         if new_email != row["email"]:
-            async with db.execute("SELECT 1 FROM subscribers WHERE email = ? AND id != ?", (new_email, subscriber_id)) as cur:
+            async with db.execute(
+                "SELECT 1 FROM subscribers WHERE email = ? AND id != ? AND user_id = ?", (new_email, subscriber_id, current_user_id())
+            ) as cur:
                 if await cur.fetchone():
                     raise HTTPException(status_code=409, detail=f"Another contact already uses '{new_email}'.")
 
@@ -1026,7 +1062,7 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
         await db.execute("""
             UPDATE subscribers
             SET email = ?, first_name = ?, last_name = ?, custom_fields = ?, tags = ?, status = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
         """, (
             new_email,
             payload.first_name if payload.first_name is not None else row["first_name"],
@@ -1036,6 +1072,7 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
             new_status,
             now,
             subscriber_id,
+            current_user_id(),
         ))
 
         # Only an explicit status change touches suppressions; editing a typo in an
@@ -1052,7 +1089,9 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
 
         await db.commit()
 
-        async with db.execute("SELECT * FROM subscribers WHERE id = ?", (subscriber_id,)) as cursor:
+        async with db.execute(
+            "SELECT * FROM subscribers WHERE id = ? AND user_id = ?", (subscriber_id, current_user_id())
+        ) as cursor:
             updated = await cursor.fetchone()
         memberships = await _lists_for(db, [subscriber_id])
 
@@ -1063,10 +1102,12 @@ async def update_subscriber(subscriber_id: str, payload: SubscriberUpdate):
 async def delete_subscriber(subscriber_id: str):
     """Delete a contact and its list memberships. Suppressions are kept."""
     async with get_db() as db:
-        async with db.execute("SELECT id FROM subscribers WHERE id = ?", (subscriber_id,)) as cursor:
+        async with db.execute(
+            "SELECT id FROM subscribers WHERE id = ? AND user_id = ?", (subscriber_id, current_user_id())
+        ) as cursor:
             if not await cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Subscriber not found")
         await db.execute("DELETE FROM subscriber_list_memberships WHERE subscriber_id = ?", (subscriber_id,))
-        await db.execute("DELETE FROM subscribers WHERE id = ?", (subscriber_id,))
+        await db.execute("DELETE FROM subscribers WHERE id = ? AND user_id = ?", (subscriber_id, current_user_id()))
         await db.commit()
     return {"success": True, "message": f"Subscriber {subscriber_id} deleted successfully."}

@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.auth import current_user_id
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import (
@@ -28,7 +29,7 @@ async def list_templates():
     List all saved email templates.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM templates ORDER BY created_at DESC") as cursor:
+        async with db.execute("SELECT * FROM templates WHERE user_id = ? ORDER BY created_at DESC", (current_user_id(),)) as cursor:
             rows = await cursor.fetchall()
             return [
                 TemplateResponse(
@@ -55,10 +56,11 @@ async def create_template(payload: TemplateCreate):
 
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO templates (id, name, description, subject, body_html, body_text, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO templates (id, user_id, name, description, subject, body_html, body_text, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             tpl_id,
+            current_user_id(),
             payload.name.strip(),
             payload.description,
             payload.subject,
@@ -87,7 +89,7 @@ async def get_template(template_id: str):
     Retrieve a specific email template by ID.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM templates WHERE id = ?", (template_id,)) as cursor:
+        async with db.execute("SELECT * FROM templates WHERE id = ? AND user_id = ?", (template_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Template not found")
@@ -112,7 +114,7 @@ async def update_template(template_id: str, payload: TemplateUpdate):
     now = utc_now_iso()
 
     async with get_db() as db:
-        async with db.execute("SELECT * FROM templates WHERE id = ?", (template_id,)) as cursor:
+        async with db.execute("SELECT * FROM templates WHERE id = ? AND user_id = ?", (template_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Template not found")
@@ -127,8 +129,8 @@ async def update_template(template_id: str, payload: TemplateUpdate):
         await db.execute("""
             UPDATE templates
             SET name = ?, description = ?, subject = ?, body_html = ?, body_text = ?, updated_at = ?
-            WHERE id = ?
-        """, (new_name, new_desc, new_subject, new_html, new_text, now, template_id))
+            WHERE id = ? AND user_id = ?
+        """, (new_name, new_desc, new_subject, new_html, new_text, now, template_id, current_user_id()))
         await db.commit()
 
         return TemplateResponse(
@@ -149,12 +151,12 @@ async def delete_template(template_id: str):
     Delete a template.
     """
     async with get_db() as db:
-        async with db.execute("SELECT id FROM templates WHERE id = ?", (template_id,)) as cursor:
+        async with db.execute("SELECT id FROM templates WHERE id = ? AND user_id = ?", (template_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Template not found")
 
-        await db.execute("DELETE FROM templates WHERE id = ?", (template_id,))
+        await db.execute("DELETE FROM templates WHERE id = ? AND user_id = ?", (template_id, current_user_id()))
         await db.commit()
 
     return {"success": True, "message": f"Template {template_id} deleted successfully."}
@@ -171,7 +173,7 @@ async def preview_template(payload: TemplatePreviewRequest):
 
     if payload.template_id:
         async with get_db() as db:
-            async with db.execute("SELECT * FROM templates WHERE id = ?", (payload.template_id,)) as cursor:
+            async with db.execute("SELECT * FROM templates WHERE id = ? AND user_id = ?", (payload.template_id, current_user_id())) as cursor:
                 row = await cursor.fetchone()
                 if row:
                     subject_raw = subject_raw or row["subject"]
@@ -196,7 +198,10 @@ async def preview_template(payload: TemplatePreviewRequest):
 
     # Automatically enrich with custom placeholders discovered in subscribers table
     async with get_db() as db:
-        async with db.execute("SELECT custom_fields FROM subscribers WHERE custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}' LIMIT 10") as cur:
+        async with db.execute(
+            "SELECT custom_fields FROM subscribers WHERE user_id = ? AND custom_fields IS NOT NULL AND custom_fields != '' AND custom_fields != '{}' LIMIT 10",
+            (current_user_id(),),
+        ) as cur:
             for srow in await cur.fetchall():
                 try:
                     cf_data = json.loads(srow["custom_fields"])
@@ -232,7 +237,7 @@ async def clone_template(template_id: str):
     Duplicate an existing template.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM templates WHERE id = ?", (template_id,)) as cursor:
+        async with db.execute("SELECT * FROM templates WHERE id = ? AND user_id = ?", (template_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Template not found")
@@ -243,10 +248,11 @@ async def clone_template(template_id: str):
         new_name = f"{source['name']} (Copy)"
 
         await db.execute("""
-            INSERT INTO templates (id, name, description, subject, body_html, body_text, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO templates (id, user_id, name, description, subject, body_html, body_text, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             new_id,
+            current_user_id(),
             new_name,
             source["description"],
             source["subject"],

@@ -369,10 +369,19 @@ class TestApiRoutes(unittest.TestCase):
         That link must actually suppress the lead."""
         from app.template_engine import template_engine
 
-        # Deliberately an id with no sent_emails row, so only the signed token can
+        # The sent email names a different recipient, so only the signed token can
         # resolve the address - this isolates the token path from the id fallback.
+        # (The row itself is needed: it tells which account's list to suppress in.)
         storage_id = "eml_footer_only_00001"
         email = "footer.lead@demo.com"
+        import sqlite3
+        with sqlite3.connect(settings.DATABASE_PATH) as conn:
+            conn.execute(
+                "INSERT INTO sent_emails (id, user_id, recipient_email, sender_email, subject, status, created_at) "
+                "VALUES (?, (SELECT id FROM users ORDER BY created_at LIMIT 1), 'someone.else@demo.com', "
+                "'s@demo.com', 'Hi', 'sent', '2026-10-06')",
+                (storage_id,),
+            )
 
         bad = self.client.get(f"/unsubscribe/{storage_id}?token=deadbeef&email={email}")
         self.assertEqual(bad.status_code, 200)
@@ -383,7 +392,6 @@ class TestApiRoutes(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIn(email, res.text)
 
-        import sqlite3
         with sqlite3.connect(settings.DATABASE_PATH) as conn:
             hits = conn.execute("SELECT COUNT(*) FROM suppressions WHERE email = ?", (email,)).fetchone()[0]
         self.assertEqual(hits, 1)
@@ -647,7 +655,7 @@ class TestApiRoutes(unittest.TestCase):
 
         # 2. Simulate an inbound bounce putting them into suppressions
         with sqlite3.connect(settings.DATABASE_PATH) as conn:
-            conn.execute("INSERT OR IGNORE INTO suppressions (id, email, reason, created_at) VALUES ('sup_test_1', ?, 'test', '2026-10-06')", (test_email,))
+            conn.execute("INSERT OR IGNORE INTO suppressions (id, user_id, email, reason, created_at) VALUES ('sup_test_1', (SELECT id FROM users ORDER BY created_at LIMIT 1), ?, 'test', '2026-10-06')", (test_email,))
             conn.commit()
 
         # Verify listed in suppressions endpoint
@@ -673,7 +681,7 @@ class TestApiRoutes(unittest.TestCase):
 
         # 4. Test manual unsuppress endpoint
         with sqlite3.connect(settings.DATABASE_PATH) as conn:
-            conn.execute("INSERT OR IGNORE INTO suppressions (id, email, reason, created_at) VALUES ('sup_test_2', 'manual_unsub@bitnade.com', 'test', '2026-10-06')",)
+            conn.execute("INSERT OR IGNORE INTO suppressions (id, user_id, email, reason, created_at) VALUES ('sup_test_2', (SELECT id FROM users ORDER BY created_at LIMIT 1), 'manual_unsub@bitnade.com', 'test', '2026-10-06')",)
             conn.commit()
 
         del_res = self.client.delete("/api/bounces/suppressions/manual_unsub@bitnade.com")

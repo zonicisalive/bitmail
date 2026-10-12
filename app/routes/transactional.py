@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.auth import current_user_id
+from app.db import get_db
 from app.models import (
     BatchSendRequest,
     BatchSendResponse,
@@ -20,6 +22,17 @@ from app.websocket import emit_event
 router = APIRouter(tags=["Transactional API"])
 
 
+async def _require_owned(smtp_config_id: Optional[str], template_id: Optional[str]) -> None:
+    """404 when the request names a relay or template the caller does not own."""
+    async with get_db() as db:
+        for table, row_id, label in (("smtp_configs", smtp_config_id, "SMTP configuration"), ("templates", template_id, "Template")):
+            if not row_id:
+                continue
+            async with db.execute(f"SELECT 1 FROM {table} WHERE id = ? AND user_id = ?", (row_id, current_user_id())) as cursor:
+                if not await cursor.fetchone():
+                    raise HTTPException(status_code=404, detail=f"{label} not found")
+
+
 @router.post("/api/v1/transactional/send", response_model=TransactionalSendResponse, status_code=status.HTTP_200_OK)
 @router.post("/api/v1/send", response_model=TransactionalSendResponse, status_code=status.HTTP_200_OK)
 async def send_transactional_email(payload: TransactionalSendRequest):
@@ -28,6 +41,7 @@ async def send_transactional_email(payload: TransactionalSendRequest):
     Interpolates merge variables, injects open/click tracking if requested,
     archives raw MIME EML in the Storage Vault, and returns dispatch status.
     """
+    await _require_owned(payload.smtp_config_id, payload.template_id)
     result = await send_single_email(
         recipient_email=payload.recipient_email,
         recipient_name=payload.recipient_name,
@@ -74,6 +88,7 @@ async def send_transactional_batch(payload: BatchSendRequest):
     """
     Send a batch of transactional messages to multiple recipients with individualized merge variables.
     """
+    await _require_owned(payload.smtp_config_id, payload.template_id)
     batch_ids: List[str] = []
 
     for item in payload.recipients:

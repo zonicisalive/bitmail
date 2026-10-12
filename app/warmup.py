@@ -267,7 +267,8 @@ class RelayPoolManager:
 
     @classmethod
     async def get_pool_relays(cls) -> List[Dict[str, Any]]:
-        """Fetch all relays designated as in the warmup pool."""
+        """Fetch the current user's relays with their warmup pool status."""
+        from app.sender import owner_id
         async with get_db() as db:
             query = """
                 SELECT s.*, 
@@ -279,10 +280,10 @@ class RelayPoolManager:
                        r.last_error
                 FROM smtp_configs s
                 LEFT JOIN relay_pool_stats r ON s.id = r.smtp_config_id
-                WHERE s.is_active = 1
+                WHERE s.is_active = 1 AND s.user_id IS ?
                 ORDER BY s.is_default DESC, s.created_at ASC
             """
-            async with db.execute(query) as cur:
+            async with db.execute(query, (owner_id(),)) as cur:
                 rows = await cur.fetchall()
 
         now_iso = utc_now_iso()
@@ -398,11 +399,15 @@ class RelayPoolManager:
 
     @classmethod
     async def toggle_relay_pool(cls, smtp_config_id: str, in_pool: bool) -> bool:
-        """Add or remove an SMTP relay profile from the rotation pool."""
+        """Add or remove one of the current user's relays from the rotation pool."""
+        from app.sender import owner_id
         now = utc_now_iso()
         val = 1 if in_pool else 0
         async with get_db() as db:
-            await db.execute("UPDATE smtp_configs SET in_relay_pool = ?, updated_at = ? WHERE id = ?", (val, now, smtp_config_id))
+            cur = await db.execute("UPDATE smtp_configs SET in_relay_pool = ?, updated_at = ? WHERE id = ? AND user_id IS ?",
+                                   (val, now, smtp_config_id, owner_id()))
+            if cur.rowcount == 0:
+                return False
             await db.execute("""
                 INSERT INTO relay_pool_stats (
                     id, smtp_config_id, in_pool, created_at, updated_at

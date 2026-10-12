@@ -70,49 +70,50 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
             "privacy_policy_url": settings.PRIVACY_POLICY_URL,
         }
 
+    uid = (current_user["id"],)
     try:
         async with get_db() as db:
             # Stats
-            async with db.execute("SELECT COUNT(*) FROM sent_emails") as cur:
+            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE user_id = ?", uid) as cur:
                 row = await cur.fetchone()
                 stats["vault_stored"] = row[0] if row else 0
 
-            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE status IN ('sent', 'delivered')") as cur:
+            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE user_id = ? AND status IN ('sent', 'delivered')", uid) as cur:
                 row = await cur.fetchone()
                 stats["total_sent"] = row[0] if row else 0
 
-            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE status IN ('sent', 'delivered', 'failed', 'bounced')") as cur:
+            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE user_id = ? AND status IN ('sent', 'delivered', 'failed', 'bounced')", uid) as cur:
                 row = await cur.fetchone()
                 attempted = row[0] if row else 0
                 if attempted:
                     stats["delivery_rate"] = round((stats["total_sent"] / attempted) * 100, 1)
 
-            async with db.execute("SELECT COUNT(*) FROM subscribers WHERE status = 'active'") as cur:
+            async with db.execute("SELECT COUNT(*) FROM subscribers WHERE user_id = ? AND status = 'active'", uid) as cur:
                 row = await cur.fetchone()
                 stats["active_subscribers"] = row[0] if row else 0
 
-            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE open_count > 0") as cur:
+            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE user_id = ? AND open_count > 0", uid) as cur:
                 row = await cur.fetchone()
                 opens = row[0] if row else 0
                 if stats["total_sent"] > 0:
                     stats["open_rate"] = round((opens / stats["total_sent"]) * 100, 1)
 
-            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE click_count > 0") as cur:
+            async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE user_id = ? AND click_count > 0", uid) as cur:
                 row = await cur.fetchone()
                 clicks = row[0] if row else 0
                 if stats["total_sent"] > 0:
                     stats["click_rate"] = round((clicks / stats["total_sent"]) * 100, 1)
 
             # Recent Vault Emails
-            async with db.execute("SELECT id, recipient_email, recipient_name, subject, status, sent_at, open_count, click_count FROM sent_emails ORDER BY created_at DESC LIMIT 15") as cur:
+            async with db.execute("SELECT id, recipient_email, recipient_name, subject, status, sent_at, open_count, click_count FROM sent_emails WHERE user_id = ? ORDER BY created_at DESC LIMIT 15", uid) as cur:
                 recent_vault_emails = [dict(r) for r in await cur.fetchall()]
 
             # Campaigns
-            async with db.execute("SELECT * FROM campaigns ORDER BY created_at DESC LIMIT 10") as cur:
+            async with db.execute("SELECT * FROM campaigns WHERE user_id = ? ORDER BY created_at DESC LIMIT 10", uid) as cur:
                 recent_campaigns = [dict(r) for r in await cur.fetchall()]
 
             # SMTP Configs
-            async with db.execute("SELECT id, name, host, port, username, is_default, use_tls FROM smtp_configs ORDER BY is_default DESC") as cur:
+            async with db.execute("SELECT id, name, host, port, username, is_default, use_tls FROM smtp_configs WHERE user_id = ? ORDER BY is_default DESC", uid) as cur:
                 rows = await cur.fetchall()
                 smtp_configs = []
                 for r in rows:
@@ -121,11 +122,11 @@ async def get_initial_page_context(request: Request, active_tab: str = "dashboar
                     smtp_configs.append(item)
 
             # Lists
-            async with db.execute("SELECT id, name, description FROM subscriber_lists") as cur:
+            async with db.execute("SELECT id, name, description FROM subscriber_lists WHERE user_id = ?", uid) as cur:
                 subscriber_lists = [dict(r) for r in await cur.fetchall()]
 
             # Templates
-            async with db.execute("SELECT id, name, subject FROM templates") as cur:
+            async with db.execute("SELECT id, name, subject FROM templates WHERE user_id = ?", uid) as cur:
                 template_presets = [dict(r) for r in await cur.fetchall()]
 
     except Exception as e:
@@ -249,6 +250,13 @@ async def page_settings(request: Request):
     return templates.TemplateResponse(request=request, name="index.html", context=ctx)
 
 
+@router.get("/users", response_class=HTMLResponse)
+async def page_users(request: Request):
+    """User management (admin only; the page itself hides from non-admins, the API enforces it)."""
+    ctx = await get_initial_page_context(request, active_tab="users")
+    return templates.TemplateResponse(request=request, name="index.html", context=ctx)
+
+
 @router.get("/webhooks", response_class=HTMLResponse)
 async def page_webhooks(request: Request):
     """Dynamic Outbound Webhooks & Integrations Page."""
@@ -312,7 +320,7 @@ async def websocket_live_telemetry(websocket: WebSocket):
         await websocket.close(code=1008)  # WS_1008_POLICY_VIOLATION
         return
 
-    await ws_manager.connect(websocket)
+    await ws_manager.connect(websocket, user["id"])
     try:
         # Send initial live connection handshake
         await websocket.send_text(json.dumps({

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.auth import current_user_id
 from app.db import get_db, utc_now_iso
 from app.models import (
     Campaign,
@@ -41,9 +42,9 @@ TYPICAL_PROVIDER_MIX = {"gmail": 0.45, "microsoft": 0.30, "yahoo": 0.15, "corpor
 
 
 async def contacts_provider_mix(list_id: Optional[str]) -> Tuple[Dict[str, float], int]:
-    """Share of each mailbox provider among the active contacts (optionally one list)."""
-    sql = "SELECT s.email FROM subscribers s WHERE s.status = 'active'"
-    params: List[Any] = []
+    """Share of each mailbox provider among the user's active contacts (optionally one list)."""
+    sql = "SELECT s.email FROM subscribers s WHERE s.status = 'active' AND s.user_id = ?"
+    params: List[Any] = [current_user_id()]
     if list_id and list_id != "all":
         sql += " AND EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id AND m.list_id = ?)"
         params.append(list_id)
@@ -130,8 +131,8 @@ async def list_warmup_schedules(
     List all automated warmup schedules with current day progression and daily caps.
     """
     async with get_db() as db:
-        query = "SELECT * FROM warmup_schedules WHERE 1=1"
-        params: List[Any] = []
+        query = "SELECT * FROM warmup_schedules WHERE user_id = ?"
+        params: List[Any] = [current_user_id()]
         if status_filter:
             query += " AND status = ?"
             params.append(status_filter.lower())
@@ -204,6 +205,21 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
     """
     schedule_id = f"wup_{uuid.uuid4().hex[:10]}"
     now = utc_now_iso()
+    uid = current_user_id()
+
+    async with get_db() as db:
+        if payload.campaign_id:
+            async with db.execute("SELECT 1 FROM campaigns WHERE id = ? AND user_id = ?", (payload.campaign_id, uid)) as cur:
+                if not await cur.fetchone():
+                    raise HTTPException(status_code=404, detail="Campaign not found")
+        if payload.list_id and payload.list_id != "all":
+            async with db.execute("SELECT 1 FROM subscriber_lists WHERE id = ? AND user_id = ?", (payload.list_id, uid)) as cur:
+                if not await cur.fetchone():
+                    raise HTTPException(status_code=404, detail="List not found")
+        for relay_id in payload.relay_ids or []:
+            async with db.execute("SELECT 1 FROM smtp_configs WHERE id = ? AND user_id = ?", (relay_id, uid)) as cur:
+                if not await cur.fetchone():
+                    raise HTTPException(status_code=404, detail="SMTP relay not found")
 
     # 1. Resolve recipients
     recipients_list: List[Dict[str, Any]] = []
@@ -212,8 +228,8 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
     elif payload.list_id or payload.total_recipients is None:
         # No list means "all active contacts". It used to fall through to made-up
         # warmup_N@example.com placeholders.
-        sql = "SELECT s.id, s.email, s.first_name, s.last_name, s.custom_fields FROM subscribers s WHERE s.status = 'active'"
-        params: List[Any] = []
+        sql = "SELECT s.id, s.email, s.first_name, s.last_name, s.custom_fields FROM subscribers s WHERE s.status = 'active' AND s.user_id = ?"
+        params: List[Any] = [uid]
         if payload.list_id and payload.list_id != "all":
             sql += " AND EXISTS (SELECT 1 FROM subscriber_list_memberships m WHERE m.subscriber_id = s.id AND m.list_id = ?)"
             params.append(payload.list_id)
@@ -257,8 +273,8 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
             INSERT INTO warmup_schedules (
                 id, name, campaign_id, strategy, total_recipients, current_day,
                 total_days, daily_cap, sent_today, status, relay_pool_json,
-                rotation_mode, max_bounce_rate, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, 'active', ?, ?, 0.02, ?, ?)
+                rotation_mode, max_bounce_rate, created_at, updated_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, 'active', ?, ?, 0.02, ?, ?, ?)
         """, (
             schedule_id,
             payload.name.strip(),
@@ -270,7 +286,8 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
             json.dumps(relay_pool),
             payload.rotation_mode,
             now,
-            now
+            now,
+            uid
         ))
 
         # Create Slice records and corresponding scheduled campaign entries if base campaign exists
@@ -281,7 +298,7 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
 
             # If a parent campaign exists, clone it as a scheduled child campaign for this slice
             if payload.campaign_id:
-                async with db.execute("SELECT * FROM campaigns WHERE id = ?", (payload.campaign_id,)) as c_cur:
+                async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (payload.campaign_id, uid)) as c_cur:
                     parent_camp = await c_cur.fetchone()
                 if parent_camp:
                     child_camp_id = f"camp_{uuid.uuid4().hex[:10]}"
@@ -292,8 +309,8 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
                             sender_email, reply_to, headers, track_opens, track_clicks,
                             custom_html, custom_text, status, scheduled_at, total_recipients,
                             rate_limit_per_sec, concurrency_limit, is_warmup, warmup_schedule_id,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, 1, ?, ?, ?)
+                            created_at, updated_at, user_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?, ?, ?, 1, ?, ?, ?, ?)
                     """, (
                         child_camp_id,
                         f"{parent_camp['name']} (Warmup Day {s['day_number']}/{total_days})",
@@ -318,7 +335,8 @@ async def create_warmup_schedule(payload: WarmupScheduleCreate):
                         parent_camp["concurrency_limit"] or 10,
                         schedule_id,
                         now,
-                        now
+                        now,
+                        uid
                     ))
 
             await db.execute("""
@@ -381,7 +399,7 @@ async def get_warmup_schedule(schedule_id: str):
     Get full details of a specific warmup schedule including all daily slices.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM warmup_schedules WHERE id = ?", (schedule_id,)) as cur:
+        async with db.execute("SELECT * FROM warmup_schedules WHERE id = ? AND user_id = ?", (schedule_id, current_user_id())) as cur:
             s = await cur.fetchone()
         if not s:
             raise HTTPException(status_code=404, detail="Warmup schedule not found")
@@ -440,7 +458,7 @@ async def pause_warmup_schedule(schedule_id: str):
     """Pause an active warmup schedule and halt scheduled child campaigns."""
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ?", (schedule_id,)) as cur:
+        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ? AND user_id = ?", (schedule_id, current_user_id())) as cur:
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="Warmup schedule not found")
 
@@ -454,7 +472,7 @@ async def resume_warmup_schedule(schedule_id: str):
     """Resume a paused warmup schedule."""
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ?", (schedule_id,)) as cur:
+        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ? AND user_id = ?", (schedule_id, current_user_id())) as cur:
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="Warmup schedule not found")
 
@@ -467,7 +485,7 @@ async def resume_warmup_schedule(schedule_id: str):
 async def delete_warmup_schedule(schedule_id: str):
     """Delete a warmup schedule and all associated slices."""
     async with get_db() as db:
-        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ?", (schedule_id,)) as cur:
+        async with db.execute("SELECT id FROM warmup_schedules WHERE id = ? AND user_id = ?", (schedule_id, current_user_id())) as cur:
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="Warmup schedule not found")
 
@@ -516,7 +534,7 @@ async def toggle_relay_in_pool(smtp_config_id: str, payload: TogglePoolRequest):
     Include or exclude an SMTP mail server from the active warmup rotation pool.
     """
     async with get_db() as db:
-        async with db.execute("SELECT id FROM smtp_configs WHERE id = ?", (smtp_config_id,)) as cur:
+        async with db.execute("SELECT id FROM smtp_configs WHERE id = ? AND user_id = ?", (smtp_config_id, current_user_id())) as cur:
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="SMTP mail server profile not found")
 

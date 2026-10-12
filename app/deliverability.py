@@ -1144,18 +1144,20 @@ class PreSendSafetyGuard:
     async def check_suppression(cls, email: str) -> Tuple[bool, Optional[str]]:
         """Check if recipient is in the local suppression table or marked bounced/unsubscribed."""
         clean = email.strip().lower()
+        from app.auth import owner_id
+        uid = owner_id()
         try:
             from app.db import get_db
             async with get_db() as db:
                 async with db.execute(
-                    "SELECT reason FROM suppressions WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
+                    "SELECT reason FROM suppressions WHERE email = ? COLLATE NOCASE AND user_id IS ? LIMIT 1", (clean, uid)
                 ) as cur:
                     row = await cur.fetchone()
                     if row:
-                        return True, f"Address is blacklisted in global suppression table ({row['reason'] or 'suppressed'})."
+                        return True, f"Address is on your suppression list ({row['reason'] or 'suppressed'})."
 
                 async with db.execute(
-                    "SELECT status FROM subscribers WHERE email = ? COLLATE NOCASE LIMIT 1", (clean,)
+                    "SELECT status FROM subscribers WHERE email = ? COLLATE NOCASE AND user_id IS ? LIMIT 1", (clean, uid)
                 ) as cur2:
                     row2 = await cur2.fetchone()
                     if row2 and row2["status"] in ("bounced", "unsubscribed", "complained"):

@@ -8,6 +8,7 @@ import json
 
 from fastapi import APIRouter, Query
 
+from app.auth import current_user_id
 from app.db import get_db
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard Analytics"])
@@ -19,6 +20,7 @@ async def get_dashboard_stats() -> Dict[str, Any]:
     Retrieve real-time KPI metrics: Total Sent, Delivered %, Open %, Click %,
     Active Subscribers, Bounced, Unsubscribed, Failed, Total Stored Emails.
     """
+    uid = current_user_id()
     async with get_db() as db:
         async with db.execute("""
             SELECT 
@@ -34,7 +36,8 @@ async def get_dashboard_stats() -> Dict[str, Any]:
                 SUM(open_count) as total_opens,
                 SUM(click_count) as total_clicks
             FROM sent_emails
-        """) as cursor:
+            WHERE user_id = ?
+        """, (uid,)) as cursor:
             row = await cursor.fetchone()
             total_stored = row["total_stored"] or 0
             total_sent = row["total_sent"] or 0
@@ -53,22 +56,23 @@ async def get_dashboard_stats() -> Dict[str, Any]:
                 SUM(CASE WHEN status = 'unsubscribed' THEN 1 ELSE 0 END) as unsub_subs,
                 SUM(CASE WHEN status = 'bounced' THEN 1 ELSE 0 END) as bounced_subs
             FROM subscribers
-        """) as cursor:
+            WHERE user_id = ?
+        """, (uid,)) as cursor:
             sub_row = await cursor.fetchone()
             total_subs = sub_row["total_subs"] or 0
             active_subs = sub_row["active_subs"] or 0
             unsub_subs = sub_row["unsub_subs"] or 0
             bounced_subs = sub_row["bounced_subs"] or 0
 
-        async with db.execute("SELECT COUNT(*) FROM suppressions") as cursor:
+        async with db.execute("SELECT COUNT(*) FROM suppressions WHERE user_id = ?", (uid,)) as cursor:
             sup_row = await cursor.fetchone()
             suppressions_count = sup_row[0] if sup_row else 0
 
         # Which relay a campaign launched right now would actually go out through.
         async with db.execute("""
             SELECT name, host, port FROM smtp_configs
-            WHERE is_active = 1 ORDER BY is_default DESC, updated_at DESC LIMIT 1
-        """) as cursor:
+            WHERE is_active = 1 AND user_id = ? ORDER BY is_default DESC, updated_at DESC LIMIT 1
+        """, (uid,)) as cursor:
             relay_row = await cursor.fetchone()
         relay = {"configured": False, "name": None, "host": None, "port": None, "is_sandbox": False}
         if relay_row:
@@ -92,9 +96,9 @@ async def get_dashboard_stats() -> Dict[str, Any]:
         async with db.execute("""
             SELECT id, recipient_email, recipient_name, subject, error_message, created_at, status
             FROM sent_emails
-            WHERE status IN ('failed', 'bounced')
+            WHERE status IN ('failed', 'bounced') AND user_id = ?
             ORDER BY created_at DESC LIMIT 5
-        """) as cursor:
+        """, (uid,)) as cursor:
             fail_rows = await cursor.fetchall()
             for fr in fail_rows:
                 recent_failures.append({
@@ -165,12 +169,13 @@ async def get_dashboard_activity(limit: int = Query(default=50, ge=1, le=200)) -
                 s.status as email_status,
                 c.name as campaign_name
             FROM email_events e
-            LEFT JOIN sent_emails s ON e.sent_email_id = s.id
-            LEFT JOIN campaigns c ON e.campaign_id = c.id
+            JOIN sent_emails s ON e.sent_email_id = s.id
+            LEFT JOIN campaigns c ON e.campaign_id = c.id AND c.user_id = s.user_id
+            WHERE s.user_id = ?
             ORDER BY e.created_at DESC
             LIMIT ?
         """
-        async with db.execute(query, (limit,)) as cursor:
+        async with db.execute(query, (current_user_id(), limit)) as cursor:
             rows = await cursor.fetchall()
             for r in rows:
                 payload = {}
@@ -263,9 +268,9 @@ async def get_dashboard_chart(days: int = Query(default=14, ge=1, le=90)) -> Dic
                 SUM(CASE WHEN status = 'bounced' THEN 1 ELSE 0 END) as bounced,
                 SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
             FROM sent_emails
-            WHERE created_at >= ?
+            WHERE created_at >= ? AND user_id = ?
             GROUP BY SUBSTR(created_at, 1, 10)
-        """, (cutoff_date,)) as cursor:
+        """, (cutoff_date, current_user_id())) as cursor:
             rows = await cursor.fetchall()
             for r in rows:
                 d = r["day_str"]

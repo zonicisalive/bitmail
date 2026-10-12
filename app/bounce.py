@@ -11,6 +11,7 @@ import re
 import uuid
 from typing import Any, Dict, Optional, Tuple
 
+from app.auth import set_current_user_id
 from app.db import get_db, utc_now_iso
 from app.models import BounceType, InboundBounceResponse
 from app.webhooks import WebhookDispatcher
@@ -196,33 +197,49 @@ class BounceClassifier:
         action_taken = ""
 
         async with get_db() as db:
-            # Match recent sent email if not provided
-            email_record_id: Optional[str] = None
-            if not campaign_id or not message_id:
-                async with db.execute("""
-                    SELECT id, campaign_id FROM sent_emails
-                    WHERE recipient_email = ?
-                    ORDER BY created_at DESC LIMIT 1
-                """, (clean_email,)) as cur:
-                    sent_row = await cur.fetchone()
-                    if sent_row:
-                        email_record_id = sent_row["id"]
-                        if not campaign_id:
-                            campaign_id = sent_row["campaign_id"]
+            # The bounced email decides whose data this is: its sender's suppressions,
+            # subscriber and campaign. Narrow by message/campaign id when given.
+            where, params = ["recipient_email = ?"], [clean_email]
+            if message_id:
+                where.append("message_id = ?"); params.append(message_id)
+            if campaign_id:
+                where.append("campaign_id = ?"); params.append(campaign_id)
+            async with db.execute(
+                f"SELECT id, campaign_id, user_id FROM sent_emails WHERE {' AND '.join(where)} "
+                "ORDER BY created_at DESC LIMIT 1",
+                params
+            ) as cur:
+                sent_row = await cur.fetchone()
+
+            if not sent_row:
+                logger.info("Bounce for %s matches no sent email; ignored.", clean_email)
+                return InboundBounceResponse(
+                    success=True,
+                    recipient_email=clean_email,
+                    bounce_type=bounce_type,
+                    suppressed=False,
+                    action_taken="No matching sent email; nothing changed.",
+                    message=f"Bounce processed successfully as {bounce_type.value}."
+                )
+
+            email_record_id: Optional[str] = sent_row["id"]
+            campaign_id = sent_row["campaign_id"]
+            owner_id = sent_row["user_id"]
+            set_current_user_id(owner_id)
 
             if bounce_type == BounceType.HARD:
                 # 1. Add to suppressions
                 await db.execute("""
-                    INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, f"hard_bounce: {reason}", now))
+                    INSERT OR IGNORE INTO suppressions (id, user_id, email, campaign_id, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (f"sup_{uuid.uuid4().hex[:10]}", owner_id, clean_email, campaign_id, f"hard_bounce: {reason}", now))
 
                 # 2. Update subscriber status
                 await db.execute("""
                     UPDATE subscribers
                     SET status = 'bounced', updated_at = ?
-                    WHERE email = ?
-                """, (now, clean_email))
+                    WHERE email = ? AND user_id IS ?
+                """, (now, clean_email, owner_id))
 
                 # 3. Update sent_emails record
                 if email_record_id:
@@ -256,16 +273,16 @@ class BounceClassifier:
             elif bounce_type == BounceType.COMPLAINT:
                 # 1. Add to suppressions
                 await db.execute("""
-                    INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (f"sup_{uuid.uuid4().hex[:10]}", clean_email, campaign_id, "spam_complaint", now))
+                    INSERT OR IGNORE INTO suppressions (id, user_id, email, campaign_id, reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (f"sup_{uuid.uuid4().hex[:10]}", owner_id, clean_email, campaign_id, "spam_complaint", now))
 
                 # 2. Update subscriber status
                 await db.execute("""
                     UPDATE subscribers
                     SET status = 'complained', updated_at = ?
-                    WHERE email = ?
-                """, (now, clean_email))
+                    WHERE email = ? AND user_id IS ?
+                """, (now, clean_email, owner_id))
 
                 suppressed = True
                 action_taken = "Suppressed email due to Feedback Loop spam complaint."

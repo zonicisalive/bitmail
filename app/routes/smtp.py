@@ -12,7 +12,7 @@ import aiosmtplib
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.auth import decrypt_credential, encrypt_credential
+from app.auth import current_user_id, decrypt_credential, encrypt_credential
 from app.db import get_db, utc_now_iso
 from app.models import (
     SMTPConfigCreate,
@@ -31,7 +31,10 @@ async def list_smtp_configs():
     List all configured SMTP server profiles (passwords masked).
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM smtp_configs ORDER BY is_default DESC, created_at DESC") as cursor:
+        async with db.execute(
+            "SELECT * FROM smtp_configs WHERE user_id = ? ORDER BY is_default DESC, created_at DESC",
+            (current_user_id(),),
+        ) as cursor:
             rows = await cursor.fetchall()
             return [
                 SMTPConfigResponse(
@@ -64,14 +67,14 @@ async def create_smtp_config(payload: SMTPConfigCreate):
 
     async with get_db() as db:
         if payload.is_default:
-            await db.execute("UPDATE smtp_configs SET is_default = 0")
+            await db.execute("UPDATE smtp_configs SET is_default = 0 WHERE user_id = ?", (current_user_id(),))
 
         await db.execute("""
             INSERT INTO smtp_configs (
                 id, name, host, port, username, password, use_tls, use_ssl,
                 rate_limit_per_second, daily_quota, is_default, is_active,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             smtp_id,
             payload.name.strip(),
@@ -86,7 +89,8 @@ async def create_smtp_config(payload: SMTPConfigCreate):
             1 if payload.is_default else 0,
             1 if payload.is_active else 0,
             now,
-            now
+            now,
+            current_user_id(),
         ))
         await db.commit()
 
@@ -124,7 +128,7 @@ async def test_smtp_connection(payload: SMTPTestRequest):
 
     if payload.smtp_config_id:
         async with get_db() as db:
-            async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (payload.smtp_config_id,)) as cursor:
+            async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id = ?", (payload.smtp_config_id, current_user_id())) as cursor:
                 row = await cursor.fetchone()
                 if row:
                     host = host or row["host"]
@@ -336,14 +340,14 @@ async def connect_gmail_account(payload: GmailConnectPayload):
 
     async with get_db() as db:
         if payload.is_default:
-            await db.execute("UPDATE smtp_configs SET is_default = 0")
+            await db.execute("UPDATE smtp_configs SET is_default = 0 WHERE user_id = ?", (current_user_id(),))
 
         await db.execute("""
             INSERT INTO smtp_configs (
                 id, name, host, port, username, password, use_tls, use_ssl,
                 rate_limit_per_second, daily_quota, is_default, is_active,
-                created_at, updated_at
-            ) VALUES (?, ?, 'smtp.gmail.com', 587, ?, ?, 1, 0, 10, 500, ?, 1, ?, ?)
+                created_at, updated_at, user_id
+            ) VALUES (?, ?, 'smtp.gmail.com', 587, ?, ?, 1, 0, 10, 500, ?, 1, ?, ?, ?)
         """, (
             smtp_id,
             profile_name,
@@ -351,7 +355,8 @@ async def connect_gmail_account(payload: GmailConnectPayload):
             encrypt_credential(clean_pass),
             1 if payload.is_default else 0,
             now,
-            now
+            now,
+            current_user_id(),
         ))
         await db.commit()
 
@@ -415,14 +420,14 @@ async def connect_brevo_account(payload: BrevoConnectPayload):
 
     async with get_db() as db:
         if payload.is_default:
-            await db.execute("UPDATE smtp_configs SET is_default = 0")
+            await db.execute("UPDATE smtp_configs SET is_default = 0 WHERE user_id = ?", (current_user_id(),))
 
         await db.execute("""
             INSERT INTO smtp_configs (
                 id, name, host, port, username, password, use_tls, use_ssl,
                 rate_limit_per_second, daily_quota, is_default, is_active,
-                created_at, updated_at
-            ) VALUES (?, ?, 'smtp-relay.brevo.com', 587, ?, ?, 1, 0, 25, 300, ?, 1, ?, ?)
+                created_at, updated_at, user_id
+            ) VALUES (?, ?, 'smtp-relay.brevo.com', 587, ?, ?, 1, 0, 25, 300, ?, 1, ?, ?, ?)
         """, (
             smtp_id,
             profile_name,
@@ -430,7 +435,8 @@ async def connect_brevo_account(payload: BrevoConnectPayload):
             clean_key,
             1 if payload.is_default else 0,
             now,
-            now
+            now,
+            current_user_id(),
         ))
         await db.commit()
 
@@ -451,7 +457,7 @@ async def get_smtp_config(smtp_id: str):
     Get a single SMTP profile by ID.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (smtp_id,)) as cursor:
+        async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id = ?", (smtp_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="SMTP configuration not found")
@@ -482,7 +488,7 @@ async def update_smtp_config(smtp_id: str, payload: SMTPConfigUpdate):
     now = utc_now_iso()
 
     async with get_db() as db:
-        async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (smtp_id,)) as cursor:
+        async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id = ?", (smtp_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="SMTP configuration not found")
@@ -501,18 +507,18 @@ async def update_smtp_config(smtp_id: str, payload: SMTPConfigUpdate):
         new_act = (1 if payload.is_active else 0) if payload.is_active is not None else cfg["is_active"]
 
         if payload.is_default:
-            await db.execute("UPDATE smtp_configs SET is_default = 0 WHERE id != ?", (smtp_id,))
+            await db.execute("UPDATE smtp_configs SET is_default = 0 WHERE id != ? AND user_id = ?", (smtp_id, current_user_id()))
 
         await db.execute("""
             UPDATE smtp_configs
             SET name = ?, host = ?, port = ?, username = ?, password = ?,
                 use_tls = ?, use_ssl = ?, rate_limit_per_second = ?, daily_quota = ?,
                 is_default = ?, is_active = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
         """, (
             new_name, new_host, new_port, new_user, new_pass,
             new_tls, new_ssl, new_rate, new_quota,
-            new_def, new_act, now, smtp_id
+            new_def, new_act, now, smtp_id, current_user_id()
         ))
         await db.commit()
 
@@ -540,12 +546,12 @@ async def delete_smtp_config(smtp_id: str):
     Delete an SMTP server profile.
     """
     async with get_db() as db:
-        async with db.execute("SELECT id FROM smtp_configs WHERE id = ?", (smtp_id,)) as cursor:
+        async with db.execute("SELECT id FROM smtp_configs WHERE id = ? AND user_id = ?", (smtp_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="SMTP configuration not found")
 
-        await db.execute("DELETE FROM smtp_configs WHERE id = ?", (smtp_id,))
+        await db.execute("DELETE FROM smtp_configs WHERE id = ? AND user_id = ?", (smtp_id, current_user_id()))
         await db.commit()
 
     return {"success": True, "message": f"SMTP profile {smtp_id} deleted."}

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
 
+from app.auth import current_user_id
 from app.db import get_db, utc_now_iso
 from app.models import (
     WebhookCreate,
@@ -30,8 +31,9 @@ async def list_webhooks() -> Any:
         async with db.execute("""
             SELECT id, name, url, secret, events_json, is_active, created_at, updated_at
             FROM webhooks
+            WHERE user_id = ?
             ORDER BY created_at DESC
-        """) as cur:
+        """, (current_user_id(),)) as cur:
             rows = await cur.fetchall()
             result = []
             for r in rows:
@@ -79,10 +81,11 @@ async def create_webhook(payload: WebhookCreate) -> Any:
 
     async with get_db() as db:
         await db.execute("""
-            INSERT INTO webhooks (id, name, url, secret, events_json, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO webhooks (id, user_id, name, url, secret, events_json, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             webhook_id,
+            current_user_id(),
             name,
             url,
             secret,
@@ -112,8 +115,8 @@ async def get_webhook_detail(webhook_id: str) -> Any:
         async with db.execute("""
             SELECT id, name, url, secret, events_json, is_active, created_at, updated_at
             FROM webhooks
-            WHERE id = ?
-        """, (webhook_id,)) as cur:
+            WHERE id = ? AND user_id = ?
+        """, (webhook_id, current_user_id())) as cur:
             wh_row = await cur.fetchone()
 
         if not wh_row:
@@ -170,8 +173,8 @@ async def update_webhook(webhook_id: str, payload: WebhookUpdate) -> Any:
         async with db.execute("""
             SELECT id, name, url, secret, events_json, is_active, created_at, updated_at
             FROM webhooks
-            WHERE id = ?
-        """, (webhook_id,)) as cur:
+            WHERE id = ? AND user_id = ?
+        """, (webhook_id, current_user_id())) as cur:
             existing = await cur.fetchone()
 
         if not existing:
@@ -192,7 +195,7 @@ async def update_webhook(webhook_id: str, payload: WebhookUpdate) -> Any:
         await db.execute("""
             UPDATE webhooks
             SET name = ?, url = ?, secret = ?, events_json = ?, is_active = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
         """, (
             new_name,
             new_url,
@@ -200,7 +203,8 @@ async def update_webhook(webhook_id: str, payload: WebhookUpdate) -> Any:
             json.dumps(new_events),
             1 if new_is_active else 0,
             now,
-            webhook_id
+            webhook_id,
+            current_user_id()
         ))
         await db.commit()
 
@@ -220,7 +224,7 @@ async def update_webhook(webhook_id: str, payload: WebhookUpdate) -> Any:
 async def delete_webhook(webhook_id: str) -> Dict[str, Any]:
     """Delete a webhook and its associated delivery history."""
     async with get_db() as db:
-        async with db.execute("SELECT id FROM webhooks WHERE id = ?", (webhook_id,)) as cur:
+        async with db.execute("SELECT id FROM webhooks WHERE id = ? AND user_id = ?", (webhook_id, current_user_id())) as cur:
             row = await cur.fetchone()
         if not row:
             raise HTTPException(
@@ -228,7 +232,7 @@ async def delete_webhook(webhook_id: str) -> Dict[str, Any]:
                 detail=f"Webhook '{webhook_id}' not found."
             )
 
-        await db.execute("DELETE FROM webhooks WHERE id = ?", (webhook_id,))
+        await db.execute("DELETE FROM webhooks WHERE id = ? AND user_id = ?", (webhook_id, current_user_id()))
         await db.commit()
 
     return {"status": "success", "deleted": True, "webhook_id": webhook_id}

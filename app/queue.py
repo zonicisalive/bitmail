@@ -27,7 +27,8 @@ from app.models import (
     TransactionalEmailRequest,
     TransactionalSendResponse,
 )
-from app.sender import EmailSender, email_sender, send_single_email
+from app.auth import set_current_user_id
+from app.sender import EmailSender, email_sender, owner_id, send_single_email
 from app.storage import EmailStorageVault, storage_vault
 from app.template_engine import TemplateEngine, template_engine
 from app.webhooks import WebhookDispatcher
@@ -80,8 +81,12 @@ class CampaignWorker:
         sender: Optional[EmailSender] = None,
         storage: Optional[EmailStorageVault] = None,
         templates: Optional[TemplateEngine] = None,
+        user_id: Optional[str] = None,
     ) -> None:
         self.campaign = campaign
+        # Owner of the campaign: the worker may be started by the scheduler with no
+        # request user, so it scopes everything it touches to this user.
+        self.user_id = user_id or owner_id()
         self.campaign_id = campaign.id if hasattr(campaign, "id") else campaign["id"]
         self.rate_limiter = AsyncTokenBucketRateLimiter(rate_per_second=rate_limit_per_sec)
         self.semaphore = asyncio.Semaphore(concurrency_limit)
@@ -99,6 +104,8 @@ class CampaignWorker:
 
     async def run(self, explicit_recipients: Optional[List[Subscriber]] = None) -> None:
         """Execute the campaign send loop."""
+        # Runs in its own task, so this does not leak into the caller's context.
+        set_current_user_id(self.user_id)
         try:
             self.is_active = True
 
@@ -245,17 +252,20 @@ class CampaignWorker:
         """
         Build the send list for this campaign, always dropping addresses that are
         unsubscribed or suppressed. Recipients handed in explicitly (a pasted lead
-        paste, an uploaded list) are filtered too - a suppression is global.
+        paste, an uploaded list) are filtered too - a suppression covers all the owner's mail.
+        Only the campaign owner's contacts and suppressions are considered.
         """
+        uid = self.user_id
         async with get_db() as db:
             # Active subscribers should NEVER be suppressed by stale test records
             await db.execute("""
                 DELETE FROM suppressions
-                WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
-            """)
+                WHERE user_id IS ?
+                  AND email IN (SELECT email FROM subscribers WHERE status = 'active' AND user_id IS ?)
+            """, (uid, uid))
             await db.commit()
 
-            async with db.execute("SELECT email FROM suppressions") as cur:
+            async with db.execute("SELECT email FROM suppressions WHERE user_id IS ?", (uid,)) as cur:
                 suppressed = {row["email"].strip().lower() for row in await cur.fetchall()}
 
             if explicit_recipients is not None:
@@ -264,7 +274,7 @@ class CampaignWorker:
                     if sub.email and sub.email.strip().lower() not in suppressed
                 ]
 
-            async with db.execute("SELECT list_id FROM campaigns WHERE id = ?", (self.campaign_id,)) as cur:
+            async with db.execute("SELECT list_id FROM campaigns WHERE id = ? AND user_id IS ?", (self.campaign_id, uid)) as cur:
                 camp_row = await cur.fetchone()
                 if not camp_row:
                     return []
@@ -274,12 +284,12 @@ class CampaignWorker:
                 query = """
                     SELECT s.* FROM subscribers s
                     JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                    WHERE m.list_id = ? AND s.status = 'active'
+                    WHERE m.list_id = ? AND s.status = 'active' AND s.user_id IS ?
                 """
-                params = (list_id,)
+                params = (list_id, uid)
             else:
-                query = "SELECT * FROM subscribers WHERE status = 'active'"
-                params = ()
+                query = "SELECT * FROM subscribers WHERE status = 'active' AND user_id IS ?"
+                params = (uid,)
 
             async with db.execute(query, params) as cur:
                 rows = await cur.fetchall()
@@ -445,13 +455,24 @@ class CampaignQueueManager:
 
     async def get_campaign(self, campaign_id: str) -> Optional[Any]:
         """Fetch campaign from DB, resolving its SMTP relay and template body."""
+        loaded = await self._load_campaign(campaign_id)
+        return loaded[0] if loaded else None
+
+    async def _load_campaign(self, campaign_id: str) -> Optional[tuple]:
+        """
+        (Campaign, owner user id). With a user in context only that user's campaign is
+        found; relay and template are always resolved from the campaign owner's own.
+        """
+        uid = owner_id()
+        sql = "SELECT * FROM campaigns WHERE id = ?" + (" AND user_id = ?" if uid else "")
         async with get_db() as db:
-            async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cur:
+            async with db.execute(sql, (campaign_id, uid) if uid else (campaign_id,)) as cur:
                 row = await cur.fetchone()
                 if not row:
                     return None
+                owner = row["user_id"]
 
-                smtp_cfg = await self._resolve_smtp_config(db, row["smtp_config_json"], row["smtp_config_id"])
+                smtp_cfg = await self._resolve_smtp_config(db, row["smtp_config_json"], row["smtp_config_id"], owner)
 
                 html_body = row["template_html"] or row["custom_html"] or ""
                 text_body = row["template_text"] or row["custom_text"] or ""
@@ -461,8 +482,8 @@ class CampaignQueueManager:
                 # rather than carrying the body inline.
                 if row["template_id"] and not html_body:
                     async with db.execute(
-                        "SELECT subject, body_html, body_text FROM templates WHERE id = ?",
-                        (row["template_id"],),
+                        "SELECT subject, body_html, body_text FROM templates WHERE id = ? AND user_id IS ?",
+                        (row["template_id"], owner),
                     ) as tcur:
                         tpl = await tcur.fetchone()
                         if tpl:
@@ -493,14 +514,16 @@ class CampaignQueueManager:
                     click_count=row["click_count"],
                     rate_limit_per_sec=row["rate_limit_per_sec"] or 25,
                     concurrency_limit=row["concurrency_limit"] or 10,
-                )
+                ), owner
 
     @staticmethod
-    async def _resolve_smtp_config(db, smtp_config_json: Optional[str], smtp_config_id: Optional[str]) -> SMTPConfig:
+    async def _resolve_smtp_config(db, smtp_config_json: Optional[str], smtp_config_id: Optional[str],
+                                   user_id: Optional[str]) -> SMTPConfig:
         """
         Resolve the relay a campaign should dispatch through: the inline snapshot first,
-        then the referenced profile, then the account default. Falls back to a relay with
-        no host so the send fails loudly rather than silently pretending to deliver.
+        then the referenced profile, then the owner's default - only ever user_id's own
+        relays. Falls back to a relay with no host so the send fails loudly ("Add an SMTP
+        relay first") rather than silently pretending to deliver.
         """
         if smtp_config_json:
             try:
@@ -510,15 +533,15 @@ class CampaignQueueManager:
 
         row = None
         if smtp_config_id:
-            async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (smtp_config_id,)) as cur:
+            async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id IS ?", (smtp_config_id, user_id)) as cur:
                 row = await cur.fetchone()
         if row is None:
             async with db.execute(
-                "SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 LIMIT 1"
+                "SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 AND user_id IS ? LIMIT 1", (user_id,)
             ) as cur:
                 row = await cur.fetchone()
         if row is None:
-            async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 LIMIT 1") as cur:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 AND user_id IS ? LIMIT 1", (user_id,)) as cur:
                 row = await cur.fetchone()
 
         if row is None:
@@ -557,7 +580,7 @@ class CampaignQueueManager:
         now_iso = utc_now_iso()
         if smtp_config is None:
             async with get_db() as db:
-                smtp_config = await self._resolve_smtp_config(db, None, None)
+                smtp_config = await self._resolve_smtp_config(db, None, None, owner_id())
         smtp_cfg = smtp_config
         smtp_json = json.dumps(smtp_cfg.model_dump())
         total_recipients = len(recipients) if recipients else 0
@@ -588,8 +611,8 @@ class CampaignQueueManager:
                     id, name, subject, template_html, template_text, sender_name, sender_email,
                     smtp_config_json, status, total_recipients, sent_count, failed_count,
                     open_count, click_count, unsubscribed_count, rate_limit_per_sec,
-                    concurrency_limit, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    concurrency_limit, created_at, updated_at, user_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     campaign.id,
@@ -607,6 +630,7 @@ class CampaignQueueManager:
                     concurrency_limit,
                     now_iso,
                     now_iso,
+                    owner_id(),
                 ),
             )
             await db.commit()
@@ -623,16 +647,17 @@ class CampaignQueueManager:
             if campaign_id in self._active_workers and self._active_workers[campaign_id].is_active:
                 return self._active_workers[campaign_id]
 
-            campaign = await self.get_campaign(campaign_id)
-            if not campaign:
+            loaded = await self._load_campaign(campaign_id)
+            if not loaded:
                 raise ValueError(f"Campaign not found: {campaign_id}")
+            campaign, owner = loaded
 
             target_recipients = recipients or self._campaign_recipients.get(campaign_id)
             if target_recipients is None:
                 # Warmup days keep their own recipients in warmup_slices. The in-memory
                 # copy is lost on every restart, and without this the day would fall back
                 # to the campaign's whole list and re-mail earlier days' recipients.
-                target_recipients = await self._load_slice_recipients(campaign_id)
+                target_recipients = await self._load_slice_recipients(campaign_id, owner)
 
             worker = CampaignWorker(
                 campaign=campaign,
@@ -641,6 +666,7 @@ class CampaignQueueManager:
                 sender=self.sender,
                 storage=self.storage,
                 templates=self.templates,
+                user_id=owner,
             )
 
             worker.task = asyncio.create_task(worker.run(target_recipients))
@@ -649,11 +675,11 @@ class CampaignQueueManager:
             self._pause_events[campaign_id] = worker.pause_event
             return worker
 
-    async def _load_slice_recipients(self, campaign_id: str) -> Optional[List[Subscriber]]:
+    async def _load_slice_recipients(self, campaign_id: str, user_id: Optional[str]) -> Optional[List[Subscriber]]:
         """
         Recipients saved for a warmup day, or None when the campaign is not a warmup day.
         Each address is re-checked against Contacts so current status and custom fields
-        apply; anyone no longer active is dropped.
+        apply; anyone no longer active is dropped. Only user_id's (the owner's) contacts match.
         """
         async with get_db() as db:
             async with db.execute("SELECT recipients_json FROM warmup_slices WHERE campaign_id = ?", (campaign_id,)) as cur:
@@ -670,7 +696,7 @@ class CampaignQueueManager:
                 email = (entry.get("email") if isinstance(entry, dict) else str(entry or "")).strip()
                 if not email:
                     continue
-                async with db.execute("SELECT * FROM subscribers WHERE email = ? COLLATE NOCASE", (email,)) as cur:
+                async with db.execute("SELECT * FROM subscribers WHERE email = ? COLLATE NOCASE AND user_id IS ?", (email, user_id)) as cur:
                     sub = await cur.fetchone()
                 if sub is not None:
                     if (sub["status"] or "active") != "active":
@@ -802,7 +828,7 @@ class CampaignQueueManager:
         smtp_cfg = request.smtp_config
         if smtp_cfg is None:
             async with get_db() as db:
-                smtp_cfg = await self._resolve_smtp_config(db, None, None)
+                smtp_cfg = await self._resolve_smtp_config(db, None, None, owner_id())
         result = await self.sender.send_email(
             recipient=sub,
             rendered=rendered,

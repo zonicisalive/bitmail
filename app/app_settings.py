@@ -1,7 +1,7 @@
 """
-Account-wide sending settings, editable from the Settings page.
+Per-user sending settings, editable from the Settings page.
 
-Stored as key/value rows in app_settings so new switches need no migration.
+Stored as (user_id, key, value) rows in app_settings so new switches need no migration.
 Read on every send (cheap: one small table, cached for a few seconds).
 """
 
@@ -9,6 +9,7 @@ import json
 import time
 from typing import Any, Dict
 
+from app.auth import current_user_id
 from app.db import get_db, utc_now_iso
 
 DEFAULTS: Dict[str, Any] = {
@@ -27,7 +28,8 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 _CACHE_SECONDS = 5.0
-_cache: Dict[str, Any] = {"at": 0.0, "values": None}
+# user_id -> (fetched_at, values)
+_cache: Dict[str, Any] = {}
 
 
 def _coerce(key: str, value: Any) -> Any:
@@ -42,19 +44,25 @@ def _coerce(key: str, value: Any) -> Any:
 
 
 async def get_settings() -> Dict[str, Any]:
+    """Settings of the user in context; DEFAULTS when there is none."""
+    try:
+        user_id = current_user_id()
+    except RuntimeError:
+        return dict(DEFAULTS)
     now = time.monotonic()
-    if _cache["values"] is not None and now - _cache["at"] < _CACHE_SECONDS:
-        return dict(_cache["values"])
+    cached = _cache.get(user_id)
+    if cached and now - cached[0] < _CACHE_SECONDS:
+        return dict(cached[1])
     values = dict(DEFAULTS)
     async with get_db() as db:
-        async with db.execute("SELECT key, value FROM app_settings") as cur:
+        async with db.execute("SELECT key, value FROM app_settings WHERE user_id = ?", (user_id,)) as cur:
             for row in await cur.fetchall():
                 if row["key"] in DEFAULTS:
                     try:
                         values[row["key"]] = _coerce(row["key"], json.loads(row["value"]))
                     except Exception:
                         pass
-    _cache.update(at=now, values=values)
+    _cache[user_id] = (now, values)
     return dict(values)
 
 
@@ -62,14 +70,15 @@ async def update_settings(changes: Dict[str, Any]) -> Dict[str, Any]:
     unknown = [k for k in changes if k not in DEFAULTS]
     if unknown:
         raise ValueError(f"Unknown setting(s): {', '.join(unknown)}")
+    user_id = current_user_id()
     now = utc_now_iso()
     async with get_db() as db:
         for key, value in changes.items():
             await db.execute(
-                "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (key, json.dumps(_coerce(key, value)), now),
+                "INSERT INTO app_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (user_id, key, json.dumps(_coerce(key, value)), now),
             )
         await db.commit()
-    _cache["values"] = None
+    _cache.pop(user_id, None)
     return await get_settings()

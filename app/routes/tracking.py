@@ -12,6 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
+from app.auth import set_current_user_id
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import EventType, SubscriberStatus
@@ -45,10 +46,12 @@ async def track_email_open(
     now = utc_now_iso()
 
     async with get_db() as db:
-        async with db.execute("SELECT id, campaign_id, open_count, first_opened_at FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute("SELECT id, user_id, campaign_id, recipient_email, open_count, first_opened_at FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
             email_row = await cursor.fetchone()
 
         if email_row:
+            # Live events and webhooks go to the sender of this email only.
+            set_current_user_id(email_row["user_id"])
             campaign_id = email_row["campaign_id"]
             current_open_cnt = email_row["open_count"] or 0
             is_first_open = (current_open_cnt == 0)
@@ -143,7 +146,7 @@ async def track_email_click(
 
     async with get_db() as db:
         async with db.execute(
-            "SELECT id, campaign_id, click_count, rendered_html, body_html, body_text FROM sent_emails WHERE id = ?",
+            "SELECT id, user_id, campaign_id, click_count, rendered_html, body_html, body_text FROM sent_emails WHERE id = ?",
             (email_id,)
         ) as cursor:
             email_row = await cursor.fetchone()
@@ -166,6 +169,7 @@ async def track_email_click(
                 detail="Untrusted or unverified destination redirect URL."
             )
 
+        set_current_user_id(email_row["user_id"])
         campaign_id = email_row["campaign_id"]
         current_click_cnt = email_row["click_count"] or 0
         is_first_click = (current_click_cnt == 0)
@@ -236,44 +240,68 @@ async def track_email_click(
 _LINK_PARAMS = ("token", "email", "campaign_id")
 
 
-async def _resolve_recipient(token: str, request: Request, db) -> tuple[Optional[str], Optional[str]]:
-    """Return (email, subscriber_id) for this link, or (None, None)."""
+_NOT_FOUND = (None, None, None)
+
+
+async def _owner_of(db, email: str, subscriber_id: Optional[str] = None, sent_email_id: Optional[str] = None):
+    """(True, user_id) of the account this recipient belongs to, or (False, None)."""
+    lookups = []
+    if subscriber_id:
+        lookups.append(("SELECT user_id FROM subscribers WHERE id = ?", (subscriber_id,)))
+    if sent_email_id:
+        lookups.append(("SELECT user_id FROM sent_emails WHERE id = ?", (sent_email_id,)))
+    # ponytail: signed tokens without a subscriber id fall back to the latest email sent
+    # to this address; ambiguous if two accounts mailed it. Embed the sent email id to fix.
+    lookups.append(("SELECT user_id FROM sent_emails WHERE recipient_email = ? ORDER BY created_at DESC LIMIT 1", (email,)))
+    for sql, params in lookups:
+        async with db.execute(sql, params) as cursor:
+            row = await cursor.fetchone()
+        if row:
+            return True, row["user_id"]
+    return False, None
+
+
+async def _resolve_recipient(token: str, request: Request, db) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Return (email, subscriber_id, owner_user_id) for this link, or (None, None, None)."""
     # Signed path token. Tokens without a "." are bare emails/ids, which
     # verify_unsubscribe_token accepts unsigned, so they are not trusted here.
     if "." in token:
         verified = verify_unsubscribe_token(token)
         if verified and verified[0]:
-            return verified[0].strip().lower(), verified[1]
+            email = verified[0].strip().lower()
+            found, owner = await _owner_of(db, email, subscriber_id=verified[1])
+            return (email, verified[1], owner) if found else _NOT_FOUND
 
     # Campaign footer links: storage id + signed token + email in the query.
     query_email = (request.query_params.get("email") or "").strip().lower()
     query_token = request.query_params.get("token") or ""
     if query_email and query_token:
         if template_engine.verify_unsubscribe_token(token, query_email, query_token):
-            return query_email, None
-        return None, None  # a bad signature never falls through to the id lookups
+            found, owner = await _owner_of(db, query_email, sent_email_id=token)
+            return (query_email, None, owner) if found else _NOT_FOUND
+        return _NOT_FOUND  # a bad signature never falls through to the id lookups
 
-    async with db.execute("SELECT email, id FROM subscribers WHERE id = ?", (token,)) as cursor:
+    async with db.execute("SELECT email, id, user_id FROM subscribers WHERE id = ?", (token,)) as cursor:
         row = await cursor.fetchone()
         if row:
-            return row["email"], row["id"]
-    async with db.execute("SELECT recipient_email FROM sent_emails WHERE id = ?", (token,)) as cursor:
+            return row["email"], row["id"], row["user_id"]
+    async with db.execute("SELECT recipient_email, user_id FROM sent_emails WHERE id = ?", (token,)) as cursor:
         row = await cursor.fetchone()
         if row and row["recipient_email"]:
-            return row["recipient_email"].strip().lower(), None
-    return None, None
+            return row["recipient_email"].strip().lower(), None, row["user_id"]
+    return _NOT_FOUND
 
 
-async def _is_suppressed(db, email: str) -> bool:
-    async with db.execute("SELECT 1 FROM suppressions WHERE email = ? LIMIT 1", (email,)) as cursor:
+async def _is_suppressed(db, email: str, owner: Optional[str]) -> bool:
+    async with db.execute("SELECT 1 FROM suppressions WHERE email = ? AND user_id IS ? LIMIT 1", (email, owner)) as cursor:
         return await cursor.fetchone() is not None
 
 
-async def _record_event(db, email: str, event_type: str, client_ip: str, user_agent: Optional[str], now: str) -> Optional[str]:
-    """Log the event against the recipient's latest email; returns its campaign id."""
+async def _record_event(db, email: str, owner: Optional[str], event_type: str, client_ip: str, user_agent: Optional[str], now: str) -> Optional[str]:
+    """Log the event against the owner's latest email to the recipient; returns its campaign id."""
     async with db.execute(
-        "SELECT id, campaign_id FROM sent_emails WHERE recipient_email = ? ORDER BY created_at DESC LIMIT 1",
-        (email,)
+        "SELECT id, campaign_id FROM sent_emails WHERE recipient_email = ? AND user_id IS ? ORDER BY created_at DESC LIMIT 1",
+        (email, owner)
     ) as cursor:
         row = await cursor.fetchone()
     if not row:
@@ -393,27 +421,29 @@ async def handle_unsubscribe(
     campaign_id = None
 
     async with get_db() as db:
-        email_target, sub_id = await _resolve_recipient(token, request, db)
+        email_target, sub_id, owner = await _resolve_recipient(token, request, db)
+        # Everything below touches only the data of the account that sent this email.
+        set_current_user_id(owner)
         if email_target and not view_only:
-            changed = not await _is_suppressed(db, email_target)
+            changed = not await _is_suppressed(db, email_target, owner)
             await db.execute("""
                 UPDATE subscribers SET status = 'unsubscribed', updated_at = ?
-                WHERE email = ? OR id = ?
-            """, (now, email_target, sub_id))
-            await db.execute("""
-                INSERT OR IGNORE INTO suppressions (id, email, campaign_id, reason, created_at)
-                VALUES (?, ?, NULL, 'user_unsubscribed', ?)
-            """, (f"sup_{uuid.uuid4().hex[:10]}", email_target, now))
+                WHERE user_id IS ? AND (email = ? OR id = ?)
+            """, (now, owner, email_target, sub_id))
             # Only a real change counts; repeat clicks don't inflate campaign stats.
             if changed:
-                campaign_id = await _record_event(db, email_target, "unsubscribe", client_ip, user_agent, now)
+                await db.execute("""
+                    INSERT OR IGNORE INTO suppressions (id, user_id, email, campaign_id, reason, created_at)
+                    VALUES (?, ?, ?, NULL, 'user_unsubscribed', ?)
+                """, (f"sup_{uuid.uuid4().hex[:10]}", owner, email_target, now))
+                campaign_id = await _record_event(db, email_target, owner, "unsubscribe", client_ip, user_agent, now)
                 if campaign_id:
                     await db.execute(
                         "UPDATE campaigns SET unsubscribe_count = unsubscribe_count + 1, updated_at = ? WHERE id = ?",
                         (now, campaign_id)
                     )
             await db.commit()
-        suppressed = bool(email_target) and await _is_suppressed(db, email_target)
+        suppressed = bool(email_target) and await _is_suppressed(db, email_target, owner)
 
     if changed:
         await WebhookDispatcher.dispatch_event("subscriber.unsubscribed", {
@@ -460,14 +490,15 @@ async def handle_resubscribe(
     now = utc_now_iso()
 
     async with get_db() as db:
-        email_target, sub_id = await _resolve_recipient(token, request, db)
+        email_target, sub_id, owner = await _resolve_recipient(token, request, db)
+        set_current_user_id(owner)
         if email_target and request.method == "POST":
-            await db.execute("DELETE FROM suppressions WHERE email = ?", (email_target,))
+            await db.execute("DELETE FROM suppressions WHERE email = ? AND user_id IS ?", (email_target, owner))
             await db.execute("""
                 UPDATE subscribers SET status = 'active', updated_at = ?
-                WHERE email = ? OR id = ?
-            """, (now, email_target, sub_id))
-            await _record_event(db, email_target, "resubscribe", client_ip, user_agent, now)
+                WHERE user_id IS ? AND (email = ? OR id = ?)
+            """, (now, owner, email_target, sub_id))
+            await _record_event(db, email_target, owner, "resubscribe", client_ip, user_agent, now)
             await db.commit()
 
     if email_target and request.method == "POST":

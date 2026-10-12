@@ -28,6 +28,21 @@ from app.main import app
 from app.models import BounceType
 from app.sender import build_mime_message
 from app.webhooks import WebhookDispatcher
+from app.auth import set_current_user_id
+
+
+async def seed_sent_email(recipient: str) -> str:
+    """Bounces are matched to the account that sent the email; give the address one."""
+    async with get_db() as db:
+        async with db.execute("SELECT id FROM users ORDER BY created_at LIMIT 1") as cur:
+            owner = (await cur.fetchone())[0]
+        await db.execute(
+            "INSERT INTO sent_emails (id, user_id, recipient_email, sender_email, subject, status, created_at) "
+            "VALUES (?, ?, ?, 'sender@example.com', 'Hello', 'sent', ?)",
+            (f"eml_{uuid.uuid4().hex[:12]}", owner, recipient, utc_now_iso()),
+        )
+        await db.commit()
+    return owner
 
 
 class TestBlacklistMonitor(unittest.TestCase):
@@ -315,11 +330,12 @@ class TestSmartBounceClassifier(unittest.TestCase):
 
         async def _run():
             # Seed subscriber
+            owner = await seed_sent_email(email_addr)
             async with get_db() as db:
                 await db.execute("""
-                    INSERT INTO subscribers (id, email, first_name, last_name, status, created_at, updated_at)
-                    VALUES ('sub_dead_01', ?, 'Dead', 'User', 'active', ?, ?)
-                """, (email_addr, now, now))
+                    INSERT INTO subscribers (id, user_id, email, first_name, last_name, status, created_at, updated_at)
+                    VALUES ('sub_dead_01', ?, ?, 'Dead', 'User', 'active', ?, ?)
+                """, (owner, email_addr, now, now))
                 await db.commit()
 
             # Process 5.1.1 hard bounce
@@ -458,10 +474,13 @@ class TestOutboundWebhooks(unittest.TestCase):
 
         async def _run():
             async with get_db() as db:
+                async with db.execute("SELECT id FROM users ORDER BY created_at LIMIT 1") as cur:
+                    owner = (await cur.fetchone())[0]
+                set_current_user_id(owner)
                 await db.execute("""
-                    INSERT INTO webhooks (id, name, url, secret, events_json, is_active, created_at, updated_at)
-                    VALUES (?, 'Mock Endpoint', 'https://mock.endpoint.local/webhook', ?, '["email.sent", "email.bounced"]', 1, ?, ?)
-                """, (wh_id, secret, now, now))
+                    INSERT INTO webhooks (id, user_id, name, url, secret, events_json, is_active, created_at, updated_at)
+                    VALUES (?, ?, 'Mock Endpoint', 'https://mock.endpoint.local/webhook', ?, '["email.sent", "email.bounced"]', 1, ?, ?)
+                """, (wh_id, owner, secret, now, now))
                 await db.commit()
 
             # Mock httpx AsyncClient post
@@ -530,6 +549,7 @@ class TestDeliverabilityIntegrationRoutes(unittest.TestCase):
         self.assertGreaterEqual(data["total_zones"], 30)
 
     def test_inbound_bounce_endpoint(self):
+        asyncio.run(seed_sent_email("inbound_bounced_mta@example.com"))
         res = self.client.post(
             "/api/bounces/inbound",
             json={

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
+from app.auth import current_user_id
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import (
@@ -25,6 +26,29 @@ from app.scheduler import parse_and_normalize_schedule_time
 from app.sender import send_single_email
 
 router = APIRouter(prefix="/api/campaigns", tags=["Campaigns"])
+
+_OWNED_REFS = {
+    "subscriber_lists": "List not found",
+    "templates": "Template not found",
+    "smtp_configs": "SMTP relay not found",
+}
+
+
+async def _require_owned(db, table: str, row_id: Optional[str]) -> None:
+    """404 unless row_id is empty or one of the current user's rows in table."""
+    if not row_id:
+        return
+    async with db.execute(f"SELECT 1 FROM {table} WHERE id = ? AND user_id = ?", (row_id, current_user_id())) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(status_code=404, detail=_OWNED_REFS[table])
+
+
+async def _require_campaign(campaign_id: str) -> None:
+    """404 unless the campaign belongs to the current user."""
+    async with get_db() as db:
+        async with db.execute("SELECT 1 FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cur:
+            if not await cur.fetchone():
+                raise HTTPException(status_code=404, detail="Campaign not found")
 
 
 class CampaignCreatePayload(BaseModel):
@@ -63,8 +87,8 @@ async def list_campaigns(
     List campaigns with live status and aggregated telemetry counters.
     """
     async with get_db() as db:
-        query = "SELECT * FROM campaigns WHERE 1=1"
-        params: List[Any] = []
+        query = "SELECT * FROM campaigns WHERE user_id = ?"
+        params: List[Any] = [current_user_id()]
 
         if status_filter:
             query += " AND status = ?"
@@ -138,23 +162,28 @@ async def create_campaign(payload: CampaignCreatePayload):
     sender_name = payload.sender_name or settings.DEFAULT_SENDER_NAME
     sender_email = payload.sender_email or settings.DEFAULT_SENDER_EMAIL
 
+    uid = current_user_id()
     initial_recipients = 0
     async with get_db() as db:
+        await _require_owned(db, "subscriber_lists", target_list_id)
+        await _require_owned(db, "templates", payload.template_id)
+        await _require_owned(db, "smtp_configs", payload.smtp_config_id)
         if target_list_id:
             async with db.execute("""
                 SELECT COUNT(*)
                 FROM subscribers s
                 JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                WHERE m.list_id = ? AND s.status = 'active'
-                  AND s.email NOT IN (SELECT email FROM suppressions)
-            """, (target_list_id,)) as cursor:
+                WHERE m.list_id = ? AND s.status = 'active' AND s.user_id = ?
+                  AND s.email NOT IN (SELECT email FROM suppressions WHERE user_id = ?)
+            """, (target_list_id, uid, uid)) as cursor:
                 c_row = await cursor.fetchone()
                 initial_recipients = c_row[0] if c_row else 0
         else:
             async with db.execute("""
                 SELECT COUNT(*) FROM subscribers 
-                WHERE status = 'active' AND email NOT IN (SELECT email FROM suppressions)
-            """) as cursor:
+                WHERE status = 'active' AND user_id = ?
+                  AND email NOT IN (SELECT email FROM suppressions WHERE user_id = ?)
+            """, (uid, uid)) as cursor:
                 c_row = await cursor.fetchone()
                 initial_recipients = c_row[0] if c_row else 0
 
@@ -175,8 +204,8 @@ async def create_campaign(payload: CampaignCreatePayload):
                 status, scheduled_at, started_at, completed_at,
                 total_recipients, sent_count, delivered_count, failed_count,
                 open_count, click_count, unsubscribe_count, bounce_count,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, 0, 0, 0, 0, 0, 0, ?, ?)
+                created_at, updated_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, 0, 0, 0, 0, 0, 0, ?, ?, ?)
         """, (
             camp_id,
             campaign_name,
@@ -196,7 +225,8 @@ async def create_campaign(payload: CampaignCreatePayload):
             normalized_sched,
             initial_recipients,
             now,
-            now
+            now,
+            uid
         ))
         await db.commit()
 
@@ -240,9 +270,9 @@ async def list_scheduled_campaigns():
     async with get_db() as db:
         async with db.execute("""
             SELECT * FROM campaigns
-            WHERE status = 'scheduled'
+            WHERE status = 'scheduled' AND user_id = ?
             ORDER BY scheduled_at ASC
-        """) as cur:
+        """, (current_user_id(),)) as cur:
             rows = await cur.fetchall()
 
     results = []
@@ -292,7 +322,7 @@ async def get_campaign(campaign_id: str):
     Get campaign details and live progress metrics.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Campaign not found")
@@ -343,7 +373,7 @@ async def get_campaign_stats(campaign_id: str):
     Get full analytics report for a specific campaign.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             camp = await cursor.fetchone()
             if not camp:
                 raise HTTPException(status_code=404, detail="Campaign not found")
@@ -412,11 +442,15 @@ async def update_campaign(campaign_id: str, payload: CampaignUpdate):
     """
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Campaign not found")
             camp = dict(row)
+
+        await _require_owned(db, "templates", payload.template_id)
+        await _require_owned(db, "subscriber_lists", payload.list_id)
+        await _require_owned(db, "smtp_configs", payload.smtp_config_id)
 
         new_name = payload.name if payload.name is not None else camp["name"]
         new_subject = payload.subject if payload.subject is not None else camp["subject"]
@@ -444,12 +478,12 @@ async def update_campaign(campaign_id: str, payload: CampaignUpdate):
                 sender_name = ?, sender_email = ?, reply_to = ?, headers = ?,
                 track_opens = ?, track_clicks = ?, custom_html = ?, custom_text = ?,
                 status = ?, scheduled_at = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
         """, (
             new_name, new_subject, new_tpl, new_list, new_smtp,
             new_sname, new_semail, new_reply, headers_str,
             track_o, track_c, new_html, new_text,
-            new_status, new_sched, now, campaign_id
+            new_status, new_sched, now, campaign_id, current_user_id()
         ))
         await db.commit()
 
@@ -461,16 +495,17 @@ async def delete_campaign(campaign_id: str):
     """
     Delete a campaign and dissociate sent email records.
     """
+    await _require_campaign(campaign_id)
     if campaign_queue.is_running(campaign_id):
         await campaign_queue.cancel_campaign(campaign_id)
 
     async with get_db() as db:
-        async with db.execute("SELECT id FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT id FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Campaign not found")
 
-        await db.execute("DELETE FROM campaigns WHERE id = ?", (campaign_id,))
+        await db.execute("DELETE FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id()))
         await db.commit()
 
     return {"success": True, "message": f"Campaign {campaign_id} deleted."}
@@ -486,7 +521,7 @@ async def test_send_campaign(campaign_id: str, payload: TestSendRequest):
     Send a single test preview to a specific test email.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             camp = await cursor.fetchone()
             if not camp:
                 raise HTTPException(status_code=404, detail="Campaign not found")
@@ -534,10 +569,15 @@ async def launch_campaign(campaign_id: str):
     Queue and begin asynchronous execution of mass email campaign.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cursor:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cursor:
             camp = await cursor.fetchone()
             if not camp:
                 raise HTTPException(status_code=404, detail="Campaign not found")
+        if not camp["smtp_config_json"]:
+            async with db.execute("SELECT 1 FROM smtp_configs WHERE user_id = ? AND is_active = 1",
+                                  (current_user_id(),)) as cursor:
+                if not await cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="Add an SMTP relay first.")
 
     result = await campaign_queue.launch_campaign(campaign_id)
     return result
@@ -548,6 +588,7 @@ async def pause_campaign(campaign_id: str):
     """
     Pause a running mass campaign.
     """
+    await _require_campaign(campaign_id)
     return await campaign_queue.pause_campaign(campaign_id)
 
 
@@ -556,6 +597,7 @@ async def resume_campaign(campaign_id: str):
     """
     Resume a paused mass campaign.
     """
+    await _require_campaign(campaign_id)
     return await campaign_queue.resume_campaign(campaign_id)
 
 
@@ -564,6 +606,7 @@ async def cancel_campaign(campaign_id: str):
     """
     Cancel an ongoing or scheduled mass campaign.
     """
+    await _require_campaign(campaign_id)
     return await campaign_queue.cancel_campaign(campaign_id)
 
 
@@ -583,7 +626,7 @@ async def schedule_campaign(campaign_id: str, payload: ScheduleCampaignRequest):
 
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cur:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cur:
             row = await cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Campaign not found.")
@@ -597,8 +640,8 @@ async def schedule_campaign(campaign_id: str, payload: ScheduleCampaignRequest):
             SET status = 'scheduled',
                 scheduled_at = ?,
                 updated_at = ?
-            WHERE id = ?
-        """, (normalized, now, campaign_id))
+            WHERE id = ? AND user_id = ?
+        """, (normalized, now, campaign_id, current_user_id()))
         await db.commit()
 
     return {
@@ -617,7 +660,7 @@ async def unschedule_campaign(campaign_id: str):
     """
     now = utc_now_iso()
     async with get_db() as db:
-        async with db.execute("SELECT * FROM campaigns WHERE id = ?", (campaign_id,)) as cur:
+        async with db.execute("SELECT * FROM campaigns WHERE id = ? AND user_id = ?", (campaign_id, current_user_id())) as cur:
             row = await cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Campaign not found.")
@@ -631,8 +674,8 @@ async def unschedule_campaign(campaign_id: str):
             SET status = 'draft',
                 scheduled_at = NULL,
                 updated_at = ?
-            WHERE id = ?
-        """, (now, campaign_id))
+            WHERE id = ? AND user_id = ?
+        """, (now, campaign_id, current_user_id()))
         await db.commit()
 
     return {
@@ -728,6 +771,10 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
 
     target_subscribers: List[Subscriber] = []
     now = utc_now_iso()
+    uid = current_user_id()
+    if payload.list_id and payload.list_id.lower() != "all":
+        async with get_db() as db:
+            await _require_owned(db, "subscriber_lists", payload.list_id)
 
     # 1. Parse pasted customer emails if provided
     if payload.recipients_text and payload.recipients_text.strip():
@@ -741,7 +788,7 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                 first_name = item["first_name"]
                 last_name = item["last_name"]
 
-                async with db.execute("SELECT * FROM subscribers WHERE email = ?", (email_str,)) as cur:
+                async with db.execute("SELECT * FROM subscribers WHERE email = ? AND user_id = ?", (email_str, uid)) as cur:
                     row = await cur.fetchone()
 
                 if row:
@@ -766,9 +813,9 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                     await db.execute("""
                         INSERT INTO subscribers (
                             id, email, first_name, last_name, status,
-                            tags, custom_fields, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, 'active', '["quick-broadcast"]', '{}', ?, ?)
-                    """, (sub_id, email_str, first_name, last_name, now, now))
+                            tags, custom_fields, created_at, updated_at, user_id
+                        ) VALUES (?, ?, ?, ?, 'active', '["quick-broadcast"]', '{}', ?, ?, ?)
+                    """, (sub_id, email_str, first_name, last_name, now, now, uid))
                     
                     target_subscribers.append(Subscriber(
                         id=sub_id,
@@ -785,8 +832,8 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
             async with db.execute("""
                 SELECT s.* FROM subscribers s
                 JOIN subscriber_list_memberships m ON s.id = m.subscriber_id
-                WHERE m.list_id = ? AND s.status = 'active'
-            """, (payload.list_id,)) as cur:
+                WHERE m.list_id = ? AND s.status = 'active' AND s.user_id = ?
+            """, (payload.list_id, uid)) as cur:
                 rows = await cur.fetchall()
                 for r in rows:
                     cf = {}
@@ -804,7 +851,7 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
     else:
         # Pull all active customers
         async with get_db() as db:
-            async with db.execute("SELECT * FROM subscribers WHERE status = 'active'") as cur:
+            async with db.execute("SELECT * FROM subscribers WHERE status = 'active' AND user_id = ?", (uid,)) as cur:
                 rows = await cur.fetchall()
                 for r in rows:
                     cf = {}
@@ -830,13 +877,15 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
     smtp_cfg_obj = None
     async with get_db() as db:
         if payload.smtp_config_id:
-            async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (payload.smtp_config_id,)) as cur:
-                smtp_row = await cur.fetchone()
-        else:
-            async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 ORDER BY updated_at DESC LIMIT 1") as cur:
+            async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id = ?", (payload.smtp_config_id, uid)) as cur:
                 smtp_row = await cur.fetchone()
             if not smtp_row:
-                async with db.execute("SELECT * FROM smtp_configs ORDER BY updated_at DESC LIMIT 1") as cur:
+                raise HTTPException(status_code=404, detail="SMTP relay not found")
+        else:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 AND user_id = ? ORDER BY updated_at DESC LIMIT 1", (uid,)) as cur:
+                smtp_row = await cur.fetchone()
+            if not smtp_row:
+                async with db.execute("SELECT * FROM smtp_configs WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1", (uid,)) as cur:
                     smtp_row = await cur.fetchone()
 
         if smtp_row:
@@ -904,15 +953,15 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
 
         async with get_db() as db:
             await db.execute("""
-                UPDATE campaigns SET is_warmup = 1, warmup_schedule_id = ?, status = 'draft' WHERE id = ?
-            """, (schedule_id, base_camp.id))
+                UPDATE campaigns SET is_warmup = 1, warmup_schedule_id = ?, status = 'draft' WHERE id = ? AND user_id = ?
+            """, (schedule_id, base_camp.id, uid))
 
             await db.execute("""
                 INSERT INTO warmup_schedules (
                     id, name, campaign_id, strategy, total_recipients, current_day,
                     total_days, daily_cap, sent_today, status, relay_pool_json,
-                    rotation_mode, max_bounce_rate, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, 'active', '[]', 'round_robin', 0.02, ?, ?)
+                    rotation_mode, max_bounce_rate, created_at, updated_at, user_id
+                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, 0, 'active', '[]', 'round_robin', 0.02, ?, ?, ?)
             """, (
                 schedule_id,
                 f"Warmup: {campaign_name}",
@@ -922,7 +971,8 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                 total_days,
                 daily_caps[0] if daily_caps else 50,
                 now_ts,
-                now_ts
+                now_ts,
+                uid
             ))
 
             day1_child_camp = None
@@ -941,8 +991,8 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                         sender_email, reply_to, headers, track_opens, track_clicks,
                         custom_html, custom_text, status, scheduled_at, total_recipients,
                         rate_limit_per_sec, concurrency_limit, is_warmup, warmup_schedule_id,
-                        created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                        created_at, updated_at, user_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                 """, (
                     child_id,
                     f"{campaign_name} (Day {s['day_number']}/{total_days})",
@@ -968,7 +1018,8 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                     10,
                     schedule_id,
                     now_ts,
-                    now_ts
+                    now_ts,
+                    uid
                 ))
 
                 await db.execute("""
@@ -1036,8 +1087,8 @@ async def quick_broadcast_send(payload: QuickBroadcastPayload):
                 SET status = 'scheduled',
                     scheduled_at = ?,
                     updated_at = ?
-                WHERE id = ?
-            """, (normalized_sched, now_ts, campaign.id))
+                WHERE id = ? AND user_id = ?
+            """, (normalized_sched, now_ts, campaign.id, uid))
             await db.commit()
 
         return {

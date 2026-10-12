@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
+from app.auth import current_user_id
 from app.db import get_db, utc_now_iso
 
 logger = logging.getLogger("bitmail.webhooks")
@@ -38,20 +39,27 @@ class WebhookDispatcher:
         background: bool = True
     ) -> List[Dict[str, Any]]:
         """
-        Dispatches an event to all active webhooks subscribed to event_type.
+        Dispatches an event to the active webhooks of the user in context that
+        subscribe to event_type. With no user in context nothing is delivered.
         If background is True, runs delivery asynchronously in task.
         """
+        try:
+            user_id = current_user_id()
+        except RuntimeError:
+            logger.warning("Webhook event '%s' raised with no user in context; not delivered.", event_type)
+            return []
         if background:
-            asyncio.create_task(cls._execute_dispatch(event_type, data))
+            asyncio.create_task(cls._execute_dispatch(event_type, data, user_id))
             return []
         else:
-            return await cls._execute_dispatch(event_type, data)
+            return await cls._execute_dispatch(event_type, data, user_id)
 
     @classmethod
     async def _execute_dispatch(
         cls,
         event_type: str,
-        data: Dict[str, Any]
+        data: Dict[str, Any],
+        user_id: str
     ) -> List[Dict[str, Any]]:
         """Executes HTTP dispatches to matched webhook endpoints."""
         matched_webhooks: List[Dict[str, Any]] = []
@@ -59,7 +67,8 @@ class WebhookDispatcher:
         try:
             async with get_db() as db:
                 async with db.execute(
-                    "SELECT id, name, url, secret, events_json, is_active FROM webhooks WHERE is_active = 1"
+                    "SELECT id, name, url, secret, events_json, is_active FROM webhooks WHERE is_active = 1 AND user_id = ?",
+                    (user_id,)
                 ) as cur:
                     rows = await cur.fetchall()
                     for r in rows:
@@ -171,12 +180,12 @@ class WebhookDispatcher:
     @classmethod
     async def test_webhook(cls, webhook_id: str) -> Dict[str, Any]:
         """
-        Sends a test ping event to the specified webhook endpoint.
+        Sends a test ping event to the specified webhook endpoint of the user in context.
         """
         webhook: Optional[Dict[str, Any]] = None
         async with get_db() as db:
             async with db.execute(
-                "SELECT id, name, url, secret FROM webhooks WHERE id = ?", (webhook_id,)
+                "SELECT id, name, url, secret FROM webhooks WHERE id = ? AND user_id = ?", (webhook_id, current_user_id())
             ) as cur:
                 r = await cur.fetchone()
                 if r:

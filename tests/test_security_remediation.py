@@ -140,9 +140,9 @@ class TestSecurityRemediation(unittest.TestCase):
             async with get_db() as db:
                 await db.execute("""
                     INSERT OR REPLACE INTO sent_emails (
-                        id, recipient_email, recipient_name, sender_email, sender_name, subject,
+                        id, user_id, recipient_email, recipient_name, sender_email, sender_name, subject,
                         body_html, body_text, status, created_at, sent_at
-                    ) VALUES ('test_sec_eml_1', 'user@example.com', 'Test User', 'sender@example.com', 'Sender',
+                    ) VALUES ('test_sec_eml_1', (SELECT id FROM users ORDER BY created_at LIMIT 1), 'user@example.com', 'Test User', 'sender@example.com', 'Sender',
                               'Hello', '<h1>Hello</h1><script>alert(1)</script>', 'Hello', 'sent', ?, ?)
                 """, (now, now))
                 await db.commit()

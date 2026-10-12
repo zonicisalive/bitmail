@@ -45,6 +45,104 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         await conn.close()
 
 
+# Tables whose rows belong to one user. Child tables (list memberships, events,
+# recipients, warmup slices, webhook deliveries, relay stats) inherit their owner
+# through the parent row.
+TENANT_TABLES = (
+    "subscribers", "subscriber_lists", "templates", "smtp_configs", "campaigns",
+    "sent_emails", "suppressions", "unsubscribes", "warmup_schedules", "webhooks",
+    "app_settings",
+)
+
+SUBSCRIBERS_SQL = """
+    CREATE TABLE IF NOT EXISTS {table} (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        email TEXT NOT NULL COLLATE NOCASE,
+        first_name TEXT,
+        last_name TEXT,
+        tags TEXT DEFAULT '[]',
+        custom_fields TEXT DEFAULT '{{}}',
+        status TEXT DEFAULT 'active',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (user_id, email)
+    );
+"""
+
+SUPPRESSIONS_SQL = """
+    CREATE TABLE IF NOT EXISTS {table} (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        email TEXT NOT NULL COLLATE NOCASE,
+        campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
+        reason TEXT NOT NULL DEFAULT 'user_unsubscribed',
+        created_at TEXT NOT NULL,
+        UNIQUE (user_id, email)
+    );
+"""
+
+APP_SETTINGS_SQL = """
+    CREATE TABLE IF NOT EXISTS {table} (
+        user_id TEXT NOT NULL DEFAULT '',
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, key)
+    );
+"""
+
+# Tables whose old uniqueness was global (email / key) and must become per-user.
+# SQLite cannot change a constraint in place, so these are rebuilt once.
+_REBUILT_TABLES = {
+    "subscribers": SUBSCRIBERS_SQL,
+    "suppressions": SUPPRESSIONS_SQL,
+    "app_settings": APP_SETTINGS_SQL,
+}
+
+
+async def _columns(db: aiosqlite.Connection, table: str) -> list:
+    async with db.execute(f"PRAGMA table_info({table})") as cur:
+        return [row["name"] for row in await cur.fetchall()]
+
+
+async def _add_tenant_columns(db: aiosqlite.Connection) -> None:
+    """Give every tenant table a user_id column (older databases had none)."""
+    for table in TENANT_TABLES:
+        cols = await _columns(db, table)
+        if "user_id" in cols:
+            pass
+        elif table in _REBUILT_TABLES:
+            # Documented 12-step rebuild; foreign keys off so dropping the old table
+            # does not cascade-delete list memberships.
+            await db.commit()
+            await db.execute("PRAGMA foreign_keys=OFF")
+            await db.execute(_REBUILT_TABLES[table].format(table=f"{table}_new"))
+            keep = ", ".join(cols)
+            await db.execute(f"INSERT INTO {table}_new ({keep}) SELECT {keep} FROM {table}")
+            await db.execute(f"DROP TABLE {table}")
+            await db.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+            await db.commit()
+            await db.execute("PRAGMA foreign_keys=ON")
+        else:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN user_id TEXT")
+        await db.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_user ON {table}(user_id)")
+    await db.commit()
+
+
+async def _assign_unowned_rows(db: aiosqlite.Connection) -> None:
+    """Rows from before multi-user support belong to the first administrator."""
+    async with db.execute(
+        "SELECT id FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1"
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return
+    for table in TENANT_TABLES:
+        await db.execute(f"UPDATE {table} SET user_id = ? WHERE user_id IS NULL OR user_id = ''", (row["id"],))
+    await db.commit()
+
+
 async def _table_exists(db: aiosqlite.Connection, name: str) -> bool:
     async with db.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)) as cur:
         return await cur.fetchone() is not None
@@ -87,19 +185,7 @@ async def init_db() -> None:
 
     async with get_db() as db:
         # 1. Subscribers Table
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS subscribers (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
-                first_name TEXT,
-                last_name TEXT,
-                tags TEXT DEFAULT '[]',
-                custom_fields TEXT DEFAULT '{}',
-                status TEXT DEFAULT 'active',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-        """)
+        await db.execute(SUBSCRIBERS_SQL.format(table="subscribers"))
 
         # Migration: Add tags column if table existed from previous version
         try:
@@ -353,15 +439,7 @@ async def init_db() -> None:
         """)
 
         # 9. Suppressions Table
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS suppressions (
-                id TEXT PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL COLLATE NOCASE,
-                campaign_id TEXT REFERENCES campaigns(id) ON DELETE SET NULL,
-                reason TEXT NOT NULL DEFAULT 'user_unsubscribed',
-                created_at TEXT NOT NULL
-            );
-        """)
+        await db.execute(SUPPRESSIONS_SQL.format(table="suppressions"))
 
 
         # 10. Direct QR Scan Authentication Sessions Table
@@ -389,7 +467,7 @@ async def init_db() -> None:
                 username TEXT UNIQUE COLLATE NOCASE,
                 password_hash TEXT NOT NULL,
                 name TEXT,
-                role TEXT NOT NULL DEFAULT 'admin',
+                role TEXT NOT NULL DEFAULT 'user',
                 status TEXT NOT NULL DEFAULT 'active',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -532,15 +610,10 @@ async def init_db() -> None:
         await add_column_if_missing("smtp_configs", "warmup_day", "INTEGER DEFAULT 1")
 
 
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS app_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-        """)
+        await db.execute(APP_SETTINGS_SQL.format(table="app_settings"))
 
         await _consolidate_duplicate_tables(db)
+        await _add_tenant_columns(db)
 
         # Indexes
         await db.execute("CREATE INDEX IF NOT EXISTS idx_subscribers_email ON subscribers(email);")
@@ -569,7 +642,10 @@ async def init_db() -> None:
         # Synchronize suppressions with active subscribers (active subscribers must not be suppressed)
         await db.execute("""
             DELETE FROM suppressions
-            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
+            WHERE EXISTS (
+                SELECT 1 FROM subscribers s
+                WHERE s.email = suppressions.email AND s.user_id IS suppressions.user_id AND s.status = 'active'
+            )
         """)
         await db.commit()
 
@@ -612,3 +688,4 @@ async def init_db() -> None:
             ))
 
         await db.commit()
+        await _assign_unowned_rows(db)

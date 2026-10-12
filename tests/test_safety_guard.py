@@ -92,7 +92,7 @@ class TestPreSendSafetyGuard(unittest.IsolatedAsyncioTestCase):
         # 1. Suppressed email
         is_sup, reason = await PreSendSafetyGuard.check_suppression("suppressed@badleads.com")
         self.assertTrue(is_sup)
-        self.assertIn("blacklisted", reason)
+        self.assertIn("suppression list", reason)
 
         # 2. Bounced subscriber
         is_sup2, reason2 = await PreSendSafetyGuard.check_suppression("hardbounce@target.com")

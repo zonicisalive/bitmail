@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.auth import get_current_user
+from app.auth import current_user_id, get_current_user
 from app.bounce import BounceClassifier
 from app.db import get_db
 from app.models import InboundBouncePayload, InboundBounceResponse
@@ -90,22 +90,24 @@ async def handle_inbound_raw_dsn(request: Request) -> Any:
 @router.get("/stats", dependencies=[Depends(get_current_user)])
 async def get_bounce_stats() -> Dict[str, Any]:
     """Summary of bounces and suppressions across campaigns."""
+    uid = current_user_id()
     async with get_db() as db:
-        async with db.execute("SELECT COUNT(*) FROM suppressions") as cur:
+        async with db.execute("SELECT COUNT(*) FROM suppressions WHERE user_id = ?", (uid,)) as cur:
             row = await cur.fetchone()
             total_suppressions = row[0] if row else 0
 
-        async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE status = 'bounced'") as cur:
+        async with db.execute("SELECT COUNT(*) FROM sent_emails WHERE status = 'bounced' AND user_id = ?", (uid,)) as cur:
             row = await cur.fetchone()
             total_bounced_sends = row[0] if row else 0
 
         async with db.execute("""
             SELECT reason, COUNT(*) as cnt
             FROM suppressions
+            WHERE user_id = ?
             GROUP BY reason
             ORDER BY cnt DESC
             LIMIT 10
-        """) as cur:
+        """, (uid,)) as cur:
             breakdown = [dict(r) for r in await cur.fetchall()]
 
     return {
@@ -119,7 +121,9 @@ async def get_bounce_stats() -> Dict[str, Any]:
 async def list_suppressions() -> Dict[str, Any]:
     """Retrieve all suppressed email addresses and reasons."""
     async with get_db() as db:
-        async with db.execute("SELECT id, email, campaign_id, reason, created_at FROM suppressions ORDER BY created_at DESC LIMIT 200") as cur:
+        async with db.execute("SELECT id, email, campaign_id, reason, created_at FROM suppressions WHERE user_id = ? ORDER BY created_at DESC LIMIT 200",
+            (current_user_id(),)
+        ) as cur:
             rows = [dict(r) for r in await cur.fetchall()]
     return {"suppressions": rows, "count": len(rows)}
 
@@ -129,7 +133,7 @@ async def unsuppress_email(email: str) -> Dict[str, Any]:
     """Remove an email address from the suppressions table."""
     clean = email.strip().lower()
     async with get_db() as db:
-        await db.execute("DELETE FROM suppressions WHERE email = ? COLLATE NOCASE", (clean,))
+        await db.execute("DELETE FROM suppressions WHERE email = ? COLLATE NOCASE AND user_id = ?", (clean, current_user_id()))
         await db.commit()
     return {"success": True, "message": f"Address '{clean}' unsuppressed successfully."}
 
@@ -140,7 +144,8 @@ async def sync_active_subscribers_suppressions() -> Dict[str, Any]:
     async with get_db() as db:
         await db.execute("""
             DELETE FROM suppressions
-            WHERE email IN (SELECT email FROM subscribers WHERE status = 'active')
-        """)
+            WHERE user_id = ?1
+              AND email IN (SELECT email FROM subscribers WHERE status = 'active' AND user_id = ?1)
+        """, (current_user_id(),))
         await db.commit()
     return {"success": True, "message": "Synchronized suppressions with active subscribers."}

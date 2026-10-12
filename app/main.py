@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_admin
 from app.config import BASE_DIR, settings
 from app.db import init_db
 from app.routes import (
@@ -96,7 +96,7 @@ app.include_router(templates.router, dependencies=[Depends(get_current_user)])
 app.include_router(campaigns.router, dependencies=[Depends(get_current_user)])
 app.include_router(storage.router, dependencies=[Depends(get_current_user)])
 app.include_router(smtp.router, dependencies=[Depends(get_current_user)])
-app.include_router(logs.router, dependencies=[Depends(get_current_user)])
+app.include_router(logs.router, dependencies=[Depends(require_admin)])
 app.include_router(transactional.router, dependencies=[Depends(get_current_user)])
 app.include_router(bulk.router, dependencies=[Depends(get_current_user)])
 app.include_router(deliverability.router, dependencies=[Depends(get_current_user)])

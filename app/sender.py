@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import aiosmtplib
 import jinja2
 
+from app.auth import owner_id
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import EmailStatus, EventType
@@ -261,16 +262,17 @@ def is_sandbox_config(smtp_config: Optional[Dict[str, Any]]) -> bool:
 async def get_smtp_config_by_id(smtp_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Retrieve SMTP configuration dictionary from SQLite with decrypted password."""
     from app.auth import decrypt_credential
+    uid = owner_id()
     async with get_db() as db:
         row = None
         if smtp_id:
-            async with db.execute("SELECT * FROM smtp_configs WHERE id = ?", (smtp_id,)) as cursor:
+            async with db.execute("SELECT * FROM smtp_configs WHERE id = ? AND user_id IS ?", (smtp_id, uid)) as cursor:
                 row = await cursor.fetchone()
         if not row:
-            async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 LIMIT 1") as cursor:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_default = 1 AND is_active = 1 AND user_id IS ? LIMIT 1", (uid,)) as cursor:
                 row = await cursor.fetchone()
         if not row:
-            async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 LIMIT 1") as cursor:
+            async with db.execute("SELECT * FROM smtp_configs WHERE is_active = 1 AND user_id IS ? LIMIT 1", (uid,)) as cursor:
                 row = await cursor.fetchone()
 
         if row:
@@ -337,10 +339,10 @@ async def dispatch_smtp_message(
     Supports standard authenticated SMTP relays and Direct MX DNS delivery.
     Returns (success, status_or_message, message_id).
     """
-    if not smtp_config:
+    if not smtp_config or not smtp_config.get("host"):
         return (
             False,
-            "No SMTP relay configured. Add a relay under SMTP Relays and mark it default, "
+            "No SMTP relay configured. Add an SMTP relay first under SMTP Relays and mark it default, "
             "or use host 'sandbox' to dry-run without sending.",
             msg["Message-ID"],
         )
@@ -470,7 +472,6 @@ async def dispatch_smtp_message(
     return False, err_str, msg.get("Message-ID")
 
 
-
 # ----------------------------------------------------------------------
 # High-Level Email Send Pipeline
 # ----------------------------------------------------------------------
@@ -540,8 +541,8 @@ async def send_single_email(
                         INSERT OR REPLACE INTO sent_emails (
                             id, campaign_id, subscriber_id, recipient_email, recipient_name,
                             sender_email, sender_name, subject, body_html, body_text, rendered_html,
-                            status, is_sandbox, error_message, created_at, sent_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+                            status, is_sandbox, error_message, created_at, sent_at, user_id
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, NULL, ?)
                     """, (
                         email_id,
                         campaign_id,
@@ -556,7 +557,8 @@ async def send_single_email(
                         body_html,
                         EmailStatus.SKIPPED.value,
                         reason_detail,
-                        now
+                        now,
+                        owner_id()
                     ))
                     await db.execute("""
                         INSERT INTO email_events (id, sent_email_id, campaign_id, event_type, ip_address, user_agent, event_payload, created_at)
@@ -589,8 +591,15 @@ async def send_single_email(
     if reply_to:
         headers_dict["Reply-To"] = reply_to
 
-    unsub_token = generate_unsubscribe_token(recipient_email, subscriber_id or merge_vars.get("subscriber_id"))
-    unsub_url = f"{settings.TRACKING_BASE_URL.rstrip('/')}/unsubscribe/{unsub_token}"
+    unsub_sub_id = subscriber_id or merge_vars.get("subscriber_id")
+    if unsub_sub_id:
+        unsub_token = generate_unsubscribe_token(recipient_email, unsub_sub_id)
+        unsub_url = f"{settings.TRACKING_BASE_URL.rstrip('/')}/unsubscribe/{unsub_token}"
+    else:
+        # No contact id: key the link to this sent email so the opt-out lands on the
+        # account that sent it (two accounts may mail the same address).
+        from app.template_engine import template_engine
+        unsub_url = template_engine.build_unsubscribe_url(email_id, recipient_email)
 
     merge_vars.setdefault("email", recipient_email)
     merge_vars.setdefault("first_name", recipient_name or recipient_email.split("@")[0].capitalize())
@@ -603,7 +612,7 @@ async def send_single_email(
     if subscriber_id:
         try:
             async with get_db() as db:
-                async with db.execute("SELECT custom_fields FROM subscribers WHERE id = ?", (subscriber_id,)) as cur:
+                async with db.execute("SELECT custom_fields FROM subscribers WHERE id = ? AND user_id IS ?", (subscriber_id, owner_id())) as cur:
                     srow = await cur.fetchone()
                     if srow and srow["custom_fields"]:
                         cf_data = json.loads(srow["custom_fields"])
@@ -616,7 +625,7 @@ async def send_single_email(
 
     if template_id:
         async with get_db() as db:
-            async with db.execute("SELECT * FROM templates WHERE id = ?", (template_id,)) as cursor:
+            async with db.execute("SELECT * FROM templates WHERE id = ? AND user_id IS ?", (template_id, owner_id())) as cursor:
                 tpl_row = await cursor.fetchone()
                 if tpl_row:
                     tpl_dict = dict(tpl_row)
@@ -678,8 +687,8 @@ async def send_single_email(
                 sender_email, sender_name, subject, body_html, body_text, rendered_html,
                 headers, raw_headers_json, status, is_sandbox, error_message, message_id,
                 open_count, click_count, first_opened_at, last_opened_at,
-                raw_eml_path, eml_file_path, metadata, metadata_json, created_at, sent_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL)
+                raw_eml_path, eml_file_path, metadata, metadata_json, created_at, sent_at, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, NULL, ?, ?, ?, ?, ?, NULL, ?)
         """, (
             email_id,
             campaign_id,
@@ -702,7 +711,8 @@ async def send_single_email(
             raw_eml_path,
             json.dumps(merge_vars),
             json.dumps(merge_vars),
-            now
+            now,
+            owner_id()
         ))
 
 

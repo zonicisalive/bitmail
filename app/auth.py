@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -19,6 +20,30 @@ from app.config import settings
 from app.db import get_db, utc_now_iso
 
 logger = logging.getLogger("bitmail.auth")
+
+# Owner of the data the current request (or background campaign worker) touches.
+# Set by get_current_user for API requests, and by workers from the campaign's owner.
+_current_user_id: ContextVar[Optional[str]] = ContextVar("current_user_id", default=None)
+
+
+def set_current_user_id(user_id: Optional[str]) -> None:
+    _current_user_id.set(user_id)
+
+
+def owner_id() -> Optional[str]:
+    """
+    The user in context, or None in bare engine calls (tests, scripts). Engine queries
+    filter with `user_id IS ?`, so no user matches only unowned rows - never another user's.
+    """
+    return _current_user_id.get()
+
+
+def current_user_id() -> str:
+    """The user whose data is in scope. Raises if called outside a user context."""
+    user_id = _current_user_id.get()
+    if not user_id:
+        raise RuntimeError("No user in context")
+    return user_id
 
 
 def get_cipher() -> Fernet:
@@ -206,4 +231,12 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
             detail="Authentication required. Please log in.",
             headers={"WWW-Authenticate": "Bearer"}
         )
+    set_current_user_id(user["id"])
+    return user
+
+
+async def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    """FastAPI Dependency: require an administrator."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required.")
     return user

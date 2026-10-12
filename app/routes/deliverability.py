@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.blacklist import BLACKLIST_ZONES, blacklist_service
+from app.auth import current_user_id
 from app.db import get_db
 from app.deliverability import (
     DISPOSABLE_DOMAINS,
@@ -103,7 +104,7 @@ async def check_domain_dns(payload: DnsCheckRequest) -> Dict[str, Any]:
         )
     # Advice depends on which providers actually send the mail, so pass the configured relays.
     async with get_db() as db:
-        async with db.execute("SELECT host FROM smtp_configs WHERE COALESCE(is_active, 1) = 1") as cur:
+        async with db.execute("SELECT host FROM smtp_configs WHERE COALESCE(is_active, 1) = 1 AND user_id = ?", (current_user_id(),)) as cur:
             relay_hosts = [row[0] for row in await cur.fetchall() if row[0]]
     res = await DnsAuthenticatorService.check_domain_deliverability(
         domain=domain,

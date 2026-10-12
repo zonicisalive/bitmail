@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import uuid
 import aiofiles
 
+from app.auth import owner_id as context_owner_id
 from app.config import settings
 from app.db import get_db
 from app.models import EmailRecord, EmailStatus, EventType, TimelineEvent
@@ -171,9 +172,9 @@ class EmailStorageVault:
                     raw_headers_json, eml_file_path, eml_size_bytes, message_id, status,
                     smtp_host, smtp_port, is_sandbox, error_message, delivery_latency_ms,
                     open_count, opened_at, click_count, clicked_at, created_at, sent_at,
-                    metadata_json
+                    metadata_json, user_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -205,6 +206,7 @@ class EmailStorageVault:
                     record.created_at,
                     record.sent_at,
                     json.dumps(record.metadata or {}),
+                    context_owner_id(),
                 ),
             )
             
@@ -463,12 +465,20 @@ class EmailStorageVault:
         clean_email = email_addr.lower().strip()
 
         async with get_db() as db:
+            owner_id = None
+            for table, row_id in (("sent_emails", storage_id), ("campaigns", campaign_id)):
+                if row_id and not owner_id:
+                    cursor = await db.execute(f"SELECT user_id FROM {table} WHERE id = ?", (row_id,))
+                    owner = await cursor.fetchone()
+                    owner_id = owner["user_id"] if owner else None
+            owner_id = owner_id or context_owner_id()
+
             await db.execute(
                 """
-                INSERT INTO unsubscribes (email, campaign_id, email_storage_id, reason, created_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO unsubscribes (email, campaign_id, email_storage_id, reason, created_at, user_id)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (clean_email, campaign_id, storage_id, reason or "", now_iso),
+                (clean_email, campaign_id, storage_id, reason or "", now_iso, owner_id),
             )
 
             if storage_id:
@@ -500,8 +510,8 @@ class EmailStorageVault:
         """Fetch full email record by storage ID."""
         async with get_db() as db:
             cursor = await db.execute(
-                "SELECT * FROM sent_emails WHERE id = ?",
-                (storage_id,),
+                "SELECT * FROM sent_emails WHERE id = ? AND user_id IS ?",
+                (storage_id, context_owner_id()),
             )
             row = await cursor.fetchone()
             if not row:
@@ -518,8 +528,8 @@ class EmailStorageVault:
         offset: int = 0,
     ) -> List[EmailRecord]:
         """Query emails with flexible filters and pagination."""
-        clauses = []
-        params: List[Any] = []
+        clauses = ["user_id IS ?"]
+        params: List[Any] = [context_owner_id()]
 
         if campaign_id:
             clauses.append("campaign_id = ?")
@@ -538,7 +548,7 @@ class EmailStorageVault:
             search_param = f"%{search}%"
             params.extend([search_param, search_param, search_param])
 
-        where_str = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        where_str = f"WHERE {' AND '.join(clauses)}"
         query = f"SELECT * FROM sent_emails {where_str} ORDER BY created_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
@@ -555,8 +565,8 @@ class EmailStorageVault:
         search: Optional[str] = None,
     ) -> int:
         """Count total stored emails matching filter criteria."""
-        clauses = []
-        params: List[Any] = []
+        clauses = ["user_id IS ?"]
+        params: List[Any] = [context_owner_id()]
 
         if campaign_id:
             clauses.append("campaign_id = ?")
@@ -575,7 +585,7 @@ class EmailStorageVault:
             search_param = f"%{search}%"
             params.extend([search_param, search_param, search_param])
 
-        where_str = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        where_str = f"WHERE {' AND '.join(clauses)}"
         query = f"SELECT COUNT(*) as count FROM sent_emails {where_str}"
 
         async with get_db() as db:
@@ -668,9 +678,10 @@ class EmailStorageVault:
                 SELECT id, email_storage_id, event_type, event_timestamp, event_data_json
                 FROM audit_events
                 WHERE email_storage_id = ?
+                  AND email_storage_id IN (SELECT id FROM sent_emails WHERE user_id IS ?)
                 ORDER BY event_timestamp ASC, id ASC
                 """,
-                (storage_id,),
+                (storage_id, context_owner_id()),
             )
             rows = await cursor.fetchall()
             events = []
@@ -710,17 +721,18 @@ class EmailStorageVault:
 
     async def get_storage_stats(self) -> Dict[str, Any]:
         """Get aggregate email vault statistics and disk usage metrics."""
+        uid = (context_owner_id(),)
         async with get_db() as db:
-            cursor = await db.execute("SELECT COUNT(*) as total_emails, SUM(eml_size_bytes) as total_disk_bytes, SUM(open_count) as total_opens, SUM(click_count) as total_clicks FROM sent_emails")
+            cursor = await db.execute("SELECT COUNT(*) as total_emails, SUM(eml_size_bytes) as total_disk_bytes, SUM(open_count) as total_opens, SUM(click_count) as total_clicks FROM sent_emails WHERE user_id IS ?", uid)
             totals_row = await cursor.fetchone()
 
-            cursor = await db.execute("SELECT status, COUNT(*) as count FROM sent_emails GROUP BY status")
+            cursor = await db.execute("SELECT status, COUNT(*) as count FROM sent_emails WHERE user_id IS ? GROUP BY status", uid)
             status_rows = await cursor.fetchall()
 
-            cursor = await db.execute("SELECT COUNT(*) as unique_opens FROM sent_emails WHERE open_count > 0")
+            cursor = await db.execute("SELECT COUNT(*) as unique_opens FROM sent_emails WHERE user_id IS ? AND open_count > 0", uid)
             unique_opens_row = await cursor.fetchone()
 
-            cursor = await db.execute("SELECT COUNT(*) as unique_clicks FROM sent_emails WHERE click_count > 0")
+            cursor = await db.execute("SELECT COUNT(*) as unique_clicks FROM sent_emails WHERE user_id IS ? AND click_count > 0", uid)
             unique_clicks_row = await cursor.fetchone()
 
             status_breakdown = {row["status"]: row["count"] for row in status_rows}

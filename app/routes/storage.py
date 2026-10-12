@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.auth import current_user_id
 from app.config import settings
 from app.db import get_db, utc_now_iso
 from app.models import EmailStatus, SentEmailResponse, SentEmailVaultSummary
@@ -42,7 +43,8 @@ async def get_storage_summary():
                 SUM(open_count) as total_opens,
                 SUM(click_count) as total_clicks
             FROM sent_emails
-        """) as cursor:
+            WHERE user_id = ?
+        """, (current_user_id(),)) as cursor:
             row = await cursor.fetchone()
 
     disk_bytes = 0
@@ -95,10 +97,10 @@ async def list_stored_emails(
                 s.*,
                 c.name as campaign_name
             FROM sent_emails s
-            LEFT JOIN campaigns c ON s.campaign_id = c.id
-            WHERE 1=1
+            LEFT JOIN campaigns c ON s.campaign_id = c.id AND c.user_id = s.user_id
+            WHERE s.user_id = ?
         """
-        params: List[Any] = []
+        params: List[Any] = [current_user_id()]
 
         if query_term:
             sql += " AND (s.subject LIKE ? OR s.recipient_email LIKE ? OR s.recipient_name LIKE ? OR s.body_text LIKE ?)"
@@ -202,9 +204,9 @@ async def get_stored_email(email_id: str):
         async with db.execute("""
             SELECT s.*, c.name as campaign_name
             FROM sent_emails s
-            LEFT JOIN campaigns c ON s.campaign_id = c.id
-            WHERE s.id = ?
-        """, (email_id,)) as cursor:
+            LEFT JOIN campaigns c ON s.campaign_id = c.id AND c.user_id = s.user_id
+            WHERE s.id = ? AND s.user_id = ?
+        """, (email_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Archived email record not found")
@@ -327,7 +329,7 @@ async def render_stored_email_html(email_id: str):
     Return live HTML body rendered with safe headers for iframe preview.
     """
     async with get_db() as db:
-        async with db.execute("SELECT body_html, body_text FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute("SELECT body_html, body_text FROM sent_emails WHERE id = ? AND user_id = ?", (email_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Email not found")
@@ -352,7 +354,7 @@ async def download_stored_eml(email_id: str):
     Download raw RFC 2822 .eml file.
     """
     async with get_db() as db:
-        async with db.execute("SELECT raw_eml_path, subject FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute("SELECT raw_eml_path, subject FROM sent_emails WHERE id = ? AND user_id = ?", (email_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Email not found")
@@ -382,7 +384,7 @@ async def resend_stored_email(email_id: str, payload: Optional[ResendRequest] = 
     Resend an archived email to the original recipient or a new target address.
     """
     async with get_db() as db:
-        async with db.execute("SELECT * FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute("SELECT * FROM sent_emails WHERE id = ? AND user_id = ?", (email_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Email not found")
@@ -426,14 +428,14 @@ async def delete_stored_email(email_id: str):
     Delete email record and raw .eml file from disk.
     """
     async with get_db() as db:
-        async with db.execute("SELECT raw_eml_path FROM sent_emails WHERE id = ?", (email_id,)) as cursor:
+        async with db.execute("SELECT raw_eml_path FROM sent_emails WHERE id = ? AND user_id = ?", (email_id, current_user_id())) as cursor:
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Email not found")
             raw_path = row["raw_eml_path"]
 
         await db.execute("DELETE FROM email_events WHERE sent_email_id = ?", (email_id,))
-        await db.execute("DELETE FROM sent_emails WHERE id = ?", (email_id,))
+        await db.execute("DELETE FROM sent_emails WHERE id = ? AND user_id = ?", (email_id, current_user_id()))
         await db.commit()
 
     if raw_path and Path(raw_path).exists():

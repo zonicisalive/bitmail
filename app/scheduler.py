@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from app.auth import set_current_user_id
 from app.db import get_db, utc_now_iso
 from app.queue import campaign_queue
 from app.websocket import emit_event
@@ -118,7 +119,7 @@ class CampaignScheduler:
         try:
             async with get_db() as db:
                 async with db.execute("""
-                    SELECT id, name, subject, scheduled_at, status
+                    SELECT id, name, subject, scheduled_at, status, user_id
                     FROM campaigns
                     WHERE status = 'scheduled'
                       AND scheduled_at IS NOT NULL
@@ -160,6 +161,9 @@ class CampaignScheduler:
                 f"scheduled for {camp['scheduled_at']}."
             )
 
+            # The loop has no request user: act as the campaign's owner so the launch,
+            # its worker and the events it emits are scoped to them.
+            set_current_user_id(camp.get("user_id"))
             try:
                 launch_res = await campaign_queue.launch_campaign(camp_id)
                 if launch_res.get("success"):

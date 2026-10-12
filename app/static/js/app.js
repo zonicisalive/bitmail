@@ -459,12 +459,11 @@ function handleWebSocketEvent(message) {
             }
             showToast(`✓ Authenticated via QR Scan as ${email || 'User'}!`, 'success');
             
-            App.currentUser = {
-                email: email,
-                name: name || email,
-                role: 'admin'
-            };
+            App.currentUser = { email: email, name: name || email };
             updateUserDisplay(App.currentUser);
+            fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(me => {
+                if (me) { App.currentUser = me; updateUserDisplay(me); }
+            });
 
             // Auto-update broadcast sender fields
             const senderNameInput = document.getElementById('broadcast-sender-name');
@@ -590,7 +589,9 @@ async function refreshAllData() {
 // schedule time are deliberately not kept: restoring them would make it easy
 // to mail the same people twice or schedule into the past.
 // --------------------------------------------------------------------------
-const BROADCAST_STATE_KEY = 'bitmail_last_send_v1';
+// Saved per account so two people sharing a browser never see each other's form.
+const BROADCAST_STATE_KEY_LEGACY = 'bitmail_last_send_v1';
+const broadcastStateKey = () => `${BROADCAST_STATE_KEY_LEGACY}:${App.currentUser?.id || ''}`;
 const BROADCAST_STATE_VALUES = [
     'broadcast-subject', 'broadcast-html', 'broadcast-sender-name', 'broadcast-sender-email',
     'broadcast-smtp-select', 'broadcast-list-select', 'broadcast-rate-limit', 'broadcast-rate-limit-custom',
@@ -618,7 +619,7 @@ function saveBroadcastState() {
         if (el) state.checks[id] = el.checked;
     });
     try {
-        localStorage.setItem(BROADCAST_STATE_KEY, JSON.stringify(state));
+        localStorage.setItem(broadcastStateKey(), JSON.stringify(state));
         document.getElementById('btn-reset-broadcast-form')?.classList.remove('hidden');
     } catch (e) { /* storage full or blocked: nothing to remember */ }
 }
@@ -627,7 +628,12 @@ function restoreBroadcastState() {
     if (_broadcastStateRestored) return;
     _broadcastStateRestored = true;
     let state;
-    try { state = JSON.parse(localStorage.getItem(BROADCAST_STATE_KEY) || 'null'); } catch (e) { state = null; }
+    try {
+        // Forms saved before accounts were separated belonged to the administrator.
+        const raw = localStorage.getItem(broadcastStateKey())
+            || (App.currentUser?.role === 'admin' ? localStorage.getItem(BROADCAST_STATE_KEY_LEGACY) : null);
+        state = JSON.parse(raw || 'null');
+    } catch (e) { state = null; }
     if (!state || !state.values) return;
 
     // Format first, without converting, so the saved body lands in the right mode.
@@ -661,7 +667,7 @@ async function resetBroadcastForm() {
         confirmText: 'Reset form'
     });
     if (!ok) return;
-    try { localStorage.removeItem(BROADCAST_STATE_KEY); } catch (e) {}
+    try { localStorage.removeItem(broadcastStateKey()); localStorage.removeItem(BROADCAST_STATE_KEY_LEGACY); } catch (e) {}
     // Put every field back to the page's original value. (A reload is not enough:
     // Firefox restores typed form values on reload.)
     [...BROADCAST_STATE_VALUES, ...BROADCAST_STATE_CHECKS, 'broadcast-raw-emails'].forEach(id => {
@@ -886,6 +892,8 @@ function switchTab(tabId, updateUrl = true) {
         initWarmupPanel();
     } else if (tabId === 'webhooks') {
         fetchWebhooks();
+    } else if (tabId === 'users') {
+        fetchAdminUsers();
     }
 
 
@@ -5144,6 +5152,11 @@ function updateUserDisplay(user) {
 
     const dropRole = document.getElementById('dropdown-user-role');
     if (dropRole) dropRole.innerText = (user.role === 'admin' ? 'Admin Session' : 'Member Session');
+
+    const isAdmin = user.role === 'admin';
+    document.querySelectorAll('[data-admin-only]').forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
+    if (!isAdmin && ['users', 'logs'].includes(App.currentTab)) switchTab('broadcast');
+    if (isAdmin && App.currentTab === 'users') fetchAdminUsers();
 }
 
 function openLoginModal() {
@@ -5299,8 +5312,8 @@ async function logoutUser() {
     App.currentUser = null;
     const menu = document.getElementById('user-dropdown-menu');
     if (menu) menu.classList.add('hidden');
-    showToast('You have been signed out.', 'info');
-    openLoginModal();
+    // Reload so none of this account's data stays in the page for whoever signs in next.
+    window.location.href = '/';
 }
 
 function openChangePasswordModal() {
@@ -7504,3 +7517,162 @@ function closeWebhookDeliveries() {
 
 
 
+
+
+// ==========================================================================
+// Users (admin only)
+// Every account owns its own data; this page only manages the accounts.
+// ==========================================================================
+App.adminUsers = [];
+
+const formatApiError = (data, fallback) =>
+    (Array.isArray(data?.detail) ? data.detail.map(d => d.msg).join('; ') : data?.detail) || fallback;
+
+async function fetchAdminUsers() {
+    const body = document.getElementById('users-table-body');
+    if (!body) return;
+    try {
+        const res = await fetch('/api/auth/users');
+        if (!res.ok) {
+            body.innerHTML = `<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">${res.status === 403 ? 'Only administrators can manage users.' : 'Could not load users.'}</td></tr>`;
+            return;
+        }
+        App.adminUsers = await res.json();
+        renderAdminUsers();
+    } catch (err) {
+        console.warn('Error fetching users:', err);
+    }
+}
+
+function formatLastActive(ts) {
+    if (!ts) return 'Never';
+    const d = new Date(ts.replace(' ', 'T') + 'Z');
+    const mins = Math.round((Date.now() - d) / 60000);
+    if (mins < 2) return 'Just now';
+    if (mins < 60) return `${mins} min ago`;
+    if (mins < 1440) return `${Math.round(mins / 60)} h ago`;
+    return d.toLocaleDateString([], { dateStyle: 'medium' });
+}
+
+function renderAdminUsers() {
+    const body = document.getElementById('users-table-body');
+    if (!body) return;
+    const me = App.currentUser?.id;
+    body.innerHTML = App.adminUsers.map(u => {
+        const role = u.role === 'admin'
+            ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/10 text-white border border-white/20">ADMIN</span>'
+            : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-[#a1a1a1] border border-[#2a2a2a]">USER</span>';
+        const status = u.status === 'active'
+            ? '<span class="text-emerald-300">Active</span>'
+            : '<span class="text-amber-300">Disabled</span>';
+        const isMe = u.id === me;
+        return `
+            <tr class="hover:bg-white/[0.02]">
+                <td class="px-4 py-3">
+                    <div class="font-semibold text-white">${escapeHtml(u.name || u.username || u.email)}${isMe ? ' <span class="text-[10px] text-slate-500 font-normal">(you)</span>' : ''}</div>
+                    <div class="text-[11px] text-slate-400">${escapeHtml(u.email)}</div>
+                </td>
+                <td class="px-4 py-3">${role}</td>
+                <td class="px-4 py-3">${status}</td>
+                <td class="px-4 py-3 text-right font-mono">${(u.contacts || 0).toLocaleString()}</td>
+                <td class="px-4 py-3 text-right font-mono">${(u.campaigns || 0).toLocaleString()}</td>
+                <td class="px-4 py-3 text-right font-mono">${(u.emails_sent || 0).toLocaleString()}</td>
+                <td class="px-4 py-3 text-right font-mono">${(u.relays || 0).toLocaleString()}</td>
+                <td class="px-4 py-3 text-slate-400">${formatLastActive(u.last_seen_at)}</td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center justify-end gap-1.5">
+                        <button type="button" onclick="openUserModal('${u.id}')" class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300" title="Edit user" aria-label="Edit ${escapeHtml(u.email)}">
+                            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+                        </button>
+                        ${isMe ? '' : `
+                        <button type="button" onclick="deleteAdminUser('${u.id}')" class="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400" title="Delete user" aria-label="Delete ${escapeHtml(u.email)}">
+                            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                        </button>`}
+                    </div>
+                </td>
+            </tr>`;
+    }).join('') || '<tr><td colspan="9" class="px-4 py-8 text-center text-slate-500">No users.</td></tr>';
+    initLucide();
+}
+
+function openUserModal(userId = null) {
+    const u = userId ? App.adminUsers.find(x => x.id === userId) : null;
+    const isMe = u && u.id === App.currentUser?.id;
+    document.getElementById('modal-user-id').value = u ? u.id : '';
+    document.getElementById('modal-user-title').innerText = u ? 'Edit user' : 'Add user';
+    document.getElementById('modal-user-submit').innerText = u ? 'Save changes' : 'Create user';
+    document.getElementById('modal-user-name').value = u ? (u.name || '') : '';
+    document.getElementById('modal-user-email').value = u ? u.email : '';
+    document.getElementById('modal-user-role').value = u ? u.role : 'user';
+    document.getElementById('modal-user-status').value = u ? u.status : 'active';
+    const pwd = document.getElementById('modal-user-password');
+    pwd.value = '';
+    pwd.required = !u;
+    document.getElementById('modal-user-password-label').innerText = u ? 'New password' : 'Password *';
+    document.getElementById('modal-user-password-hint').innerText = u
+        ? 'Leave blank to keep the current password. Setting one signs this user out everywhere.'
+        : 'At least 6 characters. Share it with the user; they can change it from their profile menu.';
+    openModal('modal-user');
+    // You cannot lock yourself out from here.
+    document.getElementById('modal-user-status').disabled = !!isMe;
+    document.getElementById('modal-user-role').disabled = !!isMe;
+}
+
+async function submitUserForm(event) {
+    event.preventDefault();
+    const id = document.getElementById('modal-user-id').value;
+    const payload = {
+        name: document.getElementById('modal-user-name').value.trim(),
+        email: document.getElementById('modal-user-email').value.trim(),
+    };
+    const roleEl = document.getElementById('modal-user-role');
+    const statusEl = document.getElementById('modal-user-status');
+    if (!roleEl.disabled) payload.role = roleEl.value;
+    if (!statusEl.disabled && id) payload.status = statusEl.value;
+    const password = document.getElementById('modal-user-password').value;
+    if (password) payload.password = password;
+
+    const btn = document.getElementById('modal-user-submit');
+    btn.disabled = true;
+    try {
+        const res = await fetch(id ? `/api/auth/users/${id}` : '/api/auth/users', {
+            method: id ? 'PATCH' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await safeJson(res);
+        if (!res.ok) {
+            showToast(formatApiError(data, 'Could not save the user.'), 'error');
+            return;
+        }
+        closeModal('modal-user');
+        showToast(id ? `Saved ${data.email}.` : `Created ${data.email}. They start with no contacts or mail servers.`, 'success');
+        if (id && id === App.currentUser?.id) {
+            App.currentUser = { ...App.currentUser, name: data.name, email: data.email };
+            updateUserDisplay(App.currentUser);
+        }
+        fetchAdminUsers();
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deleteAdminUser(userId) {
+    const u = App.adminUsers.find(x => x.id === userId);
+    if (!u) return;
+    const ok = await confirmDialog(`Delete ${u.email}?`, {
+        title: 'Delete user',
+        detail: `This permanently deletes the account and everything it owns: ${(u.contacts || 0).toLocaleString()} contacts, ${(u.campaigns || 0).toLocaleString()} campaigns, its mail servers, templates and sent-email history. To keep the data, disable the account instead.`,
+        confirmText: 'Delete user and data',
+        danger: true
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/auth/users/${userId}`, { method: 'DELETE' });
+    const data = await safeJson(res);
+    if (!res.ok) {
+        showToast(formatApiError(data, 'Could not delete the user.'), 'error');
+        return;
+    }
+    showToast(data.message || 'User deleted.', 'success');
+    fetchAdminUsers();
+}
