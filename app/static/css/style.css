@@ -249,7 +249,11 @@ main {
 }
 
 /* Selected segment of a tab switch: colour only, same box as the unselected tab. */
-.audience-tab-on {
+.audience-tab {
+    border: 1px solid transparent;
+}
+
+.audience-tab.audience-tab-on {
     background-color: var(--btn-primary);
     border-color: var(--btn-primary);
     color: var(--btn-primary-text);
