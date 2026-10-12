@@ -6668,6 +6668,20 @@ function renderWarmupSchedules(schedules) {
                 ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">PAUSED</span>'
                 : '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400">COMPLETED</span>');
 
+        // Slice times are stored as UTC 'YYYY-MM-DD HH:MM:SS'; shown in the viewer's local time.
+        const next = (s.slices || []).find(sl => sl.status === 'pending');
+        let nextLine = '';
+        if (next && s.status !== 'completed') {
+            const when = new Date(next.scheduled_for.replace(' ', 'T') + 'Z');
+            const mins = Math.round((when - Date.now()) / 60000);
+            const rel = mins <= 0 ? 'due now' : (mins < 60 ? `in ${mins} min` : (mins < 1440 ? `in ${Math.round(mins / 60)} h` : `in ${Math.round(mins / 1440)} d`));
+            nextLine = `<div class="text-[11px] text-slate-400 flex items-center gap-1.5">
+                <i data-lucide="clock" class="w-3 h-3 text-orange-400"></i>
+                Next send: <strong class="text-white">Day ${next.day_number}</strong> • ${next.target_count.toLocaleString()} emails •
+                <strong class="text-white">${when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</strong> (${rel})${s.status === 'paused' ? ' • on hold while paused' : ''}
+            </div>`;
+        }
+
         return `
             <div class="p-4 rounded-xl bg-slate-900/80 border border-white/5 space-y-3">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -6696,6 +6710,7 @@ function renderWarmupSchedules(schedules) {
                         </button>
                     </div>
                 </div>
+                ${nextLine}
 
                 <!-- Progress Bar -->
                 <div class="space-y-1">
