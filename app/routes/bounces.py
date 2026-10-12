@@ -5,6 +5,7 @@ automatically suppressing invalid recipients and updating campaign stats.
 """
 
 import hmac
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,6 +15,8 @@ from app.bounce import BounceClassifier
 from app.config import settings
 from app.db import get_db
 from app.models import BounceType, InboundBouncePayload, InboundBounceResponse
+
+logger = logging.getLogger("bitmail.bounces")
 
 router = APIRouter(prefix="/api/bounces", tags=["Bounces & Deliverability"])
 
@@ -118,12 +121,12 @@ async def handle_inbound_raw_dsn(
 # Brevo transactional webhook events -> bounce type. Anything else (delivered,
 # opened, clicked, deferred-then-delivered...) is acknowledged and ignored.
 BREVO_EVENTS = {
-    "hard_bounce": BounceType.HARD,
-    "invalid_email": BounceType.HARD,
+    # keys are lowercase letters only, so "hard_bounce", "hardBounce" and "Hard Bounced" all match
+    "hardbounce": BounceType.HARD, "hardbounced": BounceType.HARD,
+    "invalidemail": BounceType.HARD, "invalid": BounceType.HARD,
     "blocked": BounceType.HARD,  # Brevo refuses the address (it bounced or complained before)
-    "spam": BounceType.COMPLAINT,
-    "complaint": BounceType.COMPLAINT,
-    "soft_bounce": BounceType.SOFT,
+    "spam": BounceType.COMPLAINT, "complaint": BounceType.COMPLAINT,
+    "softbounce": BounceType.SOFT, "softbounced": BounceType.SOFT,
 }
 
 
@@ -141,12 +144,17 @@ async def handle_brevo_webhook(
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Expected a JSON body.")
     events = body if isinstance(body, list) else [body]
+    # Keys only (no addresses): lets us see the payload shape Brevo actually sends.
+    logger.info("Brevo webhook: %d event(s): %s", len(events),
+                [(e.get("event"), sorted(e)) for e in events if isinstance(e, dict)][:5])
 
     results = []
     for event in events:
         if not isinstance(event, dict):
             continue
-        bounce_type = BREVO_EVENTS.get(str(event.get("event", "")).lower())
+        # Classic webhooks say "hard_bounce"; the newer builder may say "hardBounce" or "Hard Bounced".
+        name = "".join(ch for ch in str(event.get("event", "")).lower() if ch.isalpha())
+        bounce_type = BREVO_EVENTS.get(name)
         email = str(event.get("email") or "").strip()
         if not bounce_type or not email:
             continue
