@@ -1197,13 +1197,13 @@ function setBroadcastAudienceMode(mode) {
     const modeList = document.getElementById('broadcast-mode-list');
 
     if (mode === 'paste') {
-        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue transition-all cursor-pointer';
-        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all cursor-pointer';
+        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center border whitespace-nowrap transition-colors cursor-pointer audience-tab-on';
+        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center border whitespace-nowrap transition-colors cursor-pointer border-transparent text-slate-400 hover:text-slate-200';
         if (modePaste) modePaste.classList.remove('hidden');
         if (modeList) modeList.classList.add('hidden');
     } else {
-        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center btn-dark-blue transition-all cursor-pointer';
-        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center text-slate-400 hover:text-slate-200 transition-all cursor-pointer';
+        if (btnList) btnList.className = 'py-2 px-3 rounded-lg text-center border whitespace-nowrap transition-colors cursor-pointer audience-tab-on';
+        if (btnPaste) btnPaste.className = 'py-2 px-3 rounded-lg text-center border whitespace-nowrap transition-colors cursor-pointer border-transparent text-slate-400 hover:text-slate-200';
         if (modeList) modeList.classList.remove('hidden');
         if (modePaste) modePaste.classList.add('hidden');
     }
