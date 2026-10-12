@@ -104,6 +104,9 @@ class Settings(BaseModel):
         default=os.getenv("SECRET_KEY", "insecure-dev-only-secret-key-change-in-production")
     )
     TRACKING_TOKEN_SALT: str = Field(default="bitmail-tracking-salt")
+    # Shared secret mail servers send (X-Bounce-Secret header or ?secret=) to report
+    # bounces to /api/bounces/inbound*. Unset: only signed-in users can report bounces.
+    BOUNCE_WEBHOOK_SECRET: str = Field(default=os.getenv("BOUNCE_WEBHOOK_SECRET", ""))
     UNSUBSCRIBE_TOKEN_SALT: str = Field(default="bitmail-unsubscribe-salt")
     DEFAULT_ADMIN_EMAIL: str = Field(default=os.getenv("DEFAULT_ADMIN_EMAIL", "admin@bitmail.com"))
     DEFAULT_ADMIN_USERNAME: str = Field(default=os.getenv("DEFAULT_ADMIN_USERNAME", "admin"))

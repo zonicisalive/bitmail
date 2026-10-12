@@ -131,6 +131,22 @@ class TestEventsIsolation(unittest.TestCase):
         self.assertFalse(res.json()["suppressed"])
         self.assertEqual(self._q("SELECT 1 FROM suppressions WHERE email = 'stranger@x.com'"), [])
 
+    def test_bounce_reports_need_secret_or_own_mail(self):
+        anon = TestClient(app)
+        report = {"recipient_email": "bounce@x.com", "bounce_type": "hard", "message_id": "<a_bounce@ev.test>"}
+        self.assertEqual(anon.post("/api/bounces/inbound", json=report).status_code, 401)
+        self.assertEqual(anon.post("/api/bounces/inbound-raw", content=b"x").status_code, 401)
+        with patch.object(settings, "BOUNCE_WEBHOOK_SECRET", "s3cret"):
+            self.assertEqual(anon.post("/api/bounces/inbound", json=report, headers={"X-Bounce-Secret": "wrong"}).status_code, 401)
+            soft = {**report, "bounce_type": "soft"}
+            self.assertEqual(anon.post("/api/bounces/inbound", json=soft, headers={"X-Bounce-Secret": "s3cret"}).status_code, 200)
+            self.assertEqual(anon.post("/api/bounces/inbound?secret=s3cret", json=soft).status_code, 200)
+
+        # Signed in, B cannot bounce mail that A sent.
+        res = self.b.post("/api/bounces/inbound", json=report)
+        self.assertFalse(res.json()["suppressed"], res.text)
+        self.assertEqual(self._status("sub_a_bounce"), "active")
+
     def test_webhooks_private_and_dispatched_to_owner_only(self):
         wh = self.a.post("/api/webhooks", json={"name": "A hook", "url": "https://a.example/hook", "events": ["*"]}).json()
         self.b.post("/api/webhooks", json={"name": "B hook", "url": "https://b.example/hook", "events": ["*"]})

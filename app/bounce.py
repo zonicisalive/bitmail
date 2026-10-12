@@ -174,7 +174,8 @@ class BounceClassifier:
         status_code: Optional[str] = None,
         diagnostic_code: Optional[str] = None,
         campaign_id: Optional[str] = None,
-        message_id: Optional[str] = None
+        message_id: Optional[str] = None,
+        only_user_id: Optional[str] = None
     ) -> InboundBounceResponse:
         """
         Applies self-healing actions:
@@ -204,6 +205,9 @@ class BounceClassifier:
                 where.append("message_id = ?"); params.append(message_id)
             if campaign_id:
                 where.append("campaign_id = ?"); params.append(campaign_id)
+            # A signed-in user may only report bounces for mail their own account sent.
+            if only_user_id:
+                where.append("user_id = ?"); params.append(only_user_id)
             async with db.execute(
                 f"SELECT id, campaign_id, user_id FROM sent_emails WHERE {' AND '.join(where)} "
                 "ORDER BY created_at DESC LIMIT 1",

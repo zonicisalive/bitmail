@@ -4,20 +4,44 @@ Receives bounce webhook reports from MTAs/ISPs or parses raw DSN reports,
 automatically suppressing invalid recipients and updating campaign stats.
 """
 
-from typing import Any, Dict
+import hmac
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from app.auth import current_user_id, get_current_user
+from app.auth import current_user_id, get_current_user, get_current_user_optional
 from app.bounce import BounceClassifier
+from app.config import settings
 from app.db import get_db
 from app.models import InboundBouncePayload, InboundBounceResponse
 
 router = APIRouter(prefix="/api/bounces", tags=["Bounces & Deliverability"])
 
 
+async def authorize_bounce_report(request: Request) -> Optional[str]:
+    """
+    Who may report a bounce. A mail server presenting BOUNCE_WEBHOOK_SECRET may report
+    for any account (returns None). A signed-in user may report only for mail their own
+    account sent (returns their id). Anyone else gets 401, so strangers cannot get
+    addresses suppressed by posting fake bounces.
+    """
+    secret = settings.BOUNCE_WEBHOOK_SECRET
+    presented = request.headers.get("X-Bounce-Secret") or request.query_params.get("secret") or ""
+    if secret and presented and hmac.compare_digest(presented.encode(), secret.encode()):
+        return None
+    user = await get_current_user_optional(request)
+    if user:
+        return user["id"]
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Bounce reports need the X-Bounce-Secret header or a signed-in session.",
+    )
+
+
 @router.post("/inbound", response_model=InboundBounceResponse)
-async def handle_inbound_bounce(payload: InboundBouncePayload) -> Any:
+async def handle_inbound_bounce(
+    payload: InboundBouncePayload, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Any:
     """
     Ingest a structured bounce report (e.g. from Postfix, Sendgrid, SES, or custom MTA).
     Automatically suppresses hard bounces and complaints.
@@ -46,12 +70,15 @@ async def handle_inbound_bounce(payload: InboundBouncePayload) -> Any:
         status_code=payload.status_code,
         diagnostic_code=payload.diagnostic_code,
         campaign_id=payload.campaign_id,
-        message_id=payload.message_id
+        message_id=payload.message_id,
+        only_user_id=only_user_id
     )
 
 
 @router.post("/inbound-raw", response_model=InboundBounceResponse)
-async def handle_inbound_raw_dsn(request: Request) -> Any:
+async def handle_inbound_raw_dsn(
+    request: Request, only_user_id: Optional[str] = Depends(authorize_bounce_report)
+) -> Any:
     """
     Ingest a raw RFC 3464 DSN or RFC 5965 ARF complaint MIME email.
     Parses headers and multipart attachments to identify recipient and failure code.
@@ -83,7 +110,8 @@ async def handle_inbound_raw_dsn(request: Request) -> Any:
         bounce_type=bounce_type,
         reason=reason,
         status_code=parsed.get("status_code"),
-        diagnostic_code=parsed.get("diagnostic_code")
+        diagnostic_code=parsed.get("diagnostic_code"),
+        only_user_id=only_user_id
     )
 
 
