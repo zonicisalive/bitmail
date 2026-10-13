@@ -6784,8 +6784,8 @@ function renderRelayPool(relays) {
                 </td>
                 <td class="px-4 py-3">
                     <label class="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" ${r.in_pool ? 'checked' : ''} onchange="toggleRelayPoolMembership('${r.smtp_config_id}', this.checked)" class="sr-only peer">
-                        <div class="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-orange-600"></div>
+                        <input type="checkbox" ${r.in_pool ? 'checked' : ''} onchange="toggleRelayPoolMembership('${r.smtp_config_id}', this.checked)" class="sr-only pool-switch-input">
+                        <span class="pool-switch"></span>
                     </label>
                 </td>
                 <td class="px-4 py-3 font-mono text-slate-300">Day ${r.current_day}</td>
