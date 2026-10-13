@@ -429,6 +429,7 @@ class CampaignResponse(CampaignBase):
     delivered_count: int = 0
     failed_count: int = 0
     open_count: int = 0
+    click_count: int = 0
     unsubscribe_count: int = 0
     unsubscribed_count: int = 0
     bounce_count: int = 0
