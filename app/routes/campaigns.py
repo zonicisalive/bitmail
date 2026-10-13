@@ -87,7 +87,9 @@ async def list_campaigns(
     List campaigns with live status and aggregated telemetry counters.
     """
     async with get_db() as db:
-        query = "SELECT * FROM campaigns WHERE user_id = ?"
+        # Warmup masters only hold the audience; the Warmup tab shows them, their day campaigns send.
+        query = ("SELECT * FROM campaigns WHERE user_id = ? AND NOT (COALESCE(is_warmup, 0) = 1 "
+                 "AND id NOT IN (SELECT campaign_id FROM warmup_slices WHERE campaign_id IS NOT NULL))")
         params: List[Any] = [current_user_id()]
 
         if status_filter:
