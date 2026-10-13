@@ -2051,7 +2051,7 @@ function handleRateLimitChange(selectEl) {
         wrap.classList.add('flex');
         if (input) {
             input.focus();
-            if (!input.value) input.value = '75';
+            if (!input.value) input.value = '2';
         }
     } else {
         wrap.classList.add('hidden');
@@ -2061,14 +2061,14 @@ function handleRateLimitChange(selectEl) {
 
 function getSelectedRateLimit() {
     const select = document.getElementById('broadcast-rate-limit');
-    if (!select) return 25;
+    if (!select) return 2;
     if (select.value === 'custom') {
         const customInput = document.getElementById('broadcast-rate-limit-custom');
-        const val = parseInt(customInput?.value || '25', 10);
-        return Math.max(1, Math.min(1000, isNaN(val) ? 25 : val));
+        const val = parseInt(customInput?.value || '2', 10);
+        return Math.max(1, Math.min(1000, isNaN(val) ? 2 : val));
     }
-    const val = parseInt(select.value || '25', 10);
-    return isNaN(val) ? 25 : val;
+    const val = parseInt(select.value || '2', 10);
+    return isNaN(val) ? 2 : val;
 }
 
 async function launchQuickBroadcast() {
@@ -6674,7 +6674,8 @@ function renderWarmupSchedules(schedules) {
     }
 
     listEl.innerHTML = schedules.map(s => {
-        const progressPct = Math.min(100, Math.round((s.current_day / s.total_days) * 100));
+        const daysDone = (s.slices || []).filter(sl => sl.status === 'completed' || sl.status === 'failed').length;
+        const progressPct = Math.min(100, Math.round((daysDone / s.total_days) * 100));
         const statusBadge = s.status === 'active'
             ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">ACTIVE</span>'
             : (s.status === 'paused'

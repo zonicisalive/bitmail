@@ -601,14 +601,15 @@
                                     <div class="flex items-center gap-2 flex-shrink-0">
                                         <label class="text-xs text-slate-400 whitespace-nowrap">Speed Limit:</label>
                                         <select id="broadcast-rate-limit" onchange="handleRateLimitChange(this)" class="px-2.5 py-1.5 bg-slate-900 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500">
+                                            <option value="2" selected>2 / sec (Recommended)</option>
                                             <option value="10">10 / sec</option>
-                                            <option value="25" selected>25 / sec (Recommended)</option>
+                                            <option value="25">25 / sec</option>
                                             <option value="50">50 / sec</option>
                                             <option value="100">100 / sec (High Speed)</option>
                                             <option value="custom">Custom...</option>
                                         </select>
                                         <div id="broadcast-rate-limit-custom-wrap" class="hidden flex items-center gap-1.5">
-                                            <input type="number" id="broadcast-rate-limit-custom" min="1" max="1000" placeholder="75" class="w-16 px-2 py-1 bg-slate-900 border border-indigo-500/50 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-400 font-mono text-center" aria-label="Custom speed limit in emails per second">
+                                            <input type="number" id="broadcast-rate-limit-custom" min="1" max="1000" placeholder="2" class="w-16 px-2 py-1 bg-slate-900 border border-indigo-500/50 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-400 font-mono text-center" aria-label="Custom speed limit in emails per second">
                                             <span class="text-xs text-slate-400">/ sec</span>
                                         </div>
                                     </div>
@@ -3322,6 +3323,6 @@
     </script>
 
     <!-- Application Core Script with Real-time WebSocket Client -->
-    <script src="/static/js/app.js?v=2.15.0"></script>
+    <script src="/static/js/app.js?v=2.15.1"></script>
 </body>
 </html>

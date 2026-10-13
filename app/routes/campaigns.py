@@ -749,7 +749,7 @@ class QuickBroadcastPayload(BaseModel):
     smtp_config_id: Optional[str] = Field(default=None, description="Specific SMTP Relay ID")
     recipients_text: Optional[str] = Field(default=None, description="Raw pasted customer emails")
     list_id: Optional[str] = Field(default=None, description="Target list ID or 'all'")
-    rate_limit_per_second: int = Field(default=25, description="Emails dispatched per second")
+    rate_limit_per_second: int = Field(default=2, description="Emails dispatched per second")
     track_opens: bool = Field(default=True, description="Inject open tracking beacon")
     track_clicks: bool = Field(default=True, description="Rewrite hyperlinks for click tracking")
     scheduled_at: Optional[str] = Field(default=None, description="Target ISO timestamp for scheduled dispatch")

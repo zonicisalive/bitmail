@@ -120,6 +120,22 @@ async def preview_warmup_curve(payload: WarmupPreviewRequest):
     )
 
 
+def _live_progress(s, slices: List[WarmupSliceResponse]) -> Dict[str, Any]:
+    """Day, cap, sent count and status as the slices stand now; the stored columns are never advanced."""
+    if not slices:
+        return {"current_day": s["current_day"], "daily_cap": s["daily_cap"], "sent_today": s["sent_today"] or 0, "status": s["status"]}
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    due = [sl for sl in slices if sl.scheduled_for <= now] or slices[:1]
+    today = due[-1]
+    finished = all(sl.status in ("completed", "failed") for sl in slices)
+    return {
+        "current_day": today.day_number,
+        "daily_cap": today.target_count,
+        "sent_today": today.dispatched_count,
+        "status": "completed" if finished and s["status"] == "active" else s["status"],
+    }
+
+
 # ==============================================================================
 # 2. Schedules CRUD Endpoints
 # ==============================================================================
@@ -179,11 +195,8 @@ async def list_warmup_schedules(
                 campaign_id=s["campaign_id"],
                 strategy=s["strategy"],
                 total_recipients=s["total_recipients"],
-                current_day=s["current_day"],
                 total_days=s["total_days"],
-                daily_cap=s["daily_cap"],
-                sent_today=s["sent_today"] or 0,
-                status=s["status"],
+                **_live_progress(s, slices),
                 relay_pool=pool_ids,
                 rotation_mode=s["rotation_mode"],
                 max_bounce_rate=s["max_bounce_rate"] or 0.02,
@@ -439,11 +452,8 @@ async def get_warmup_schedule(schedule_id: str):
         campaign_id=s["campaign_id"],
         strategy=s["strategy"],
         total_recipients=s["total_recipients"],
-        current_day=s["current_day"],
         total_days=s["total_days"],
-        daily_cap=s["daily_cap"],
-        sent_today=s["sent_today"] or 0,
-        status=s["status"],
+        **_live_progress(s, slices),
         relay_pool=pool_ids,
         rotation_mode=s["rotation_mode"],
         max_bounce_rate=s["max_bounce_rate"] or 0.02,
