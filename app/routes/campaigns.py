@@ -98,7 +98,7 @@ async def list_campaigns(
             query += " AND (name LIKE ? OR subject LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%"])
 
-        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        query += " ORDER BY created_at DESC, scheduled_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
         async with db.execute(query, params) as cursor:
