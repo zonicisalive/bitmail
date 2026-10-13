@@ -3744,7 +3744,10 @@ function renderCampaignsTable(rows = App.campaigns) {
                 </td>
                 <td class="py-3 px-4 text-right">
                     <div class="flex items-center justify-end gap-2">
-                        ${camp.status === 'draft' ? `
+                        ${camp.status === 'draft' && camp.name.startsWith('[Warmup Master]') ? `
+                            <button onclick="switchTab('warmup')" class="px-2.5 py-1 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border border-orange-500/20 text-[11px]" title="Sends day by day from the warmup schedule">Warmup</button>
+                        ` : ''}
+                        ${camp.status === 'draft' && !camp.name.startsWith('[Warmup Master]') ? `
                             <button onclick="launchCampaignDirect('${camp.id}')" class="px-2.5 py-1 rounded-lg bg-[#ededed] hover:bg-white text-[#0a0a0a] font-bold text-[11px]">Launch</button>
                         ` : ''}
                         ${camp.status === 'scheduled' ? `

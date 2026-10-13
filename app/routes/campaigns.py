@@ -573,6 +573,11 @@ async def launch_campaign(campaign_id: str):
             camp = await cursor.fetchone()
             if not camp:
                 raise HTTPException(status_code=404, detail="Campaign not found")
+        # A warmup master only holds the full audience; its day campaigns do the sending.
+        if camp["is_warmup"]:
+            async with db.execute("SELECT 1 FROM warmup_slices WHERE campaign_id = ?", (campaign_id,)) as cursor:
+                if not await cursor.fetchone():
+                    raise HTTPException(status_code=400, detail="This is a warmup master; its daily campaigns send automatically.")
         if not camp["smtp_config_json"]:
             async with db.execute("SELECT 1 FROM smtp_configs WHERE user_id = ? AND is_active = 1",
                                   (current_user_id(),)) as cursor:
