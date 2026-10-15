@@ -613,3 +613,8 @@ details[open] > summary .plan-chevron { transform: rotate(90deg); }
 .pool-switch-input:checked + .pool-switch { background: #ea580c; }
 .pool-switch-input:checked + .pool-switch::after { transform: translateX(16px); }
 .pool-switch-input:focus-visible + .pool-switch { outline: 2px solid #fb923c; outline-offset: 2px; }
+
+/* Phones: tighter card padding so nested cards keep usable width */
+@media (max-width: 639px) {
+  .glass-panel.p-6, .glass-panel.p-5 { padding: 1rem; }
+}
