@@ -6,6 +6,8 @@ audit timeline inspection, and email resending.
 
 import json
 import os
+import re
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -323,6 +325,18 @@ async def get_stored_email(email_id: str):
         }
 
 
+_CLICK_LINK = re.compile(r"""https?://[^"'\s<>]*/track/click/[^"'\s<>?]+\?url=([^"'\s<>&]+)[^"'\s<>]*""", re.IGNORECASE)
+_OPEN_PIXEL = re.compile(r"""<img\b[^>]*/track/open/[^>]*>""", re.IGNORECASE)
+_OPT_OUT_LINK = re.compile(r"""(href=["'])[^"']*/(?:unsubscribe|resubscribe)/[^"']*(["'])""", re.IGNORECASE)
+
+
+def strip_tracking(html: str) -> str:
+    """Preview copy of a sent email: links go straight to their target, no open pixel, inert opt-out links."""
+    html = _CLICK_LINK.sub(lambda m: urllib.parse.unquote(m.group(1)), html)
+    html = _OPEN_PIXEL.sub("", html)
+    return _OPT_OUT_LINK.sub(r"\1#\2", html)
+
+
 @router.get("/emails/{email_id}/rendered")
 async def render_stored_email_html(email_id: str):
     """
@@ -340,7 +354,7 @@ async def render_stored_email_html(email_id: str):
                 html_content = f"<html><body style='font-family:monospace;white-space:pre-wrap;padding:20px;'>{text_content}</body></html>"
 
             return HTMLResponse(
-                content=html_content,
+                content=strip_tracking(html_content),
                 headers={
                     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data: http:; font-src https: data:; frame-ancestors 'self'",
                     "X-Content-Type-Options": "nosniff"
