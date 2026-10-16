@@ -16,6 +16,8 @@ import dns.asyncresolver
 import dns.exception
 import dns.resolver
 
+from app.config import settings
+
 logger = logging.getLogger("bitmail.deliverability")
 
 # RFC 5322 simplified but strict regex for production web apps
@@ -1195,7 +1197,7 @@ class PreSendSafetyGuard:
 
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(primary_mx, 25),
+                asyncio.open_connection(primary_mx, 25, happy_eyeballs_delay=0.25),
                 timeout=timeout
             )
         except Exception as conn_err:
@@ -1208,28 +1210,30 @@ class PreSendSafetyGuard:
                 "mx_host": primary_mx
             }
 
-        try:
-            # Banner
-            await asyncio.wait_for(reader.readline(), timeout=timeout)
-
-            # EHLO
-            writer.write(b"EHLO bitmail.security.probe\r\n")
-            await writer.drain()
+        async def reply() -> str:
+            """Read one full (possibly multi-line) SMTP reply."""
+            lines = []
             while True:
                 line = await asyncio.wait_for(reader.readline(), timeout=timeout)
-                if not line or line[3:4] == b" ":
-                    break
+                lines.append(line.decode("latin-1", errors="ignore").strip())
+                if not line or line[3:4] != b"-":
+                    return " ".join(lines)
 
-            # MAIL FROM
-            writer.write(b"MAIL FROM:<probe@bitmail.security>\r\n")
+        # Identify as the real sending domain; servers distrust made-up HELO/MAIL FROM names.
+        sender = settings.DEFAULT_SENDER_EMAIL.strip().lower()
+        sender_domain = sender.split("@")[-1] or "localhost"
+
+        try:
+            await reply()  # banner
+            writer.write(f"EHLO mail.{sender_domain}\r\n".encode("latin-1"))
             await writer.drain()
-            await asyncio.wait_for(reader.readline(), timeout=timeout)
-
-            # RCPT TO
+            await reply()
+            writer.write(f"MAIL FROM:<{sender}>\r\n".encode("latin-1"))
+            await writer.drain()
+            await reply()
             writer.write(f"RCPT TO:<{clean}>\r\n".encode("latin-1"))
             await writer.drain()
-            rcpt_line = await asyncio.wait_for(reader.readline(), timeout=timeout)
-            rcpt_str = rcpt_line.decode("latin-1", errors="ignore").strip()
+            rcpt_str = await reply()
 
             try:
                 writer.write(b"QUIT\r\n")
@@ -1245,6 +1249,12 @@ class PreSendSafetyGuard:
             except Exception:
                 pass
 
+            # A 5xx about our IP or policy (blocklists, 5.7.x) says nothing about the mailbox.
+            lowered = rcpt_str.lower()
+            policy_block = " 5.7." in f" {rcpt_str[4:]}" or any(
+                w in lowered for w in ("spamhaus", "blocklist", "blacklist", "block list", "not permitted", "policy", "access denied")
+            )
+
             if code and 200 <= code < 300:
                 return {
                     "tested": True,
@@ -1252,6 +1262,15 @@ class PreSendSafetyGuard:
                     "status": "accepted",
                     "code": code,
                     "details": f"Mailbox verified by MX {primary_mx} ({rcpt_str}).",
+                    "mx_host": primary_mx
+                }
+            elif code and code >= 500 and policy_block:
+                return {
+                    "tested": True,
+                    "passed": True,  # Inconclusive: the probe was refused, not the address
+                    "status": "inconclusive",
+                    "code": code,
+                    "details": f"MX {primary_mx} refused the probe itself: {rcpt_str}",
                     "mx_host": primary_mx
                 }
             elif code and code in (550, 551, 552, 553, 554):
